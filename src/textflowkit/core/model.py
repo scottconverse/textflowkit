@@ -31,7 +31,7 @@ class Segment:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Segment":
+    def from_dict(cls, data: dict[str, Any]) -> Segment:
         return cls(
             start=float(data["start"]),
             end=float(data["end"]),
@@ -70,7 +70,7 @@ class Transcript:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Transcript":
+    def from_dict(cls, data: dict[str, Any]) -> Transcript:
         return cls(
             source=data.get("source", ""),
             language=data.get("language"),
@@ -85,7 +85,7 @@ class Transcript:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
 
     @classmethod
-    def from_json(cls, raw: str) -> "Transcript":
+    def from_json(cls, raw: str) -> Transcript:
         return cls.from_dict(json.loads(raw))
 
     def save_json(self, path: str | Path) -> Path:
@@ -94,5 +94,5 @@ class Transcript:
         return p
 
     @classmethod
-    def load_json(cls, path: str | Path) -> "Transcript":
+    def load_json(cls, path: str | Path) -> Transcript:
         return cls.from_json(Path(path).read_text(encoding="utf-8"))

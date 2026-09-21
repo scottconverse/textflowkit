@@ -67,15 +67,21 @@ their access rules frequently. See [docs/sources.md](docs/sources.md).
 
 Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
 
+> **Not yet published to PyPI.** `pip install textflowkit` does not work today
+> (it 404s). Install from source until the first release is cut.
+
 ```bash
-pip install textflowkit
+git clone https://github.com/scottconverse/textflowkit
+cd textflowkit
+pip install -e .
 ```
 
-Optional extras:
+Optional extras (also from source):
 
 ```bash
-pip install "textflowkit[mcp]"   # MCP server adapter
-pip install "textflowkit[dev]"   # tests + linter
+pip install -e ".[mcp]"    # MCP server adapter
+pip install -e ".[http]"   # HTTP API adapter
+pip install -e ".[dev]"    # tests + linter
 ```
 
 ## Usage
@@ -87,9 +93,15 @@ textflowkit transcribe "https://www.youtube.com/watch?v=..."
 # pick formats and an output directory
 textflowkit transcribe ./talk.mp4 --formats srt,vtt,txt,json --output-dir ./out
 
-# force a language, translate afterward
-textflowkit transcribe "$URL" --language en --translate-to es
+# force a language instead of auto-detecting
+textflowkit transcribe "$URL" --language en
+
+# re-render an existing transcript in another format
+textflowkit export ./transcript.json --format vtt
 ```
+
+> **Translation is not implemented yet.** `--translate-to` does not exist. See
+> [docs/roadmap.md](docs/roadmap.md) for the translation stage's status.
 
 ## Use as an MCP server
 
@@ -102,8 +114,10 @@ textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
 `export_transcript`, `list_sources`, `list_jobs`.
 
-Verified against **DSH**, Claude Code, Codex, and OpenCode. See
-[docs/adapters.md](docs/adapters.md) for configuration for each.
+**Transport support** for DSH, Claude Code, Codex, and OpenCode is documented below
+and was established by reading each harness's MCP configuration — **not** by making
+a live MCP call from each one. Treat it as configuration-compatible, not
+integration-tested. See [docs/adapters.md](docs/adapters.md).
 
 ## Use as an HTTP API
 
@@ -136,4 +150,7 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
 adapter.
+
+
+
 

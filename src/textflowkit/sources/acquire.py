@@ -6,10 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-from textflowkit.sources.detect import SourceRef, is_url
+from textflowkit.sources.detect import SourceRef
 
 
 class AcquisitionError(RuntimeError):
@@ -171,7 +170,7 @@ def fetch_media(source: SourceRef, *, work_dir: str | Path, cookies_from_browser
     cmd.append(source.location)
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=False)
     except subprocess.TimeoutExpired as exc:
         raise AcquisitionError("download timed out after 1 hour") from exc
 
@@ -210,12 +209,13 @@ def extract_audio(media_path: str | Path, *, work_dir: str | Path, sample_rate: 
         "-c:a", "pcm_s16le",
         str(out),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0 or not out.exists():
         tail = (proc.stderr or "").strip().splitlines()
         detail = " | ".join(tail[-4:]) if tail else "unknown error"
         raise AcquisitionError(f"ffmpeg failed: {detail}")
     return out
+
 
 
 

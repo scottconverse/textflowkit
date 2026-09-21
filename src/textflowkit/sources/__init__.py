@@ -5,12 +5,12 @@ from textflowkit.sources.detect import PLATFORMS, SourceRef, detect_platform, is
 
 __all__ = [
     "PLATFORMS",
-    "SourceRef",
     "AcquisitionError",
+    "SourceRef",
     "detect_platform",
-    "is_url",
-    "resolve_source",
-    "fetch_media",
     "extract_audio",
+    "fetch_media",
+    "is_url",
     "require_tool",
+    "resolve_source",
 ]

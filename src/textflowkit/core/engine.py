@@ -22,7 +22,6 @@ class Engine(Protocol):
         audio_path: str | Path,
         *,
         language: str | None = None,
-        speaker_labels: bool = False,
     ) -> Transcript: ...
 
 
@@ -67,7 +66,6 @@ class WhisperEngine:
         audio_path: str | Path,
         *,
         language: str | None = None,
-        speaker_labels: bool = False,
     ) -> Transcript:
         model = self._load()
         result = model.transcribe(
@@ -107,3 +105,4 @@ def get_engine(name: str = "whisper", **kwargs: Any) -> Engine:
     if name in ("whisper", "openai-whisper", "default"):
         return WhisperEngine(**kwargs)
     raise ValueError(f"unknown engine: {name}")
+

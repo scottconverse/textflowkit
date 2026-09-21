@@ -29,7 +29,6 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
     t.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     t.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
-    t.add_argument("--speaker-labels", action="store_true", help="enable speaker labelling (engine-dependent)")
     t.add_argument("--cookies-from-browser", default=None,
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
@@ -41,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     l.add_argument("--format", "-f", default="srt", help=f"output format ({', '.join(SUPPORTED_FORMATS)})")
     l.add_argument("--output", "-o", default=None, help="output file (default stdout)")
 
-    s = sub.add_parser("sources", help="list recognised platforms")
+    sub.add_parser("sources", help="list recognised platforms")
     return p
 
 
@@ -59,7 +58,6 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             output_dir=output_dir,
             model=args.model,
             device=args.device,
-            speaker_labels=args.speaker_labels,
             cookies_from_browser=args.cookies_from_browser,
         )
     except PipelineError as exc:
@@ -91,7 +89,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         return 1
     try:
         tr = Transcript.load_json(path)
-    except Exception as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"error: could not read transcript: {exc}", file=sys.stderr)
         return 1
     try:
@@ -130,3 +128,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

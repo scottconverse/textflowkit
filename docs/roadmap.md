@@ -14,10 +14,13 @@
 ## Next
 
 - [x] Verified end-to-end on local file and live URL (YouTube)
+- [x] SSRF guard on user-supplied URLs
+- [x] Confined output paths (`TEXTFLOWKIT_OUTPUT_ROOT`)
+- [x] CI: ruff + pytest on Python 3.10-3.13
 - [x] JavaScript runtime auto-detection for yt-dlp (deno/node/bun/quickjs)
 - [x] MCP server adapter (stdio + Streamable HTTP)
 - [x] HTTP service adapter (FastAPI, job-based)
-- [ ] Translation stage (`--translate-to`)
+- [ ] Translation stage (not implemented; `--translate-to` does not exist)
 - [ ] Speaker diarization (optional dependency)
 - [ ] Durable job store (current is in-memory)
 - [ ] Resumable / batched jobs
@@ -30,6 +33,7 @@
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
+
 
 
 

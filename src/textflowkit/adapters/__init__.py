@@ -8,4 +8,4 @@ here, so the MCP server, the HTTP API, and any future frontend cannot drift.
 - `http_server` - JSON HTTP API for software products and web frontends
 """
 
-__all__ = ["mcp_server", "http_server"]
+__all__ = ["http_server", "mcp_server"]

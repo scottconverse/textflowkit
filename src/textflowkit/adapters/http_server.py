@@ -10,11 +10,11 @@ localhost, or put it behind your own gateway before exposing it.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from textflowkit import __version__
 from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.paths import UnsafeOutputPathError, ensure_output_dir
 from textflowkit.core.runner import submit, transcript_for
 from textflowkit.render import SUPPORTED_FORMATS, render
 
@@ -41,7 +41,6 @@ class TranscribeRequest(BaseModel):
     output_dir: str | None = Field(None, description="Directory for rendered files; omit for none")
     model: str = Field("small", description="Whisper model size")
     device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted")
-    speaker_labels: bool = False
     cookies_from_browser: str | None = None
 
 
@@ -83,7 +82,6 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
         output_dir=req.output_dir,
         model=req.model,
         device=req.device,
-        speaker_labels=req.speaker_labels,
         cookies_from_browser=req.cookies_from_browser,
     )
     return job.to_dict()
@@ -159,8 +157,11 @@ def export(job_id: str, formats: list[str] | None = None, output_dir: str = ".")
         raise HTTPException(status_code=500, detail="job contains no transcript")
 
     fmt_list = formats or ["srt", "vtt", "txt", "json"]
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out = ensure_output_dir(output_dir)
+    except UnsafeOutputPathError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     written = []
     for f in fmt_list:
         norm = f.lower().lstrip(".")
@@ -191,3 +192,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+

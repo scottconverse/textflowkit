@@ -21,7 +21,6 @@ def run_job(
     model: str = "small",
     engine: str = "whisper",
     device: str | None = None,
-    speaker_labels: bool = False,
     cookies_from_browser: str | None = None,
     keep_media: bool = False,
     work_dir: str | Path | None = None,
@@ -42,7 +41,6 @@ def run_job(
             model=model,
             engine=engine,
             device=device,
-            speaker_labels=speaker_labels,
             cookies_from_browser=cookies_from_browser,
             keep_media=keep_media,
             work_dir=work_dir,
@@ -50,7 +48,10 @@ def run_job(
     except PipelineError as exc:
         store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
         return
-    except Exception as exc:  # defensive: never leave a job stuck RUNNING
+    # Last-resort guard: a background job must never be left stuck in RUNNING
+    # because of an unexpected exception type. The error is recorded on the job,
+    # not swallowed. Narrower catches above handle the expected failure modes.
+    except Exception as exc:  # noqa: BLE001
         store.update(job.id, state=JobState.ERROR, error=f"{type(exc).__name__}: {exc}", progress="failed")
         return
 
@@ -91,3 +92,5 @@ def transcript_for(job: Job) -> Transcript | None:
     if job.transcript is None:
         return None
     return Transcript.from_dict(job.transcript)
+
+

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from tests.test_model import sample
 from textflowkit.core.timeutil import srt_timestamp, vtt_timestamp
 from textflowkit.render import SUPPORTED_FORMATS, render
-
-from tests.test_model import sample
 
 
 def test_srt_timestamp_format():

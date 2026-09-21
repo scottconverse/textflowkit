@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from textflowkit.core.model import Transcript
+from textflowkit.core.paths import ensure_output_dir
 from textflowkit.render.markdown import render_markdown
 from textflowkit.render.srt import render_srt
 from textflowkit.render.txt import render_txt
@@ -39,8 +40,7 @@ def write_all(
     stem: str,
     title: str | None = None,
 ) -> list[Path]:
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = ensure_output_dir(str(output_dir))
     written: list[Path] = []
     for fmt in formats:
         content = render(transcript, fmt, title=title)
@@ -54,9 +54,10 @@ __all__ = [
     "RENDERERS",
     "SUPPORTED_FORMATS",
     "render",
-    "write_all",
-    "render_txt",
-    "render_srt",
-    "render_vtt",
     "render_markdown",
+    "render_srt",
+    "render_txt",
+    "render_vtt",
+    "write_all",
 ]
+

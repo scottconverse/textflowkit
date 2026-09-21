@@ -39,7 +39,6 @@ def transcribe(
     model: str = "small",
     engine: str = "whisper",
     device: str | None = None,
-    speaker_labels: bool = False,
     cookies_from_browser: str | None = None,
     keep_media: bool = False,
     work_dir: str | Path | None = None,
@@ -71,7 +70,7 @@ def transcribe(
 
     eng = get_engine(engine, model=model, device=device)
     try:
-        transcript = eng.transcribe(audio, language=language, speaker_labels=speaker_labels)
+        transcript = eng.transcribe(audio, language=language)
     except Exception as exc:  # engine failures are user-facing
         raise PipelineError(f"transcription failed: {exc}") from exc
 
@@ -93,3 +92,4 @@ def transcribe(
                 pass
 
     return TranscribeResult(transcript=transcript, outputs=outputs)
+

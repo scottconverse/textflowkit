@@ -5,4 +5,4 @@ from textflowkit.core.pipeline import PipelineError, transcribe
 
 __version__ = "0.1.0"
 
-__all__ = ["Segment", "Transcript", "transcribe", "PipelineError", "__version__"]
+__all__ = ["PipelineError", "Segment", "Transcript", "__version__", "transcribe"]

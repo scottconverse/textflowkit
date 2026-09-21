@@ -13,7 +13,13 @@ them: the CLI, the MCP server, and the HTTP API all call
    HTTP ───────────►└──────────────────────┘
 ```
 
-## Harness support (verified 2026-09-21)
+## Harness transport support
+
+**Evidence tier: `static`.** The table below was established by reading each
+harness's MCP configuration and, for DSH, its published plugin README. **No live
+MCP call was made from any of these harnesses.** Config-compatible is not the same
+as integration-tested; the server itself was verified over stdio with a real MCP
+client (`tests-run`), but that client was not one of these four.
 
 | Harness | stdio | Streamable HTTP | Notes |
 |---|---|---|---|
@@ -22,7 +28,8 @@ them: the CLI, the MCP server, and the HTTP API all call
 | **Codex CLI** (0.147.0) | ✅ | — | Manage with `codex mcp add`. |
 | **OpenCode** (1.18.18) | ✅ | ✅ | Config `{"type":"remote","url":...}` for HTTP, or local for stdio. |
 
-The negotiated MCP protocol version from this server is **2025-11-25**.
+The negotiated MCP protocol version from this server is **2025-11-25** — observed
+from a real stdio handshake, not from a harness.
 
 Because the tool surface is identical across transports, pick transport by
 deployment shape, not by harness.
@@ -99,6 +106,22 @@ textflowkit-http --host 127.0.0.1 --port 8767
 gateway before exposing it. That is deliberate: auth belongs to the deployment,
 not to a transcript library.
 
+## Output paths are confined
+
+Adapters accept a destination directory from a caller — a CLI user, an HTTP
+client, or a model. That path is resolved against an **allowed root**:
+
+- `TEXTFLOWKIT_OUTPUT_ROOT` sets the root.
+- When unset, the root is the current working directory. The CLI's default of
+  writing into the directory you ran it from therefore still works.
+- `..` segments, absolute paths outside the root, and symlinks that escape are
+  rejected with an actionable error (`422` on HTTP; an `error` field on MCP).
+
+```bash
+# confine every write from a server to one directory
+TEXTFLOWKIT_OUTPUT_ROOT=/srv/transcripts textflowkit-mcp --transport http
+```
+
 ## Why jobs, not blocking calls
 
 A 19-minute video would otherwise hold a request open for minutes. Returning a
@@ -111,3 +134,5 @@ job id immediately means:
 
 The job store is in-memory and bounded (`max_jobs=200`, terminal jobs evicted
 first). Swap `JobStore` for a durable backend without touching callers.
+
+

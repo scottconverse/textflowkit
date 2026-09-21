@@ -7,7 +7,7 @@ def srt_timestamp(seconds: float) -> str:
     """HH:MM:SS,mmm (SRT uses a comma)."""
     if seconds < 0:
         seconds = 0.0
-    ms_total = int(round(seconds * 1000))
+    ms_total = round(seconds * 1000)
     h, rem = divmod(ms_total, 3_600_000)
     m, rem = divmod(rem, 60_000)
     s, ms = divmod(rem, 1000)
@@ -17,3 +17,4 @@ def srt_timestamp(seconds: float) -> str:
 def vtt_timestamp(seconds: float) -> str:
     """HH:MM:SS.mmm (WebVTT uses a period)."""
     return srt_timestamp(seconds).replace(",", ".")
+

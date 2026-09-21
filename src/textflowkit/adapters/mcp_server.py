@@ -19,12 +19,11 @@ long video returns a job id immediately rather than blocking the call.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from textflowkit import __version__
 from textflowkit.core.jobs import Job, JobState, get_default_store
-from textflowkit.core.model import Transcript
+from textflowkit.core.paths import UnsafeOutputPathError, ensure_output_dir
 from textflowkit.core.runner import submit, transcript_for
 from textflowkit.render import SUPPORTED_FORMATS, render
 from textflowkit.sources.detect import PLATFORMS
@@ -93,7 +92,6 @@ def transcribe_media(
     output_dir: str | None = None,
     model: str = "small",
     device: str | None = None,
-    speaker_labels: bool = False,
     cookies_from_browser: str | None = None,
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
@@ -113,7 +111,6 @@ def transcribe_media(
         model: Whisper model size - tiny, base, small, medium, or large.
             Larger is more accurate and slower. Default small.
         device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
-        speaker_labels: Request speaker labelling (engine-dependent).
         cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
             'firefox'. Only for media you are authorised to access.
     """
@@ -134,7 +131,6 @@ def transcribe_media(
         output_dir=output_dir,
         model=model,
         device=device,
-        speaker_labels=speaker_labels,
         cookies_from_browser=cookies_from_browser,
         work_dir=None,
     )
@@ -235,8 +231,11 @@ def export_transcript(
     if bad:
         return {"error": f"unsupported format(s): {', '.join(bad)}"}
 
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out = ensure_output_dir(output_dir)
+    except UnsafeOutputPathError as exc:
+        return {"error": str(exc)}
+
     written = []
     for f in fmt_list:
         path = out / f"{job.id}.{f}"
@@ -309,4 +308,7 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
