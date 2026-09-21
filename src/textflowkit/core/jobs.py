@@ -94,11 +94,18 @@ class JobStore:
             return job
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
+        """Recent jobs, newest first.
+
+        Ordering is by insertion sequence, not by `created_at`. Wall-clock
+        ordering is not portable: on Windows with Python < 3.13 `time.time()`
+        has coarse resolution, so several jobs created in a tight loop share a
+        timestamp and their relative order becomes arbitrary. Insertion order is
+        deterministic on every platform.
+        """
         with self._lock:
-            jobs = [self._jobs[i] for i in self._order if i in self._jobs]
+            jobs = [self._jobs[i] for i in reversed(self._order) if i in self._jobs]
         if state is not None:
             jobs = [j for j in jobs if j.state == state]
-        jobs.sort(key=lambda j: j.created_at, reverse=True)
         return jobs[:limit]
 
     def _evict_locked(self) -> None:
@@ -133,3 +140,4 @@ def get_default_store() -> JobStore:
         if _default_store is None:
             _default_store = JobStore()
         return _default_store
+

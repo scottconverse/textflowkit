@@ -83,3 +83,37 @@ def test_clear():
     store.create("a")
     store.clear()
     assert store.list() == []
+
+
+def test_list_order_is_independent_of_clock_resolution():
+    """Regression: ordering must not depend on `created_at` granularity.
+
+    On Windows with Python < 3.13, time.time() is coarse enough that jobs
+    created in a tight loop share a timestamp. Sorting by that value made
+    "newest first" arbitrary. Force the tie explicitly so this fails anywhere
+    the ordering depends on wall-clock resolution.
+    """
+    store = JobStore()
+    ids = [store.create(f"src{i}").id for i in range(5)]
+    for jid in ids:
+        store.update(jid)  # touch updated_at; created_at stays as-is
+    # Collapse every created_at to one value - the pathological case.
+    frozen = 1_000_000.0
+    for jid in ids:
+        store._jobs[jid].created_at = frozen
+
+    listed = store.list(limit=3)
+    assert [j.id for j in listed] == list(reversed(ids))[:3]
+
+
+def test_list_order_survives_eviction():
+    """After eviction the surviving order must still be newest-first."""
+    store = JobStore(max_jobs=3)
+    ids = [store.create(f"s{i}").id for i in range(3)]
+    store.update(ids[0], state=JobState.DONE)   # terminal -> first to be evicted
+    newest = store.create("newest").id
+
+    listed = [j.id for j in store.list()]
+    assert store.get(ids[0]) is None
+    assert listed[0] == newest
+    assert listed == [newest, ids[2], ids[1]]
