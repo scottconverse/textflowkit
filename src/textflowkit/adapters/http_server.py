@@ -17,11 +17,13 @@ from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
 from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
     ensure_output_dir,
     server_input_root,
 )
+from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import submit, transcript_for
 from textflowkit.render import SUPPORTED_FORMATS, render
 
@@ -150,9 +152,8 @@ def cancel_job(job_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/jobs/{job_id}/transcript")
-def get_transcript(job_id: str, format: str = "json"):
-    """Transcript for a completed job, rendered in the requested format."""
+def _finished_transcript(job_id: str):
+    """Shared guard: 404/409/500 and return (job, transcript)."""
     job = get_default_store().get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
@@ -164,6 +165,24 @@ def get_transcript(job_id: str, format: str = "json"):
     tr = transcript_for(job)
     if tr is None:
         raise HTTPException(status_code=500, detail="job contains no transcript")
+    return job, tr
+
+
+@app.get("/jobs/{job_id}/transcript")
+def get_transcript(
+    job_id: str,
+    format: str = "json",
+    offset: int = 0,
+    limit: int | None = None,
+    start: float | None = None,
+    end: float | None = None,
+):
+    """Transcript for a completed job, optionally a slice.
+
+    `offset`/`limit` page through segments; `start`/`end` select a time range in
+    seconds. The JSON form reports total_segments and has_more.
+    """
+    job, tr = _finished_transcript(job_id)
 
     fmt = format.lower().lstrip(".")
     if fmt not in SUPPORTED_FORMATS:
@@ -172,12 +191,59 @@ def get_transcript(job_id: str, format: str = "json"):
             detail={"error": f"unsupported format '{format}'",
                     "available_formats": list(SUPPORTED_FORMATS)},
         )
-    content = render(tr, fmt)
+
+    try:
+        page = page_segments(tr, offset=offset, limit=limit, start=start, end=end)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    sliced = Transcript(
+        source=tr.source,
+        language=tr.language,
+        platform=tr.platform,
+        duration=tr.duration,
+        engine=tr.engine,
+        metadata=tr.metadata,
+        segments=page.segments,
+    )
+
     if fmt == "json":
-        return {"job_id": job.id, "transcript": tr.to_dict()}
-    if fmt in ("srt", "vtt", "txt"):
-        return PlainTextResponse(content)
-    return PlainTextResponse(content)
+        return {
+            "job_id": job.id,
+            **page.as_dict(),
+            "transcript": sliced.to_dict(),
+        }
+    return PlainTextResponse(render(sliced, fmt))
+
+
+@app.get("/jobs/{job_id}/search")
+def search(job_id: str, q: str, limit: int = 20, context: int = 1,
+           case_sensitive: bool = False) -> dict[str, Any]:
+    """Search a completed transcript for a phrase."""
+    job, tr = _finished_transcript(job_id)
+    try:
+        matches = search_segments(
+            tr, q, limit=limit, context=context, case_sensitive=case_sensitive
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "job_id": job.id,
+        "query": q,
+        "match_count": len(matches),
+        "matches": [
+            {
+                "index": m.index,
+                "start": m.segment.start,
+                "end": m.segment.end,
+                "text": m.segment.display_text(),
+                "context_before": [c.display_text() for c in m.context_before],
+                "context_after": [c.display_text() for c in m.context_after],
+            }
+            for m in matches
+        ],
+    }
 
 
 @app.post("/jobs/{job_id}/export")

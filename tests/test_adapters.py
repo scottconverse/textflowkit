@@ -272,3 +272,157 @@ def test_http_cancel_pending_job():
     assert r.status_code == 200
     assert r.json()["cancelled"] is True
     assert r.json()["state"] == "cancelled"
+
+
+# --- retrieval surface (paging / search) ----------------------------------
+
+def _seed_done_job(store, n=10):
+    from textflowkit.core.model import Segment, Transcript
+
+    job = store.create("src")
+    tr = Transcript(
+        source="src",
+        language="en",
+        segments=[Segment(i, i + 0.5, f"word{i} text") for i in range(n)],
+    )
+    store.update(job.id, state=JobState.DONE, transcript=tr.to_dict(), outputs=[])
+    return job
+
+
+def test_mcp_get_transcript_pages():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_transcript
+
+    store = get_default_store()
+    job = _seed_done_job(store, 10)
+
+    out = get_transcript(job.id, fmt="json", limit=4)
+    assert out["returned"] == 4
+    assert out["total_segments"] == 10
+    assert out["has_more"] is True
+
+    out2 = get_transcript(job.id, fmt="json", offset=8, limit=4)
+    assert out2["returned"] == 2
+    assert out2["has_more"] is False
+
+
+def test_mcp_get_transcript_time_range():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_transcript
+
+    job = _seed_done_job(get_default_store(), 10)
+    out = get_transcript(job.id, fmt="txt", start=2.0, end=4.0)
+    assert out["returned"] == 3
+    assert "word2" in out["content"]
+    assert "word5" not in out["content"]
+
+
+def test_mcp_get_transcript_rejects_bad_offset():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_transcript
+
+    job = _seed_done_job(get_default_store(), 5)
+    assert "error" in get_transcript(job.id, offset=-1)
+
+
+def test_mcp_get_transcript_reports_next_page():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_transcript
+
+    job = _seed_done_job(get_default_store(), 10)
+    out = get_transcript(job.id, fmt="json", limit=3)
+    assert "offset=3" in out["next"]
+
+
+def test_mcp_search_finds_and_reports_context():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import search_transcript
+
+    job = _seed_done_job(get_default_store(), 10)
+    out = search_transcript(job.id, "word5", limit=5, context=1)
+    assert out["match_count"] == 1
+    m = out["matches"][0]
+    assert m["index"] == 5
+    assert len(m["context_before"]) == 1
+    assert len(m["context_after"]) == 1
+
+
+def test_mcp_search_empty_query_is_an_error():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import search_transcript
+
+    job = _seed_done_job(get_default_store(), 5)
+    assert "error" in search_transcript(job.id, "")
+
+
+def test_mcp_search_requires_finished_job():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import search_transcript
+
+    store = get_default_store()
+    job = store.create("pending")
+    assert "error" in search_transcript(job.id, "x")
+
+
+def test_http_transcript_paging_and_metadata():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    job = _seed_done_job(get_default_store(), 10)
+    r = TestClient(app).get(f"/jobs/{job.id}/transcript", params={"format": "json", "limit": 3})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["returned"] == 3
+    assert body["total_segments"] == 10
+    assert body["has_more"] is True
+
+
+def test_http_transcript_time_range_renders_srt():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    job = _seed_done_job(get_default_store(), 10)
+    r = TestClient(app).get(
+        f"/jobs/{job.id}/transcript", params={"format": "srt", "start": 1.0, "end": 3.0}
+    )
+    assert r.status_code == 200
+    assert r.text.startswith("1")
+    assert "word1" in r.text
+
+
+def test_http_transcript_bad_offset_422():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    job = _seed_done_job(get_default_store(), 5)
+    r = TestClient(app).get(f"/jobs/{job.id}/transcript", params={"offset": -1})
+    assert r.status_code == 422
+
+
+def test_http_search_endpoint():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    job = _seed_done_job(get_default_store(), 10)
+    r = TestClient(app).get(f"/jobs/{job.id}/search", params={"q": "word7"})
+    assert r.status_code == 200
+    assert r.json()["match_count"] == 1
+
+
+def test_http_search_empty_query_422():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    job = _seed_done_job(get_default_store(), 5)
+    r = TestClient(app).get(f"/jobs/{job.id}/search", params={"q": ""})
+    assert r.status_code == 422

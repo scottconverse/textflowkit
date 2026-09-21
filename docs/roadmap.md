@@ -27,6 +27,7 @@
 - [x] Durable job store (SQLite via `TEXTFLOWKIT_DB`)
 - [x] Bounded concurrency (`TEXTFLOWKIT_MAX_CONCURRENCY`)
 - [x] Job cancellation (`cancel_job`)
+- [x] Transcript paging, time-range reads, and search
 - [ ] Resumable / batched jobs
 - [ ] DOCX and PDF export
 

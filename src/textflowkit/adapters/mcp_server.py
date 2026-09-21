@@ -26,11 +26,13 @@ from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
 from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import Job, JobState, get_default_store
+from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
     ensure_output_dir,
     server_input_root,
 )
+from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import submit, transcript_for
 from textflowkit.render import SUPPORTED_FORMATS, render
 from textflowkit.sources.detect import PLATFORMS
@@ -177,12 +179,24 @@ def get_job_status(job_id: str) -> dict[str, Any]:
 def get_transcript(
     job_id: str,
     fmt: str = "txt",
+    offset: int = 0,
+    limit: int | None = None,
+    start: float | None = None,
+    end: float | None = None,
 ) -> dict[str, Any]:
-    """Read the transcript for a completed job.
+    """Read the transcript for a completed job, optionally a slice of it.
+
+    For long transcripts do not request everything: page with offset/limit, or
+    ask for a time range with start/end (seconds). The response reports
+    total_segments and has_more so you know whether to continue.
 
     Args:
         job_id: The id returned by transcribe_media.
         fmt: How to render the text - txt, srt, vtt, md, or json.
+        offset: Skip this many segments within the selected range.
+        limit: Return at most this many segments.
+        start: Only segments ending at or after this time (seconds).
+        end: Only segments starting at or before this time (seconds).
     """
     job, err = _resolve_job(job_id)
     if err:
@@ -201,14 +215,93 @@ def get_transcript(
     norm = fmt.lower().lstrip(".")
     if norm not in SUPPORTED_FORMATS:
         return {"error": f"unsupported format '{fmt}'", "available_formats": list(SUPPORTED_FORMATS)}
-    content = render(tr, norm)
-    return {
+
+    try:
+        page = page_segments(tr, offset=offset, limit=limit, start=start, end=end)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    sliced = Transcript(
+        source=tr.source,
+        language=tr.language,
+        platform=tr.platform,
+        duration=tr.duration,
+        engine=tr.engine,
+        metadata=tr.metadata,
+        segments=page.segments,
+    )
+    payload = {
         "job_id": job.id,
         "format": norm,
         "language": tr.language,
         "platform": tr.platform,
-        "segments": len(tr.segments),
-        "content": content,
+        **page.as_dict(),
+        "content": render(sliced, norm),
+    }
+    if page.has_more:
+        payload["next"] = (
+            f"More segments remain. Request offset={page.offset + page.returned} "
+            f"for the next page."
+        )
+    return payload
+
+
+@mcp.tool(annotations=READ_ONLY)
+def search_transcript(
+    job_id: str,
+    query: str,
+    limit: int = 20,
+    context: int = 1,
+    case_sensitive: bool = False,
+) -> dict[str, Any]:
+    """Search a completed transcript for a phrase.
+
+    Returns matching segments with their timestamps, newest-first order
+    preserved from the transcript. Use this instead of paging through a long
+    transcript looking for a topic.
+
+    Args:
+        job_id: The id returned by transcribe_media.
+        query: Substring to find (not fuzzy).
+        limit: Maximum number of matches to return.
+        context: How many neighbouring segments to include either side.
+        case_sensitive: Match case-sensitively (default false).
+    """
+    job, err = _resolve_job(job_id)
+    if err:
+        return {"error": err}
+    assert job is not None
+    if job.state is not JobState.DONE:
+        return {
+            "error": f"job is not finished (state: {job.state.value})",
+            "state": job.state.value,
+        }
+    tr = transcript_for(job)
+    if tr is None:
+        return {"error": "job completed but contains no transcript"}
+
+    try:
+        matches = search_segments(
+            tr, query, limit=limit, context=context, case_sensitive=case_sensitive
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    return {
+        "job_id": job.id,
+        "query": query,
+        "match_count": len(matches),
+        "matches": [
+            {
+                "index": m.index,
+                "start": m.segment.start,
+                "end": m.segment.end,
+                "text": m.segment.display_text(),
+                "context_before": [c.display_text() for c in m.context_before],
+                "context_after": [c.display_text() for c in m.context_after],
+            }
+            for m in matches
+        ],
     }
 
 

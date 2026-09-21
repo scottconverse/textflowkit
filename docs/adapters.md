@@ -62,7 +62,7 @@ textflowkit-mcp --transport http --host 127.0.0.1 --port 8766
 ```
 
 Tools: `list_sources`, `transcribe_media`, `get_job_status`, `get_transcript`,
-`export_transcript`, `list_jobs`, `cancel_job`.
+`export_transcript`, `list_jobs`, `cancel_job`, `search_transcript`.
 
 Read-only tools carry `readOnlyHint: true`; the two that touch the network or
 disk carry `openWorldHint: true`.
@@ -118,7 +118,8 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs` | submit a job (202 + job id) |
 | GET | `/jobs` | list recent jobs |
 | GET | `/jobs/{id}` | job status |
-| GET | `/jobs/{id}/transcript?format=` | rendered transcript |
+| GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=` | rendered transcript, optionally sliced |
+| GET | `/jobs/{id}/search?q=&limit=&context=` | search a transcript |
 | POST | `/jobs/{id}/export` | write files to disk |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
@@ -194,6 +195,48 @@ mid-call. Checkpoints sit at stage boundaries - before resolve, after resolve,
 after fetch, after extract, after transcribe - so a cancellation during a
 20-minute transcription takes effect when that call returns, not instantly. The
 API reports `cancelling` rather than claiming an instant stop it cannot deliver.
+
+## Reading a long transcript
+
+Returning a whole transcript is a context problem. A 19-minute video is already
+~51 KB of JSON (~214 segments); a multi-hour recording is several hundred KB
+dropped into a model's context in one tool result, mostly irrelevant to the
+question being asked.
+
+`get_transcript` accepts a slice, and `search_transcript` finds a phrase:
+
+| Parameter | Meaning |
+|---|---|
+| `offset` | skip this many segments **within the selected range** |
+| `limit` | return at most this many |
+| `start` / `end` | restrict by time in seconds (inclusive) |
+
+Filtering is time first, then offset/limit inside that window - `offset` counts
+from the start of the requested range, not the start of the transcript. The
+response reports `total_segments`, `returned`, and `has_more`, and when more
+remain it includes a `next` hint naming the offset to continue from. Truncation
+is never silent.
+
+```jsonc
+// MCP
+{"job_id": "...", "fmt": "json", "offset": 20, "limit": 20}
+{"job_id": "...", "query": "neural network", "limit": 5, "context": 1}
+```
+
+```bash
+# HTTP
+curl "http://127.0.0.1:8767/jobs/$ID/transcript?format=srt&start=300&end=320"
+curl "http://127.0.0.1:8767/jobs/$ID/search?q=neural%20network&context=1"
+```
+
+`search_transcript` is substring matching (not fuzzy), case-insensitive by
+default, and matches translated text as well as source text when a translation
+is present. `context` includes neighbouring segments, which is usually what makes
+a hit readable.
+
+Verified against a real 214-segment transcript: paging returned 20 with
+`has_more`, a 300-320s window returned 6 segments, and searching "neural network"
+found 3 matches with timestamps.
 
 ## Input paths are confined
 
