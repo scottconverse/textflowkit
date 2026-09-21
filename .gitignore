@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local work products
+work/
+out/
+outputs/
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.webm
+*.srt
+*.vtt
+
+# Secrets / local config
+.env
+*.local.toml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
