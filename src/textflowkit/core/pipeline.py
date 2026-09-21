@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from textflowkit.core.diarize import DiarizationError, assign_speakers, get_diarizer
 from textflowkit.core.engine import get_engine
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -50,6 +51,8 @@ def transcribe(
     work_dir: str | Path | None = None,
     check_cancel: Callable[[], None] | None = None,
     input_root: str | Path | None = None,
+    diarize: bool = False,
+    diarizer_backend: str = "pyannote",
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
 
@@ -113,6 +116,27 @@ def transcribe(
         transcript = eng.transcribe(audio, language=language)
     except Exception as exc:  # engine failures are user-facing
         raise PipelineError(f"transcription failed: {exc}") from exc
+
+    _checkpoint()
+
+    if diarize:
+        # Refuse loudly rather than returning a transcript with empty speakers.
+        # A silent no-op here is exactly the defect that was removed from
+        # --speaker-labels, and it must not come back through this door.
+        try:
+            diarizer = get_diarizer(diarizer_backend)
+            turns = diarizer.diarize(audio)
+        except DiarizationError as exc:
+            raise PipelineError(f"diarization requested but unavailable: {exc}") from exc
+        except Exception as exc:
+            raise PipelineError(f"diarization failed: {exc}") from exc
+        labelled = assign_speakers(transcript.segments, turns)
+        transcript.metadata["diarization"] = {
+            "backend": getattr(diarizer, "name", diarizer_backend),
+            "speakers": sorted({t.speaker for t in turns}),
+            "turns": len(turns),
+            "segments_labelled": labelled,
+        }
 
     _checkpoint()
 

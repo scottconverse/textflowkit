@@ -104,6 +104,7 @@ def transcribe_media(
     model: str = "small",
     device: str | None = None,
     cookies_from_browser: str | None = None,
+    diarize: bool = False,
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
@@ -124,6 +125,9 @@ def transcribe_media(
         device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
         cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
             'firefox'. Only for media you are authorised to access.
+        diarize: Label speakers. Requires the optional diarize extra and a gated
+            Hugging Face model; the job fails with a clear error if unavailable
+            rather than returning empty speakers.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
@@ -145,6 +149,7 @@ def transcribe_media(
         cookies_from_browser=cookies_from_browser,
         work_dir=None,
         input_root=server_input_root(),
+        diarize=diarize,
     )
     return {
         "job_id": job.id,

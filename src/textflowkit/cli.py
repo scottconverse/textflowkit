@@ -29,6 +29,14 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
     t.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     t.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    t.add_argument(
+        "--diarize",
+        action="store_true",
+        help=(
+            "label speakers. Requires the optional 'diarize' extra and a Hugging "
+            "Face token with access to the gated pyannote model; fails loudly if either is missing"
+        ),
+    )
     t.add_argument("--cookies-from-browser", default=None,
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
@@ -59,6 +67,7 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             model=args.model,
             device=args.device,
             cookies_from_browser=args.cookies_from_browser,
+            diarize=args.diarize,
         )
     except PipelineError as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -51,6 +51,7 @@ class TranscribeRequest(BaseModel):
     model: str = Field("small", description="Whisper model size")
     device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted")
     cookies_from_browser: str | None = None
+    diarize: bool = False
 
 
 @app.get("/health")
@@ -93,6 +94,7 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
         device=req.device,
         cookies_from_browser=req.cookies_from_browser,
         input_root=server_input_root(),
+        diarize=req.diarize,
     )
     return job.to_dict()
 
