@@ -273,3 +273,51 @@ def test_default_executor_shares_default_store(monkeypatch):
     finally:
         reset_default_executor()
         reset_default_store()
+
+
+def test_cancel_during_fetch_ends_cancelled_not_error(monkeypatch, tmp_path):
+    """A cancellation raised mid-fetch must surface as CANCELLED.
+
+    The source layer catches broad exceptions while downloading. If it does not
+    re-raise cancellation first, an orderly stop is reported as a failure -
+    which is exactly the bug this covers.
+    """
+    store = MemoryJobStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    fetch_started = threading.Event()
+    release = threading.Event()
+
+    from textflowkit.core import pipeline
+
+    def fake_fetch(ref, *, work_dir, cookies_from_browser=None, check_cancel=None):
+        fetch_started.set()
+        release.wait(timeout=5)
+        if check_cancel:
+            check_cancel()          # simulates the progress hook firing
+        raise AssertionError("unreachable")   # pragma: no cover
+
+    monkeypatch.setattr(pipeline, "fetch_media", fake_fetch)
+    # the source layer's own broad catch is what we are testing around, so use it
+    monkeypatch.setattr("textflowkit.sources.acquire.require_tool", lambda *a, **k: "ffmpeg")
+
+    job = ex.submit(source="https://example.com/v")
+    assert fetch_started.wait(timeout=5)
+    assert ex.cancel(job.id) is True
+    release.set()
+
+    deadline = time.time() + 5
+    while time.time() < deadline and store.get(job.id).state is not JobState.CANCELLED:
+        time.sleep(0.02)
+
+    got = store.get(job.id)
+    assert got.state is JobState.CANCELLED, f"expected cancelled, got {got.state}: {got.error}"
+    assert got.error is None
+    ex.shutdown()
+
+
+def test_cancelled_error_is_shared_leaf_type():
+    """The source layer and the executor must agree on one cancellation type."""
+    from textflowkit.core.cancel import CancelledError
+    from textflowkit.core.executor import JobCancelled
+
+    assert JobCancelled is CancelledError

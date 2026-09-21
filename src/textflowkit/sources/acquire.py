@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
+from textflowkit.core.cancel import CancelledError
 from textflowkit.sources.detect import SourceRef
 
 
@@ -81,7 +83,13 @@ def _js_runtime_args() -> list[str]:
         return []
     return ["--no-js-runtimes", "--js-runtimes", runtime]
 
-def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | None) -> Path:
+def _fetch_with_module(
+    url: str,
+    *,
+    work_dir: Path,
+    cookies_from_browser: str | None,
+    check_cancel: Callable[[], None] | None = None,
+) -> Path:
     """Download using the yt_dlp Python API (used when no CLI binary is on PATH)."""
     from yt_dlp import YoutubeDL
 
@@ -89,6 +97,11 @@ def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | 
     hooks: list[Path] = []
 
     def _hook(status: dict) -> None:
+        # yt-dlp calls this frequently during a download. Raising here aborts
+        # the download, which is what makes cancellation responsive for the
+        # slowest common case instead of waiting for the whole fetch to finish.
+        if check_cancel is not None:
+            check_cancel()
         if status.get("status") == "finished":
             path = status.get("filename") or status.get("_filename")
             if path:
@@ -111,6 +124,8 @@ def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | 
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
+    except CancelledError:
+        raise  # an orderly stop, not a fetch failure
     except Exception as exc:
         raise AcquisitionError(f"yt-dlp failed: {exc}") from exc
 
@@ -135,7 +150,13 @@ def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | 
     raise AcquisitionError("yt-dlp reported success but no output file was found")
 
 
-def fetch_media(source: SourceRef, *, work_dir: str | Path, cookies_from_browser: str | None = None) -> Path:
+def fetch_media(
+    source: SourceRef,
+    *,
+    work_dir: str | Path,
+    cookies_from_browser: str | None = None,
+    check_cancel: Callable[[], None] | None = None,
+) -> Path:
     """Return a local path to the media.
 
     Local files are returned unchanged. URLs are downloaded with yt-dlp, using
@@ -151,8 +172,15 @@ def fetch_media(source: SourceRef, *, work_dir: str | Path, cookies_from_browser
     work.mkdir(parents=True, exist_ok=True)
 
     yt_dlp = require_tool("yt-dlp", module="yt_dlp")
-    if yt_dlp is None:
-        return _fetch_with_module(source.location, work_dir=work, cookies_from_browser=cookies_from_browser)
+    # The CLI cannot be interrupted mid-download, so when the caller wants
+    # cancellation we use the Python API even if a binary is available.
+    if yt_dlp is None or check_cancel is not None:
+        return _fetch_with_module(
+            source.location,
+            work_dir=work,
+            cookies_from_browser=cookies_from_browser,
+            check_cancel=check_cancel,
+        )
 
     outtmpl = str(work / "%(id)s.%(ext)s")
     cmd = [

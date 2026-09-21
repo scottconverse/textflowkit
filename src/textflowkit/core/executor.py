@@ -23,17 +23,17 @@ import queue
 import threading
 from typing import Any
 
+from textflowkit.core.cancel import CancelledError
 from textflowkit.core.jobs import Job, JobState, JobStore, get_default_store
 
 ENV_CONCURRENCY = "TEXTFLOWKIT_MAX_CONCURRENCY"
 DEFAULT_CONCURRENCY = 1
 
 
-class JobCancelled(Exception):
-    """Raised inside a job when cancellation has been requested.
-
-    Callers must not treat this as a failure - it is an orderly stop.
-    """
+# The signal itself lives in a leaf module so the source layer can re-raise it
+# around broad exception handling. This alias keeps the name used everywhere
+# else in the codebase and in tests.
+JobCancelled = CancelledError
 
 
 class CancelToken:

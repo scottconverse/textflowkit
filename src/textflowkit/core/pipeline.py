@@ -81,7 +81,12 @@ def transcribe(
     require_tool("ffmpeg")
 
     try:
-        media = fetch_media(ref, work_dir=scratch, cookies_from_browser=cookies_from_browser)
+        media = fetch_media(
+            ref,
+            work_dir=scratch,
+            cookies_from_browser=cookies_from_browser,
+            check_cancel=check_cancel,
+        )
         _checkpoint()
         audio = extract_audio(media, work_dir=scratch)
         _checkpoint()

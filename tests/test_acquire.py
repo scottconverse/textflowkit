@@ -137,3 +137,113 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
 
     acquire._fetch_with_module("https://example.com/v", work_dir=tmp_path, cookies_from_browser=None)
     assert captured.get("js_runtimes") == {"node": {}}
+
+
+# --- cancellation during download -----------------------------------------
+
+def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_path):
+    """The progress hook must call check_cancel, which is what lets a long
+    download be interrupted instead of running to completion."""
+    from textflowkit.sources import acquire
+
+    calls: list[int] = []
+
+    def check_cancel():
+        calls.append(1)
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=True):
+            # simulate yt-dlp reporting progress
+            for hook in self.opts.get("progress_hooks", []):
+                hook({"status": "downloading", "filename": None})
+            out = tmp_path / "v.webm"
+            out.write_bytes(b"x")
+            for hook in self.opts.get("progress_hooks", []):
+                hook({"status": "finished", "filename": str(out)})
+            return {"id": "v", "requested_downloads": [{"filepath": str(out)}]}
+
+    import sys
+    import types
+
+    fake = types.ModuleType("yt_dlp")
+    fake.YoutubeDL = FakeYDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake)
+
+    acquire._fetch_with_module(
+        "https://example.com/v",
+        work_dir=tmp_path,
+        cookies_from_browser=None,
+        check_cancel=check_cancel,
+    )
+    assert calls, "check_cancel was never invoked during download"
+
+
+def test_download_cancel_aborts_the_fetch(monkeypatch, tmp_path):
+    """A raising check_cancel must propagate out of the download."""
+    from textflowkit.core.executor import JobCancelled
+    from textflowkit.sources import acquire
+
+    def check_cancel():
+        raise JobCancelled()
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=True):
+            for hook in self.opts.get("progress_hooks", []):
+                hook({"status": "downloading"})   # raises here
+            return {"id": "v"}
+
+    import sys
+    import types
+
+    fake = types.ModuleType("yt_dlp")
+    fake.YoutubeDL = FakeYDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake)
+
+    with pytest.raises(JobCancelled):
+        acquire._fetch_with_module(
+            "https://example.com/v",
+            work_dir=tmp_path,
+            cookies_from_browser=None,
+            check_cancel=check_cancel,
+        )
+
+
+def test_fetch_media_prefers_module_path_when_cancellable(monkeypatch, tmp_path):
+    """The CLI cannot be interrupted, so a cancellable fetch must use the API."""
+    from textflowkit.sources import acquire
+    from textflowkit.sources.detect import SourceRef
+
+    used = {}
+
+    def fake_module(url, *, work_dir, cookies_from_browser, check_cancel=None):
+        used["module"] = True
+        return tmp_path / "v.webm"
+
+    monkeypatch.setattr(acquire, "_fetch_with_module", fake_module)
+    # pretend the CLI binary exists - we should still pick the module path
+    monkeypatch.setattr(acquire.shutil, "which", lambda name: "C:/fake/yt-dlp.exe")
+
+    acquire.fetch_media(
+        SourceRef(kind="url", location="https://example.com/v", platform="direct"),
+        work_dir=tmp_path,
+        check_cancel=lambda: None,
+    )
+    assert used.get("module") is True
