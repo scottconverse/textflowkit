@@ -24,16 +24,16 @@ jobs:
         run: ruff check .
 
   test:
-    # The product targets Windows (native, no WSL) and also has to work on
-    # Linux/macOS. Test both: Linux proves portability, Windows proves the
-    # platform we actually ship to. A Linux-only matrix would not be evidence
-    # for the Windows claim.
+    # The product targets Windows natively (ROCm, no WSL), and is used from
+    # Linux and macOS too. All three are exercised: Windows proves the platform
+    # we primarily ship to, Linux and macOS prove the code is not accidentally
+    # Windows-shaped. A single-OS matrix is not evidence for the others.
     name: test (${{ matrix.os }} / py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +48,10 @@ jobs:
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg --no-progress -y
+
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
 
       - name: Install package with dev + adapter extras
         shell: bash

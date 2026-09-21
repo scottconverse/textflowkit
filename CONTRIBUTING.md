@@ -27,8 +27,16 @@ Both run on every push and pull request via
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). If you can run those two
 commands clean, CI should pass.
 
-The test job runs against Python 3.10, 3.11, 3.12, and 3.13. Test on the oldest
-version you can if you touch typing or `__future__` imports.
+The test job runs a **3 OS x 4 Python matrix**: `ubuntu-latest`,
+`windows-latest`, and `macos-latest`, each against Python 3.10, 3.11, 3.12, and
+3.13 (12 jobs, plus lint).
+
+- **Windows is the primary target** (native, ROCm, no WSL) — it must pass.
+- **Linux and macOS** prove the code is not accidentally Windows-shaped.
+
+Test on the oldest Python you can if you touch typing or `__future__` imports,
+and be wary of anything time- or path-shaped: a wall-clock ordering bug once
+passed on Linux and Python 3.13 while failing on Windows Python 3.10-3.12.
 
 ## Working on Whisper / GPU code
 
@@ -68,3 +76,4 @@ Read [LEGAL.md](LEGAL.md) before adding a source adapter.
 ## Security
 
 Do not open a public issue for a vulnerability. See [SECURITY.md](SECURITY.md).
+
