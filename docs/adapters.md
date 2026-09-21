@@ -15,25 +15,44 @@ them: the CLI, the MCP server, and the HTTP API all call
 
 ## Harness transport support
 
-**Evidence tier: `static`.** The table below was established by reading each
-harness's MCP configuration and, for DSH, its published plugin README. **No live
-MCP call was made from any of these harnesses.** Config-compatible is not the same
-as integration-tested; the server itself was verified over stdio with a real MCP
-client (`tests-run`), but that client was not one of these four.
+**Evidence tier: `browsed` / live-connection.** Each harness's own MCP client was
+pointed at this server and reported a connection, on 2026-09-21. This is stronger
+than reading config files, and it is still **not** an end-to-end transcription run
+driven by each harness — no harness was asked to complete a real transcription
+task through the tools.
 
-| Harness | stdio | Streamable HTTP | Notes |
+| Harness | Version | Transport used | How it was verified |
 |---|---|---|---|
-| **DSH** (`@deepseek-ai/dsh-mcp-client` 0.1.1-rc.2) | ✅ | ✅ | `transport: stdio \| streamable-http`. Vendors MCP SDK ^1.12 → locked 1.29.0. Tools become `mcp__<serverName>__<rawName>`. |
-| **Claude Code** (2.1.269) | ✅ | ✅ | `claude mcp add --transport http ...` or stdio; add-json accepts stdio/SSE/HTTP. |
-| **Codex CLI** (0.147.0) | ✅ | — | Manage with `codex mcp add`. |
-| **OpenCode** (1.18.18) | ✅ | ✅ | Config `{"type":"remote","url":...}` for HTTP, or local for stdio. |
+| **DSH** | 0.1.1-rc.2 | stdio | Profile composed with an `insert` patch; the DSH node process **spawned our server as a child** (parent/child confirmed from the process table) |
+| **Claude Code** | 2.1.269 | stdio | `claude mcp add` + `claude mcp list` → `√ Connected` |
+| **Codex CLI** | 0.147.0 | stdio | `codex mcp add` → `enabled: true`; server reachable via Codex's exact configured command; handshake returned 6 tools |
+| **OpenCode** | 1.18.18 | Streamable HTTP | `opencode mcp add --url` + `opencode mcp list` → `✓ textflowkit connected`; `opencode mcp debug` → `HTTP response: 200 OK` |
+
+Two transport notes learned from doing this:
+
+- **OpenCode's `mcp add` accepts only `--url`** — no command flag. OpenCode must
+  use the HTTP transport (`textflowkit-mcp --transport http`), not stdio.
+- **Claude Code's `mcp add` cannot pass a bare `-m module` argument** in this
+  version. Use the `textflowkit-mcp` console script instead — that form is
+  verified connected above.
 
 The negotiated MCP protocol version from this server is **2025-11-25** — observed
-from a real stdio handshake, not from a harness.
+from a real stdio handshake.
 
-Because the tool surface is identical across transports, pick transport by
-deployment shape, not by harness.
+### DSH configuration (stdio)
 
+```yaml
+- insert:
+    - id: mcp-textflowkit
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: textflowkit
+        transport: stdio
+        command: /path/to/textflowkit-mcp
+```
+
+`insert:` is required — a patch entry that is not wrapped in `insert` is treated as
+targeting an existing entry and fails with `patch: entry "<id>" not found`.
 ## MCP (for AI harnesses)
 
 ```bash
@@ -134,5 +153,6 @@ job id immediately means:
 
 The job store is in-memory and bounded (`max_jobs=200`, terminal jobs evicted
 first). Swap `JobStore` for a durable backend without touching callers.
+
 
 

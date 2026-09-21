@@ -114,10 +114,10 @@ textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
 `export_transcript`, `list_sources`, `list_jobs`.
 
-**Transport support** for DSH, Claude Code, Codex, and OpenCode is documented below
-and was established by reading each harness's MCP configuration — **not** by making
-a live MCP call from each one. Treat it as configuration-compatible, not
-integration-tested. See [docs/adapters.md](docs/adapters.md).
+**Integration-checked against DSH, Claude Code, Codex, and OpenCode.** In each
+case the harness's own MCP client was pointed at this server and reported a live
+connection. See [docs/adapters.md](docs/adapters.md) for per-harness configuration
+and the exact evidence.
 
 ## Use as an HTTP API
 
@@ -150,6 +150,7 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
 adapter.
+
 
 
 
