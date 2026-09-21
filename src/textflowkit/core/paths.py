@@ -22,10 +22,15 @@ import os
 from pathlib import Path
 
 ENV_OUTPUT_ROOT = "TEXTFLOWKIT_OUTPUT_ROOT"
+ENV_INPUT_ROOT = "TEXTFLOWKIT_INPUT_ROOT"
 
 
 class UnsafeOutputPathError(ValueError):
     """Raised when a requested output directory escapes the allowed root."""
+
+
+class UnsafeInputPathError(ValueError):
+    """Raised when a local input path escapes the allowed input root."""
 
 
 def output_root() -> Path:
@@ -65,3 +70,62 @@ def ensure_output_dir(requested: str | None) -> Path:
     resolved = resolve_output_dir(requested)
     resolved.mkdir(parents=True, exist_ok=True)
     return resolved
+
+
+# --- input confinement ----------------------------------------------------
+
+def resolve_input_path(requested: str | Path, *, root: str | Path | None) -> Path:
+    """Resolve a local input path, optionally confined to `root`.
+
+    Confinement is opt-in. When `root` is None the path is returned resolved but
+    unrestricted, because the caller is the principal - a CLI user who typed the
+    path themselves. The adapters pass a root by default, because there the
+    caller may be a model acting on untrusted content.
+
+    Raises `UnsafeInputPathError` when the path is outside the root, or when it
+    does not name readable regular file.
+    """
+    candidate = Path(requested).expanduser()
+
+    if root is None:
+        resolved = candidate.resolve()
+        if not resolved.exists():
+            raise FileNotFoundError(f"no such file: {requested}")
+        if not resolved.is_file():
+            raise ValueError(f"not a file: {requested}")
+        return resolved
+
+    base = Path(root).expanduser().resolve()
+    target = candidate if candidate.is_absolute() else (base / candidate)
+    resolved = target.resolve()
+
+    if resolved != base and base not in resolved.parents:
+        raise UnsafeInputPathError(
+            f"input path '{requested}' is outside the allowed input root "
+            f"'{base}'. Set {ENV_INPUT_ROOT} to widen the root, or use a path "
+            "inside it."
+        )
+    if not resolved.exists():
+        raise FileNotFoundError(f"no such file: {requested}")
+    if not resolved.is_file():
+        raise ValueError(f"not a file: {requested}")
+    return resolved
+
+
+def default_input_root() -> Path | None:
+    """The configured input root, or None when confinement is not requested."""
+    raw = os.environ.get(ENV_INPUT_ROOT)
+    return Path(raw).expanduser().resolve() if raw else None
+
+
+def server_input_root() -> Path:
+    """The input root a long-running adapter should enforce.
+
+    Adapters default to confining local inputs to the current working directory,
+    because their caller may be a model acting on untrusted content rather than
+    the person who owns the machine. Set TEXTFLOWKIT_INPUT_ROOT to widen it:
+
+        TEXTFLOWKIT_INPUT_ROOT=/            # no practical confinement
+        TEXTFLOWKIT_INPUT_ROOT=/srv/media   # one directory
+    """
+    return default_input_root() or Path.cwd().resolve()

@@ -173,6 +173,25 @@ after fetch, after extract, after transcribe - so a cancellation during a
 20-minute transcription takes effect when that call returns, not instantly. The
 API reports `cancelling` rather than claiming an instant stop it cannot deliver.
 
+## Input paths are confined
+
+Adapters accept a **local file path** from a caller — and there the caller may be
+a model acting on untrusted content, not the machine's owner. Local inputs are
+confined to an allowed root:
+
+- `TEXTFLOWKIT_INPUT_ROOT` sets it.
+- **For the adapters the default is the current working directory**, so an MCP or
+  HTTP caller cannot name an arbitrary file on the host.
+- Paths outside the root, and `..` escapes, are rejected before the file is read.
+
+```bash
+TEXTFLOWKIT_INPUT_ROOT=/srv/media textflowkit-mcp --transport http
+TEXTFLOWKIT_INPUT_ROOT=/            # no practical confinement
+```
+
+The CLI is deliberately **not** confined: the user typed the path and is the
+principal.
+
 ## Output paths are confined
 
 Adapters accept a destination directory from a caller — a CLI user, an HTTP

@@ -37,6 +37,7 @@ def run_job(
     keep_media: bool = False,
     work_dir: str | Path | None = None,
     check_cancel: Callable[[], None] | None = None,
+    input_root: str | Path | None = None,
 ) -> None:
     """Execute a job, recording its terminal state. Callers decide the thread."""
     # Do not start work that has already been cancelled while queued.
@@ -59,6 +60,7 @@ def run_job(
             keep_media=keep_media,
             work_dir=work_dir,
             check_cancel=check_cancel,
+            input_root=input_root,
         )
     except JobCancelled:
         store.update(job.id, state=JobState.CANCELLED, progress="cancelled")

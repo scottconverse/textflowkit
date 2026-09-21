@@ -16,6 +16,11 @@ from pathlib import Path
 
 from textflowkit.core.engine import get_engine
 from textflowkit.core.model import Transcript
+from textflowkit.core.paths import (
+    UnsafeInputPathError,
+    default_input_root,
+    resolve_input_path,
+)
 from textflowkit.render import SUPPORTED_FORMATS, write_all
 from textflowkit.sources.acquire import AcquisitionError, extract_audio, fetch_media, require_tool
 from textflowkit.sources.detect import resolve_source
@@ -44,6 +49,7 @@ def transcribe(
     keep_media: bool = False,
     work_dir: str | Path | None = None,
     check_cancel: Callable[[], None] | None = None,
+    input_root: str | Path | None = None,
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
 
@@ -66,6 +72,15 @@ def transcribe(
             raise PipelineError(
                 f"unsupported format '{fmt}'; choose from {', '.join(SUPPORTED_FORMATS)}"
             )
+
+    # A local path may be confined; a URL is guarded separately by the SSRF
+    # check inside resolve_source. `input_root=None` means "use the configured
+    # root if one is set", which keeps the CLI unconfined by default.
+    if not source.startswith(("http://", "https://")):
+        try:
+            resolve_input_path(source, root=input_root if input_root is not None else default_input_root())
+        except (FileNotFoundError, ValueError, UnsafeInputPathError) as exc:
+            raise PipelineError(str(exc)) from exc
 
     try:
         ref = resolve_source(source)

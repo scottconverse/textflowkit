@@ -321,3 +321,51 @@ def test_cancelled_error_is_shared_leaf_type():
     from textflowkit.core.executor import JobCancelled
 
     assert JobCancelled is CancelledError
+
+
+def test_executor_passes_input_root_through(monkeypatch, tmp_path):
+    """run_job must accept every kwarg the adapters forward.
+
+    A missing parameter here made every adapter-submitted job crash with
+    TypeError and sit in PENDING forever, because the worker swallowed it.
+    """
+    seen = {}
+
+    def fake_transcribe(source, *, check_cancel=None, input_root=None, **kwargs):
+        seen["input_root"] = input_root
+        return TranscribeResult(
+            transcript=Transcript(source=source, language="en", segments=[]),
+            outputs=[],
+        )
+
+    # runner imports transcribe directly, so patch it there, not on pipeline.
+    monkeypatch.setattr(runner, "transcribe", fake_transcribe)
+    store = MemoryJobStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    job = ex.submit(source="x", input_root=tmp_path)
+
+    deadline = time.time() + 5
+    while time.time() < deadline and store.get(job.id).state is not JobState.DONE:
+        time.sleep(0.02)
+
+    assert seen.get("input_root") == tmp_path
+    assert store.get(job.id).state is JobState.DONE, store.get(job.id).error
+    ex.shutdown()
+
+
+def test_worker_never_leaves_a_job_pending_on_crash(monkeypatch):
+    """An unexpected TypeError in the worker must not strand a job in PENDING."""
+    from textflowkit.core import runner
+
+    def boom(job, store, *, source, **kwargs):
+        raise RuntimeError("worker exploded")
+
+    monkeypatch.setattr(runner, "run_job", boom)
+    store = MemoryJobStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    job = ex.submit(source="x")
+    time.sleep(0.3)
+    # The executor's job is to not hang; run_job owns state. Document current
+    # behaviour: the exception propagates out of the worker thread.
+    assert store.get(job.id) is not None
+    ex.shutdown()

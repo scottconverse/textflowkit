@@ -15,7 +15,11 @@ from typing import Any
 from textflowkit import __version__
 from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store
-from textflowkit.core.paths import UnsafeOutputPathError, ensure_output_dir
+from textflowkit.core.paths import (
+    UnsafeOutputPathError,
+    ensure_output_dir,
+    server_input_root,
+)
 from textflowkit.core.runner import submit, transcript_for
 from textflowkit.render import SUPPORTED_FORMATS, render
 
@@ -84,6 +88,7 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
         model=req.model,
         device=req.device,
         cookies_from_browser=req.cookies_from_browser,
+        input_root=server_input_root(),
     )
     return job.to_dict()
 
