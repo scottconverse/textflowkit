@@ -10,6 +10,7 @@ Platform differences live entirely in the source layer.
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,8 +43,23 @@ def transcribe(
     cookies_from_browser: str | None = None,
     keep_media: bool = False,
     work_dir: str | Path | None = None,
+    check_cancel: Callable[[], None] | None = None,
 ) -> TranscribeResult:
-    """Run the full pipeline for a URL or local file."""
+    """Run the full pipeline for a URL or local file.
+
+    `check_cancel` is an optional callback invoked at stage boundaries. It is
+    expected to raise in order to abort the run. Cancellation is therefore
+    cooperative: the stage boundaries are the checkpoints, so a job cannot be
+    interrupted part-way through a single `fetch_media` or `engine.transcribe`
+    call. That limit is deliberate and documented rather than hidden.
+    """
+
+    def _checkpoint() -> None:
+        if check_cancel is not None:
+            check_cancel()
+
+    _checkpoint()
+
     formats = formats or ["json", "srt", "txt"]
     for fmt in formats:
         if fmt.lower().lstrip(".") not in SUPPORTED_FORMATS:
@@ -56,6 +72,8 @@ def transcribe(
     except (FileNotFoundError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
+    _checkpoint()
+
     scratch = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="textflowkit-"))
     scratch.mkdir(parents=True, exist_ok=True)
 
@@ -64,7 +82,9 @@ def transcribe(
 
     try:
         media = fetch_media(ref, work_dir=scratch, cookies_from_browser=cookies_from_browser)
+        _checkpoint()
         audio = extract_audio(media, work_dir=scratch)
+        _checkpoint()
     except AcquisitionError as exc:
         raise PipelineError(str(exc)) from exc
 
@@ -73,6 +93,8 @@ def transcribe(
         transcript = eng.transcribe(audio, language=language)
     except Exception as exc:  # engine failures are user-facing
         raise PipelineError(f"transcription failed: {exc}") from exc
+
+    _checkpoint()
 
     transcript.source = source
     transcript.platform = ref.platform
@@ -92,4 +114,3 @@ def transcribe(
                 pass
 
     return TranscribeResult(transcript=transcript, outputs=outputs)
-

@@ -1,10 +1,22 @@
-"""Background job execution for long-running transcription."""
+"""Job execution.
+
+`run_job` executes one job synchronously and owns its state transitions.
+`submit` is the entry point callers use; it delegates to the process-wide
+`JobExecutor`, so jobs get bounded concurrency and can be cancelled.
+
+Cancellation contract:
+
+- `JobCancelled` is an orderly stop, not a failure. The job ends CANCELLED.
+- A job that finishes while a cancellation is in flight must not overwrite the
+  cancelled state with DONE, so the final transition re-reads the job first.
+"""
 
 from __future__ import annotations
 
-import threading
+from collections.abc import Callable
 from pathlib import Path
 
+from textflowkit.core.executor import JobCancelled, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
 from textflowkit.core.pipeline import PipelineError, transcribe
@@ -24,15 +36,17 @@ def run_job(
     cookies_from_browser: str | None = None,
     keep_media: bool = False,
     work_dir: str | Path | None = None,
+    check_cancel: Callable[[], None] | None = None,
 ) -> None:
-    """Execute a job synchronously. Callers decide the thread."""
+    """Execute a job, recording its terminal state. Callers decide the thread."""
+    # Do not start work that has already been cancelled while queued.
+    current = store.get(job.id)
+    if current is not None and current.is_terminal:
+        return
+
     store.update(job.id, state=JobState.RUNNING, progress="starting")
 
-    def _progress(message: str) -> None:
-        store.update(job.id, progress=message)
-
     try:
-        _progress("resolving source")
         result = transcribe(
             source,
             language=language,
@@ -44,15 +58,29 @@ def run_job(
             cookies_from_browser=cookies_from_browser,
             keep_media=keep_media,
             work_dir=work_dir,
+            check_cancel=check_cancel,
         )
+    except JobCancelled:
+        store.update(job.id, state=JobState.CANCELLED, progress="cancelled")
+        return
     except PipelineError as exc:
         store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
         return
-    # Last-resort guard: a background job must never be left stuck in RUNNING
-    # because of an unexpected exception type. The error is recorded on the job,
-    # not swallowed. Narrower catches above handle the expected failure modes.
+    # Last-resort guard: a job must never be left stuck in RUNNING because of an
+    # unexpected exception type. The error is recorded on the job, not swallowed.
+    # Narrower catches above handle the expected failure modes.
     except Exception as exc:  # noqa: BLE001
-        store.update(job.id, state=JobState.ERROR, error=f"{type(exc).__name__}: {exc}", progress="failed")
+        store.update(
+            job.id,
+            state=JobState.ERROR,
+            error=f"{type(exc).__name__}: {exc}",
+            progress="failed",
+        )
+        return
+
+    # A cancellation that arrived while the last stage ran must win over DONE.
+    latest = store.get(job.id)
+    if latest is not None and latest.state is JobState.CANCELLED:
         return
 
     store.update(
@@ -71,26 +99,28 @@ def submit(
     background: bool = True,
     **kwargs,
 ) -> Job:
-    """Create a job and optionally run it on a daemon thread."""
-    job = store.create(source)
+    """Create a job and schedule it.
+
+    `background=False` runs inline (used by tests and by callers that want a
+    blocking call). Otherwise the job goes to the process-wide executor, which
+    bounds concurrency and can cancel it.
+    """
     if not background:
+        job = store.create(source)
         run_job(job, store, source=source, **kwargs)
         return job
 
-    thread = threading.Thread(
-        target=run_job,
-        args=(job, store),
-        kwargs={"source": source, **kwargs},
-        daemon=True,
-        name=f"textflowkit-job-{job.id}",
-    )
-    thread.start()
-    return job
+    executor = get_default_executor()
+    if executor.store is not store:
+        # A caller passed a specific store; run it directly rather than silently
+        # routing the job to a different store than the one they hold.
+        job = store.create(source)
+        run_job(job, store, source=source, **kwargs)
+        return job
+    return executor.submit(source=source, **kwargs)
 
 
 def transcript_for(job: Job) -> Transcript | None:
     if job.transcript is None:
         return None
     return Transcript.from_dict(job.transcript)
-
-
