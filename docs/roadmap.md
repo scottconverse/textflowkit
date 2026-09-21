@@ -15,10 +15,11 @@
 
 - [x] Verified end-to-end on local file and live URL (YouTube)
 - [x] JavaScript runtime auto-detection for yt-dlp (deno/node/bun/quickjs)
-- [ ] MCP server adapter (`adapters/mcp.py`)
-- [ ] HTTP service adapter (`adapters/http.py`)
+- [x] MCP server adapter (stdio + Streamable HTTP)
+- [x] HTTP service adapter (FastAPI, job-based)
 - [ ] Translation stage (`--translate-to`)
 - [ ] Speaker diarization (optional dependency)
+- [ ] Durable job store (current is in-memory)
 - [ ] Resumable / batched jobs
 - [ ] DOCX and PDF export
 
@@ -29,5 +30,6 @@
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
+
 
 

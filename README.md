@@ -49,7 +49,8 @@ the core; the interfaces are thin.
 | **Sources** | `src/textflowkit/sources` | Per-platform URL normalization + media acquisition |
 | **Renderers** | `src/textflowkit/render` | TXT / SRT / VTT / JSON / Markdown output |
 | **CLI** | `src/textflowkit/cli.py` | Reference interface (subprocess-friendly) |
-| **Adapters** | `src/textflowkit/adapters` | MCP server, HTTP service (thin wrappers) |
+| **MCP** | `src/textflowkit/adapters/mcp_server.py` | stdio + Streamable HTTP, for AI harnesses |
+| **HTTP** | `src/textflowkit/adapters/http_server.py` | JSON API, for software products and web frontends |
 
 Because the core owns the pipeline, adding a door is cheap — and adding a platform
 means writing one source adapter, not another tool.
@@ -90,10 +91,41 @@ textflowkit transcribe ./talk.mp4 --formats srt,vtt,txt,json --output-dir ./out
 textflowkit transcribe "$URL" --language en --translate-to es
 ```
 
+## Use as an MCP server
+
+```bash
+pip install "textflowkit[mcp]"
+textflowkit-mcp                                  # stdio
+textflowkit-mcp --transport http --port 8766     # Streamable HTTP
+```
+
+Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
+`export_transcript`, `list_sources`, `list_jobs`.
+
+Verified against **DSH**, Claude Code, Codex, and OpenCode. See
+[docs/adapters.md](docs/adapters.md) for configuration for each.
+
+## Use as an HTTP API
+
+```bash
+pip install "textflowkit[http]"
+textflowkit-http --port 8767
+```
+
+Submit a job, poll it, fetch the transcript. No authentication is bundled —
+bind to localhost or front it with your own gateway.
+
+## Long jobs never block
+
+Every interface is **job-based**: `transcribe_media` returns a job id
+immediately and you poll for completion. That is what lets the same core serve a
+CLI, AI harnesses, software products, and a future web frontend without
+interface changes.
+
 ## Status
 
-**v0.1.0 — early.** The core pipeline and CLI are the priority; adapters land once
-the engine is proven end-to-end. See [docs/roadmap.md](docs/roadmap.md).
+**v0.1.0 — early.** Core, CLI, MCP, and HTTP all work and are verified
+end-to-end on real media. See [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
@@ -104,3 +136,4 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
 adapter.
+

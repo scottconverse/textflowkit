@@ -30,10 +30,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=2.0"]
+http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
+all = ["textflowkit[mcp,http]"]
 
 [project.scripts]
 textflowkit = "textflowkit.cli:main"
+textflowkit-mcp = "textflowkit.adapters.mcp_server:main"
+textflowkit-http = "textflowkit.adapters.http_server:main"
 
 [project.urls]
 Homepage = "https://github.com/scottconverse/textflowkit"
@@ -49,4 +53,5 @@ target-version = "py310"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
 
