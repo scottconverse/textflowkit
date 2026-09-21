@@ -16,6 +16,8 @@
 - [x] Verified end-to-end on local file and live URL (YouTube)
 - [x] SSRF guard on user-supplied URLs
 - [x] Confined output paths (`TEXTFLOWKIT_OUTPUT_ROOT`)
+- [x] Confined input paths (`TEXTFLOWKIT_INPUT_ROOT`)
+- [x] Non-loopback HTTP binds refused unless explicit
 - [x] CI: ruff + pytest on Python 3.10-3.13
 - [x] JavaScript runtime auto-detection for yt-dlp (deno/node/bun/quickjs)
 - [x] MCP server adapter (stdio + Streamable HTTP)

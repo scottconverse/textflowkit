@@ -10,9 +10,11 @@ localhost, or put it behind your own gateway before exposing it.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from textflowkit import __version__
+from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
 from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.paths import (
@@ -217,8 +219,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8767, help="Bind port (default 8767)")
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help=(
+            "permit binding to a non-loopback address. This surface has no "
+            f"authentication; only do this behind your own gateway. ({ENV_ALLOW_REMOTE}=1 also works)"
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"textflowkit-http {__version__}")
     args = parser.parse_args(argv)
+
+    try:
+        check_bind_safety(args.host, allow_remote=args.allow_remote or None)
+    except UnsafeBindError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     uvicorn.run(app, host=args.host, port=args.port)
     return 0

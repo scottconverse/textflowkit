@@ -122,6 +122,28 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs/{id}/export` | write files to disk |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
+### Binding beyond loopback is refused
+
+The HTTP surfaces have no authentication, so binding one to a reachable
+interface would expose it. That specific configuration is **refused at startup**:
+
+```bash
+textflowkit-http --host 0.0.0.0
+# error: refusing to bind to '0.0.0.0': the HTTP surface has no authentication ...
+```
+
+Loopback (`127.0.0.1`, `localhost`, `::1`) is always allowed. To bind elsewhere
+you must say so explicitly:
+
+```bash
+textflowkit-http --host 0.0.0.0 --allow-remote
+TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
+```
+
+Only do that behind your own gateway. The guard deliberately does not add
+authentication - it makes the unsafe configuration an explicit decision instead
+of a default.
+
 **No authentication is included.** Bind to localhost, or front it with your own
 gateway before exposing it. That is deliberate: auth belongs to the deployment,
 not to a transcript library.

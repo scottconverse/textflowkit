@@ -39,10 +39,13 @@ hosted service. There is no server-side multi-tenancy and no user account system
 
 ### Not defended (by design — read before deploying)
 
-- **No authentication on the HTTP adapter.** `textflowkit-http` binds to
-  `127.0.0.1` by default and ships no auth. Binding it to a public interface puts
-  an unauthenticated file-writing and network-fetching API on that interface.
-  Front it with your own gateway and auth, or keep it on localhost.
+- **No authentication on the HTTP adapter.** `textflowkit-http` ships no auth.
+  Auth belongs to the deployment, not to a transcript library, so this is not
+  "fixed" by adding a half-built login.
+  What *is* guarded: binding beyond loopback is **refused at startup** unless you
+  pass `--allow-remote` or set `TEXTFLOWKIT_ALLOW_REMOTE=1`. The failure mode is a
+  clear error rather than a silently exposed service. If you enable it, put your
+  own gateway and auth in front.
 - **No sandboxing of `ffmpeg` / `yt-dlp`.** They run as your user on input you
   supply. Media is untrusted data; treat a malformed file as you would any
   untrusted input to those tools.
