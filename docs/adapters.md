@@ -196,6 +196,52 @@ after fetch, after extract, after transcribe - so a cancellation during a
 20-minute transcription takes effect when that call returns, not instantly. The
 API reports `cancelling` rather than claiming an instant stop it cannot deliver.
 
+## Translation and speaker labels
+
+Both are opt-in stages that run after transcription, both write into fields the
+transcript model already had, and both **fail loudly when unavailable** rather
+than returning output that quietly lacks the feature.
+
+### Translation
+
+```bash
+textflowkit transcribe "$URL" --translate-to Spanish
+TEXTFLOWKIT_TRANSLATE_MODEL=glm-5.3-flash:cloud    # which model
+TEXTFLOWKIT_OLLAMA_HOST=http://127.0.0.1:11434     # which server
+```
+
+Backend is local Ollama by default, so transcript text stays on the machine.
+Requests are **batched** (20 segments per round trip), and if a batch comes back
+unparseable the chunk is retried one segment at a time - correctness does not
+depend on the model obeying a format. Identical text is cached, which matters
+because transcripts repeat phrases.
+
+The result length is checked against the input, so a misbehaving model cannot
+shift text onto the wrong segment. An unreachable backend raises; it never
+returns the source text as a translation.
+
+`translation` metadata is recorded on the transcript (backend, target, how many
+segments were translated).
+
+### Speaker labels
+
+```bash
+textflowkit transcribe "$URL" --diarize
+HF_TOKEN=hf_...                   # required: the model is gated
+```
+
+Requires the optional `diarize` extra (`pip install 'textflowkit[diarize]'`) and a
+Hugging Face token with access to the pyannote model. Missing either one **fails
+the job with an actionable message** - verified over both the CLI and MCP.
+
+Each segment takes the speaker with the greatest time overlap. A segment with no
+overlapping turn is left **unlabelled rather than guessed at**, and exact ties go
+to the earlier turn so the result is deterministic.
+
+**Honest limit:** the live pyannote path is not covered by CI. No CI runner has
+the gated model, so the assignment logic is tested with a stub and the real model
+path is unverified.
+
 ## Reading a long transcript
 
 Returning a whole transcript is a context problem. A 19-minute video is already

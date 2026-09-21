@@ -22,6 +22,11 @@ from textflowkit.core.paths import (
     default_input_root,
     resolve_input_path,
 )
+from textflowkit.core.translate import (
+    TranslationError,
+    get_translator,
+    translate_segments,
+)
 from textflowkit.render import SUPPORTED_FORMATS, write_all
 from textflowkit.sources.acquire import AcquisitionError, extract_audio, fetch_media, require_tool
 from textflowkit.sources.detect import resolve_source
@@ -53,6 +58,8 @@ def transcribe(
     input_root: str | Path | None = None,
     diarize: bool = False,
     diarizer_backend: str = "pyannote",
+    translate_to: str | None = None,
+    translator_backend: str = "ollama",
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
 
@@ -136,6 +143,23 @@ def transcribe(
             "speakers": sorted({t.speaker for t in turns}),
             "turns": len(turns),
             "segments_labelled": labelled,
+        }
+
+    if translate_to:
+        # Refuse loudly: never present source text as though it were translated.
+        try:
+            translator = get_translator(translator_backend)
+            translated = translate_segments(
+                transcript.segments, translate_to, translator=translator
+            )
+        except TranslationError as exc:
+            raise PipelineError(f"translation requested but unavailable: {exc}") from exc
+        except ValueError as exc:
+            raise PipelineError(f"translation failed: {exc}") from exc
+        transcript.metadata["translation"] = {
+            "backend": getattr(translator, "name", translator_backend),
+            "target": translate_to,
+            "segments_translated": translated,
         }
 
     _checkpoint()

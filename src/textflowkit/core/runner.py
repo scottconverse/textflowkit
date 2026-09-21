@@ -40,6 +40,8 @@ def run_job(
     input_root: str | Path | None = None,
     diarize: bool = False,
     diarizer_backend: str = "pyannote",
+    translate_to: str | None = None,
+    translator_backend: str = "ollama",
 ) -> None:
     """Execute a job, recording its terminal state. Callers decide the thread."""
     # Do not start work that has already been cancelled while queued.
@@ -65,6 +67,8 @@ def run_job(
             input_root=input_root,
             diarize=diarize,
             diarizer_backend=diarizer_backend,
+            translate_to=translate_to,
+            translator_backend=translator_backend,
         )
     except JobCancelled:
         store.update(job.id, state=JobState.CANCELLED, progress="cancelled")

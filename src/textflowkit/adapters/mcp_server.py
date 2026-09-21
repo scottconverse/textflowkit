@@ -105,6 +105,7 @@ def transcribe_media(
     device: str | None = None,
     cookies_from_browser: str | None = None,
     diarize: bool = False,
+    translate_to: str | None = None,
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
@@ -128,6 +129,8 @@ def transcribe_media(
         diarize: Label speakers. Requires the optional diarize extra and a gated
             Hugging Face model; the job fails with a clear error if unavailable
             rather than returning empty speakers.
+        translate_to: Target language code (e.g. 'es'). Translates the transcript
+            with the configured backend; fails loudly if it is unreachable.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
@@ -150,6 +153,7 @@ def transcribe_media(
         work_dir=None,
         input_root=server_input_root(),
         diarize=diarize,
+        translate_to=translate_to,
     )
     return {
         "job_id": job.id,

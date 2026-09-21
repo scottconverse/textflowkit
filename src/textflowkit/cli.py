@@ -37,6 +37,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "Face token with access to the gated pyannote model; fails loudly if either is missing"
         ),
     )
+    t.add_argument(
+        "--translate-to",
+        default=None,
+        metavar="LANG",
+        help=(
+            "translate the transcript into LANG (e.g. es) using the configured "
+            "backend; the job fails loudly if the backend is unreachable"
+        ),
+    )
     t.add_argument("--cookies-from-browser", default=None,
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
@@ -68,6 +77,7 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             device=args.device,
             cookies_from_browser=args.cookies_from_browser,
             diarize=args.diarize,
+            translate_to=args.translate_to,
         )
     except PipelineError as exc:
         print(f"error: {exc}", file=sys.stderr)

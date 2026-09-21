@@ -96,12 +96,15 @@ textflowkit transcribe ./talk.mp4 --formats srt,vtt,txt,json --output-dir ./out
 # force a language instead of auto-detecting
 textflowkit transcribe "$URL" --language en
 
+# translate the transcript (uses the configured backend)
+textflowkit transcribe "$URL" --translate-to Spanish
+
+# label speakers (requires the optional extra and a Hugging Face token)
+textflowkit transcribe "$URL" --diarize
+
 # re-render an existing transcript in another format
 textflowkit export ./transcript.json --format vtt
 ```
-
-> **Translation is not implemented yet.** `--translate-to` does not exist. See
-> [docs/roadmap.md](docs/roadmap.md) for the translation stage's status.
 
 ## Use as an MCP server
 
@@ -112,7 +115,8 @@ textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
 
 Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
-`export_transcript`, `list_sources`, `list_jobs`, `cancel_job`.
+`export_transcript`, `list_sources`, `list_jobs`, `cancel_job`,
+`search_transcript`.
 
 **Integration-checked against DSH, Claude Code, Codex, and OpenCode.** In each
 case the harness's own MCP client was pointed at this server and reported a live
