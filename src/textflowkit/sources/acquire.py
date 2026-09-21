@@ -51,6 +51,37 @@ def require_tool(name: str, *, module: str | None = None) -> str | None:
     )
 
 
+# JavaScript runtimes yt-dlp can use, in its own priority order. yt-dlp enables
+# only "deno" by default, so a machine that has Node (or bun/quickjs) still emits
+# "No supported JavaScript runtime could be found". Detecting what is actually
+# present and enabling it explicitly avoids requiring a specific runtime.
+JS_RUNTIMES = ("deno", "node", "bun", "quickjs")
+
+
+def detect_js_runtime() -> str | None:
+    """Return the highest-priority JavaScript runtime available, or None.
+
+    Mirrors yt-dlp's own priority order. Returning None is safe: yt-dlp falls
+    back to non-JS extraction, which works for many videos but can leave some
+    formats unavailable.
+    """
+    for name in JS_RUNTIMES:
+        if shutil.which(name):
+            return name
+    return None
+
+
+def _js_runtime_args() -> list[str]:
+    """Build yt-dlp JS-runtime flags for whatever runtime is installed."""
+    runtime = detect_js_runtime()
+    if not runtime:
+        return []
+    # yt-dlp enables deno by default; enabling another runtime requires clearing
+    # the defaults first so the detected runtime is the one actually used.
+    if runtime == "deno":
+        return []
+    return ["--no-js-runtimes", "--js-runtimes", runtime]
+
 def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | None) -> Path:
     """Download using the yt_dlp Python API (used when no CLI binary is on PATH)."""
     from yt_dlp import YoutubeDL
@@ -64,7 +95,9 @@ def _fetch_with_module(url: str, *, work_dir: Path, cookies_from_browser: str | 
             if path:
                 hooks.append(Path(path))
 
+    runtime = detect_js_runtime()
     opts: dict = {
+        "js_runtimes": {runtime: {}} if runtime else {},
         "outtmpl": outtmpl,
         "noplaylist": True,
         "quiet": True,
@@ -125,6 +158,7 @@ def fetch_media(source: SourceRef, *, work_dir: str | Path, cookies_from_browser
     outtmpl = str(work / "%(id)s.%(ext)s")
     cmd = [
         yt_dlp,
+        *_js_runtime_args(),
         "--no-playlist",
         "--no-progress",
         "--restrict-filenames",
@@ -182,5 +216,6 @@ def extract_audio(media_path: str | Path, *, work_dir: str | Path, sample_rate: 
         detail = " | ".join(tail[-4:]) if tail else "unknown error"
         raise AcquisitionError(f"ffmpeg failed: {detail}")
     return out
+
 
 

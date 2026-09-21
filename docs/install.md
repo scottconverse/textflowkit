@@ -69,8 +69,44 @@ activated. Without the fallback you would hit
 `required tool 'yt-dlp' not found on PATH` even though the dependency is installed.
 Verified end-to-end against a public YouTube video.
 
+## JavaScript runtime (YouTube)
+
+Modern `yt-dlp` uses a JavaScript runtime to solve YouTube's signature/n-param
+challenges. **Only `deno` is enabled by default**, so a machine that has Node,
+bun, or quickjs still reports:
+
+```
+WARNING: No supported JavaScript runtime could be found.
+```
+
+This is not fatal — extraction falls back to non-JS paths and many videos work —
+but some formats become unavailable, which can leave no audio-only stream.
+
+`textflowkit` therefore **detects** what is installed and enables it explicitly, in
+yt-dlp's own priority order:
+
+```
+deno  ->  node  ->  bun  ->  quickjs
+```
+
+- If `deno` is present, no flags are needed (it is yt-dlp's default).
+- If another runtime is found, `--no-js-runtimes --js-runtimes <name>` is passed so
+  the detected runtime actually takes effect.
+- If **none** are found, nothing is passed and yt-dlp's normal fallback applies.
+
+This means **no specific runtime is required**. If you use YouTube heavily and want
+the warning gone, installing any one of them is enough — and there is no need to
+install Deno if you already have Node.
+
+To check what was detected:
+
+```bash
+python -c "from textflowkit.sources.acquire import detect_js_runtime; print(detect_js_runtime())"
+```
+
 ## CPU fallback
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
 CPU transcription is dramatically slower; prefer a smaller `--model`.
+
 
