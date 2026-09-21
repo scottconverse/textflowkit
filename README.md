@@ -112,7 +112,7 @@ textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
 
 Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
-`export_transcript`, `list_sources`, `list_jobs`.
+`export_transcript`, `list_sources`, `list_jobs`, `cancel_job`.
 
 **Integration-checked against DSH, Claude Code, Codex, and OpenCode.** In each
 case the harness's own MCP client was pointed at this server and reported a live
@@ -128,6 +128,16 @@ textflowkit-http --port 8767
 
 Submit a job, poll it, fetch the transcript. No authentication is bundled —
 bind to localhost or front it with your own gateway.
+
+## Durable, bounded, cancellable
+
+```bash
+TEXTFLOWKIT_DB=./jobs.db            # job state survives restart (SQLite)
+TEXTFLOWKIT_MAX_CONCURRENCY=1        # default; Whisper saturates a GPU alone
+```
+
+`cancel_job` stops a queued job immediately, or a running job at its next stage
+boundary. See [docs/adapters.md](docs/adapters.md).
 
 ## Long jobs never block
 

@@ -97,9 +97,8 @@ class JobExecutor:
 
     def start(self) -> None:
         """Start worker threads. Idempotent; called lazily by submit()."""
-        with self._lock:
-            if self._started or self._shutdown:
-                return
+
+        def _start_locked() -> None:
             for i in range(self._max_concurrency):
                 t = threading.Thread(
                     target=self._worker,
@@ -109,6 +108,18 @@ class JobExecutor:
                 t.start()
                 self._workers.append(t)
             self._started = True
+
+        with self._lock:
+            if self._started or self._shutdown:
+                return
+            # A durable store may hold jobs left mid-flight by a previous
+            # process. They have no worker now, so fail them rather than
+            # reporting jobs that can never finish. This assumes one owning
+            # process per store, which is the documented deployment model.
+            self._store.reap_incomplete(
+                reason="interrupted by restart; no worker is running this job"
+            )
+            _start_locked()
 
     def shutdown(self, *, wait: bool = True, timeout: float = 5.0) -> None:
         """Stop accepting work and drain the pool."""

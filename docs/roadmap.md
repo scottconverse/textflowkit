@@ -22,7 +22,9 @@
 - [x] HTTP service adapter (FastAPI, job-based)
 - [ ] Translation stage (not implemented; `--translate-to` does not exist)
 - [ ] Speaker diarization (optional dependency)
-- [ ] Durable job store (current is in-memory)
+- [x] Durable job store (SQLite via `TEXTFLOWKIT_DB`)
+- [x] Bounded concurrency (`TEXTFLOWKIT_MAX_CONCURRENCY`)
+- [x] Job cancellation (`cancel_job`)
 - [ ] Resumable / batched jobs
 - [ ] DOCX and PDF export
 

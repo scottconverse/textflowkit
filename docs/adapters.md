@@ -62,7 +62,7 @@ textflowkit-mcp --transport http --host 127.0.0.1 --port 8766
 ```
 
 Tools: `list_sources`, `transcribe_media`, `get_job_status`, `get_transcript`,
-`export_transcript`, `list_jobs`.
+`export_transcript`, `list_jobs`, `cancel_job`.
 
 Read-only tools carry `readOnlyHint: true`; the two that touch the network or
 disk carry `openWorldHint: true`.
@@ -120,10 +120,58 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | GET | `/jobs/{id}` | job status |
 | GET | `/jobs/{id}/transcript?format=` | rendered transcript |
 | POST | `/jobs/{id}/export` | write files to disk |
+| POST | `/jobs/{id}/cancel` | request cancellation |
 
 **No authentication is included.** Bind to localhost, or front it with your own
 gateway before exposing it. That is deliberate: auth belongs to the deployment,
 not to a transcript library.
+
+## Durable job state
+
+By default jobs live in memory and are lost when the process exits. Set
+`TEXTFLOWKIT_DB` to a file path and job state becomes durable:
+
+```bash
+TEXTFLOWKIT_DB=/var/lib/textflowkit/jobs.db textflowkit-mcp --transport http
+```
+
+Backed by SQLite (WAL). Transcripts, outputs, and job states survive a restart.
+
+**Orphaned work is reaped at startup.** A job left in `pending` or `running` by a
+previous process has no worker, so it is failed with a reason rather than reported
+as a job that will never finish. This assumes **one owning process per store** -
+two processes sharing one `TEXTFLOWKIT_DB` would reap each other's live jobs.
+
+## Concurrency
+
+Each submission used to start an unbounded thread. Jobs now run on a fixed worker
+pool:
+
+```bash
+TEXTFLOWKIT_MAX_CONCURRENCY=1   # default
+```
+
+The default is **1** deliberately. Whisper saturates a GPU on its own, so parallel
+jobs thrash VRAM rather than finishing sooner. Raise it only for CPU-bound or
+I/O-bound workloads where that reasoning does not apply.
+
+## Cancellation
+
+`cancel_job` (MCP) and `POST /jobs/{id}/cancel` (HTTP) stop a job. Cancellation is
+**cooperative**, and it behaves differently depending on job state - deliberately,
+because these are genuinely different situations:
+
+| Job state | Behaviour |
+|---|---|
+| `pending` (queued, not started) | Cancelled immediately. The worker skips it; it never runs. |
+| `running` | `cancel_requested` is set and the job stops at its **next stage boundary**. Until then it stays `running` with `progress: "cancelling"`. |
+| terminal | Refused, with the current state and a reason. |
+
+**The honest limit:** a job inside a single long model call cannot be interrupted
+mid-call. Checkpoints sit at stage boundaries - before resolve, after resolve,
+after fetch, after extract, after transcribe - so a cancellation during a
+20-minute transcription takes effect when that call returns, not instantly. The
+API reports `cancelling` rather than claiming an instant stop it cannot deliver.
 
 ## Output paths are confined
 

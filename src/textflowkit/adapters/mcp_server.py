@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from textflowkit import __version__
+from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import Job, JobState, get_default_store
 from textflowkit.core.paths import UnsafeOutputPathError, ensure_output_dir
 from textflowkit.core.runner import submit, transcript_for
@@ -41,6 +42,8 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 # Tools that reach the network or write files.
 OPEN_WORLD = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
+# Tools that change local job state without touching the network or disk.
+MUTATING = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
 
 
 INSTRUCTIONS = """\
@@ -264,6 +267,49 @@ def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
             }
     jobs = store.list(limit=limit, state=filter_state)
     return {"count": len(jobs), "jobs": [j.to_dict() for j in jobs]}
+
+
+@mcp.tool(annotations=MUTATING)
+def cancel_job(job_id: str) -> dict[str, Any]:
+    """Request cancellation of a pending or running job.
+
+    A queued job is cancelled immediately and never starts. A running job stops
+    at its next stage boundary, so it stays 'running' with cancel_requested set
+    until the boundary is reached. Poll get_job_status until state is
+    'cancelled'.
+
+    Args:
+        job_id: The id returned by transcribe_media.
+    """
+    job, err = _resolve_job(job_id)
+    if err:
+        return {"error": err}
+    assert job is not None
+
+    if job.is_terminal:
+        return {
+            "job_id": job_id,
+            "cancelled": False,
+            "state": job.state.value,
+            "reason": f"job is already {job.state.value}",
+        }
+
+    executor = get_default_executor()
+    accepted = executor.cancel(job_id)
+    latest = executor.store.get(job_id)
+    state = latest.state.value if latest is not None else job.state.value
+
+    next_step = (
+        "Job cancelled."
+        if state == "cancelled"
+        else "Cancellation requested; poll get_job_status until state is 'cancelled'."
+    )
+    return {
+        "job_id": job_id,
+        "cancelled": accepted,
+        "state": state,
+        "next": next_step,
+    }
 
 
 def run_stdio() -> None:

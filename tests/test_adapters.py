@@ -171,3 +171,104 @@ def test_http_transcript_conflict_before_done():
     job = store.create("x")  # stays PENDING
     r = TestClient(app).get(f"/jobs/{job.id}/transcript")
     assert r.status_code == 409
+
+
+# --- cancellation surface -------------------------------------------------
+
+def test_mcp_exposes_cancel_job():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import mcp
+
+    assert "cancel_job" in mcp._tool_manager._tools
+
+
+def test_mcp_cancel_annotations_are_mutating_not_open_world():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import mcp
+
+    ann = mcp._tool_manager._tools["cancel_job"].annotations
+    assert ann.read_only_hint is False
+    assert ann.destructive_hint is False
+    assert ann.open_world_hint is False   # local state only, no network/disk
+
+
+def test_mcp_cancel_unknown_job():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import cancel_job
+
+    out = cancel_job("nope")
+    assert "error" in out
+
+
+def test_mcp_cancel_terminal_job_reports_reason():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import cancel_job
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.DONE)
+
+    out = cancel_job(job.id)
+    assert out["cancelled"] is False
+    assert out["state"] == "done"
+    assert "already done" in out["reason"]
+
+
+def test_mcp_cancel_queued_job_succeeds():
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import cancel_job
+
+    store = get_default_store()
+    job = store.create("x")  # PENDING, no executor token
+    out = cancel_job(job.id)
+    assert out["cancelled"] is True
+    assert out["state"] == "cancelled"
+    assert store.get(job.id).state is JobState.CANCELLED
+
+
+def test_http_has_cancel_route():
+    pytest.importorskip("fastapi")
+    from textflowkit.adapters.http_server import app
+
+    paths = {getattr(r, "path", None) for r in app.routes}
+    assert "/jobs/{job_id}/cancel" in paths
+
+
+def test_http_cancel_unknown_job_404():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    assert TestClient(app).post("/jobs/nope/cancel").status_code == 404
+
+
+def test_http_cancel_terminal_job():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.ERROR)
+
+    r = TestClient(app).post(f"/jobs/{job.id}/cancel")
+    assert r.status_code == 200
+    assert r.json()["cancelled"] is False
+    assert r.json()["state"] == "error"
+
+
+def test_http_cancel_pending_job():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    store = get_default_store()
+    job = store.create("x")
+
+    r = TestClient(app).post(f"/jobs/{job.id}/cancel")
+    assert r.status_code == 200
+    assert r.json()["cancelled"] is True
+    assert r.json()["state"] == "cancelled"

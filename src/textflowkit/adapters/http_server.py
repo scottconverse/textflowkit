@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from textflowkit import __version__
+from textflowkit.core.executor import get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.paths import UnsafeOutputPathError, ensure_output_dir
 from textflowkit.core.runner import submit, transcript_for
@@ -112,6 +113,34 @@ def get_job(job_id: str) -> dict[str, Any]:
     if job is None:
         raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
     return job.to_dict(include_transcript=job.state is JobState.DONE)
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict[str, Any]:
+    """Request cancellation. 202-style: accepted, then poll for state.
+
+    A queued job is cancelled immediately. A running job stops at its next stage
+    boundary and reports state 'cancelled' once it does.
+    """
+    store = get_default_store()
+    job = store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
+    if job.is_terminal:
+        return {
+            "job_id": job_id,
+            "cancelled": False,
+            "state": job.state.value,
+            "reason": f"job is already {job.state.value}",
+        }
+
+    accepted = get_default_executor().cancel(job_id)
+    latest = store.get(job_id)
+    return {
+        "job_id": job_id,
+        "cancelled": accepted,
+        "state": latest.state.value if latest is not None else job.state.value,
+    }
 
 
 @app.get("/jobs/{job_id}/transcript")
