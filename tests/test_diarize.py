@@ -10,6 +10,7 @@ The important guarantees here are about *honesty*, not model quality:
 
 from __future__ import annotations
 
+import importlib.util
 import types
 
 import pytest
@@ -340,6 +341,10 @@ def test_diarize_accepts_a_bare_annotation(monkeypatch, tmp_path):
     assert turns[0].speaker == "SPEAKER_01"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("soundfile") is None,
+    reason="soundfile is part of the optional diarize extra",
+)
 def test_waveform_loading_downmixes_to_mono(tmp_path):
     """Multi-channel input must be averaged, matching pyannote's documented behaviour."""
     import numpy as np
@@ -361,6 +366,14 @@ def test_waveform_loading_downmixes_to_mono(tmp_path):
 
 
 def test_waveform_loading_error_is_actionable(tmp_path):
+    """A bad file must produce a named error, not a bare traceback.
+
+    Without the optional audio libraries the message is the missing-dependency
+    one; with them it is the unreadable-file one. Both must name what is wrong.
+    """
+    if importlib.util.find_spec("soundfile") is None:
+        pytest.skip("soundfile is part of the optional diarize extra")
+
     bad = tmp_path / "nope.wav"
     bad.write_bytes(b"definitely not audio")
     with pytest.raises(DiarizationError) as exc:
