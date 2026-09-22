@@ -299,3 +299,283 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
     import json
     written = json.loads(out.read_text(encoding="utf-8"))
     assert written["segments"][0]["text"] == "seeded"
+
+
+# --- explicit resume transitions and the real runner path -------------------
+
+
+def _seed_checkpoint(store, source, *, model="small", language="en", device="cpu",
+                     stages=None, transcript=None, state=None):
+    """Create a job carrying a valid checkpoint, optionally terminal."""
+    from textflowkit.core.model import Segment, Transcript
+
+    tr = transcript or Transcript(
+        source=source,
+        language=language,
+        segments=[Segment(0.0, 1.0, "seeded")],
+    )
+    job = store.create(source)
+    store.update(
+        job.id,
+        state=state or "pending",
+        checkpoint=_record(
+            source=source,
+            model=model,
+            language=language,
+            device=device,
+            finished_stages=stages or ["source", "fetch", "extract", "transcribe"],
+            transcript=tr.to_dict(),
+        ).to_dict(),
+    )
+    return store.get(job.id)
+
+
+def test_prepare_resume_reopens_error_job_and_preserves_checkpoint():
+    from textflowkit.core.checkpoint import prepare_resume
+    from textflowkit.core.jobs import JobState
+
+    store = MemoryJobStore()
+    job = _seed_checkpoint(store, "https://example.com/v")
+    store.update(
+        job.id,
+        state=JobState.ERROR,
+        error="boom",
+        cancel_requested=True,
+        progress="failed",
+    )
+    checkpoint = load_checkpoint(store.get(job.id))
+    assert checkpoint is not None
+
+    prepared = prepare_resume(store, job, checkpoint)
+
+    assert prepared is not None
+    reopened, payload = prepared
+    assert reopened.state is JobState.PENDING
+    assert reopened.error is None
+    assert reopened.cancel_requested is False
+    assert reopened.progress == "resuming"
+    assert payload["transcript"] is not None
+    assert load_checkpoint(store.get(job.id)).finished_stages == checkpoint.finished_stages
+
+
+def test_prepare_resume_reopens_cancelled_job():
+    from textflowkit.core.checkpoint import prepare_resume
+    from textflowkit.core.jobs import JobState
+
+    store = MemoryJobStore()
+    job = _seed_checkpoint(store, "https://example.com/v")
+    store.update(job.id, state=JobState.CANCELLED, error=None, cancel_requested=True)
+
+    prepared = prepare_resume(store, job, load_checkpoint(store.get(job.id)))
+
+    assert prepared is not None
+    reopened, _ = prepared
+    assert reopened.state is JobState.PENDING
+    assert reopened.cancel_requested is False
+
+
+def test_prepare_resume_refuses_done_job():
+    from textflowkit.core.checkpoint import prepare_resume
+    from textflowkit.core.jobs import JobState
+
+    store = MemoryJobStore()
+    job = _seed_checkpoint(store, "https://example.com/v")
+    store.update(job.id, state=JobState.DONE)
+
+    assert prepare_resume(store, job, load_checkpoint(store.get(job.id))) is None
+    assert store.get(job.id).state is JobState.DONE
+
+
+def test_run_job_resumes_error_job_and_passes_checkpoint(monkeypatch):
+    """The real runner must receive the checkpoint and finish DONE."""
+    from textflowkit.core import runner
+    from textflowkit.core.checkpoint import prepare_resume
+    from textflowkit.core.jobs import JobState
+    from textflowkit.core.model import Transcript
+    from textflowkit.core.pipeline import TranscribeResult
+
+    store = MemoryJobStore()
+    job = _seed_checkpoint(store, "https://example.com/v")
+    store.update(job.id, state=JobState.ERROR, error="interrupted")
+    prepared = prepare_resume(store, job, load_checkpoint(store.get(job.id)))
+    assert prepared is not None
+    reopened, payload = prepared
+
+    seen = {}
+
+    def fake_transcribe(source, *, resume_checkpoint=None, on_checkpoint=None, **kwargs):
+        seen["resume_checkpoint"] = resume_checkpoint
+        if on_checkpoint is not None:
+            on_checkpoint({"source": source, "model": "small", "transcript": {}})
+        return TranscribeResult(
+            transcript=Transcript(source=source, language="en", segments=[]),
+            outputs=[],
+        )
+
+    monkeypatch.setattr(runner, "transcribe", fake_transcribe)
+    runner.run_job(reopened, store, source="https://example.com/v", resume_checkpoint=payload)
+
+    assert seen["resume_checkpoint"] == payload
+    assert store.get(job.id).state is JobState.DONE
+
+
+def test_run_job_resumes_cancelled_job(monkeypatch):
+    from textflowkit.core import runner
+    from textflowkit.core.checkpoint import prepare_resume
+    from textflowkit.core.jobs import JobState
+    from textflowkit.core.model import Transcript
+    from textflowkit.core.pipeline import TranscribeResult
+
+    store = MemoryJobStore()
+    job = _seed_checkpoint(store, "https://example.com/v")
+    store.update(job.id, state=JobState.CANCELLED, cancel_requested=True)
+    prepared = prepare_resume(store, job, load_checkpoint(store.get(job.id)))
+    assert prepared is not None
+    reopened, payload = prepared
+
+    monkeypatch.setattr(
+        runner,
+        "transcribe",
+        lambda source, **kwargs: TranscribeResult(
+            transcript=Transcript(source=source, language="en", segments=[]),
+            outputs=[],
+        ),
+    )
+    runner.run_job(reopened, store, source="https://example.com/v", resume_checkpoint=payload)
+
+    assert store.get(job.id).state is JobState.DONE
+
+
+# --- pipeline stage reuse and fallback ------------------------------------
+
+
+def test_pipeline_resume_skips_acquisition_extraction_and_engine(monkeypatch, tmp_path):
+    from textflowkit.core import pipeline
+    from textflowkit.core.model import Segment, Transcript
+
+    source = "https://example.com/v"
+    transcript = Transcript(source="old", language="en", segments=[Segment(0.0, 1.0, "kept")])
+    checkpoint = _record(source=source, transcript=transcript.to_dict())
+
+    calls = []
+
+    class Ref:
+        platform = "youtube"
+        kind = "url"
+        location = source
+
+    class Engine:
+        def transcribe(self, audio, language=None):  # pragma: no cover - must not run
+            calls.append("engine")
+            raise AssertionError("engine ran")
+
+    monkeypatch.setattr(pipeline, "resolve_source", lambda value: Ref())
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: calls.append("require_tool"))
+    monkeypatch.setattr(pipeline, "fetch_media", lambda *a, **k: calls.append("fetch"))
+    monkeypatch.setattr(pipeline, "extract_audio", lambda *a, **k: calls.append("extract"))
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: Engine())
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+
+    result = pipeline.transcribe(
+        source,
+        model="small",
+        language="en",
+        device="cpu",
+        formats=["json"],
+        output_dir=tmp_path,
+        resume_checkpoint=checkpoint.to_dict(),
+    )
+
+    assert result.transcript.segments[0].text == "kept"
+    assert result.transcript.platform == "youtube"
+    assert calls == []
+
+
+def test_pipeline_resume_falls_back_when_transcribe_stage_is_missing(monkeypatch, tmp_path):
+    from textflowkit.core import pipeline
+    from textflowkit.core.model import Segment, Transcript
+
+    source = "https://example.com/v"
+    media = tmp_path / "media.bin"
+    audio = tmp_path / "audio.wav"
+    media.write_bytes(b"media")
+    audio.write_bytes(b"audio")
+    transcript = Transcript(source=source, language="en", segments=[Segment(0.0, 1.0, "new")])
+    checkpoint = _record(
+        source=source,
+        finished_stages=["source", "fetch", "extract"],
+        transcript=transcript.to_dict(),
+    )
+
+    calls = []
+
+    class Ref:
+        platform = "youtube"
+        kind = "url"
+        location = source
+
+    class Engine:
+        def transcribe(self, audio_path, language=None):
+            calls.append("engine")
+            return transcript
+
+    monkeypatch.setattr(pipeline, "resolve_source", lambda value: Ref())
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: calls.append("require_tool"))
+    monkeypatch.setattr(pipeline, "fetch_media", lambda *a, **k: media)
+    monkeypatch.setattr(pipeline, "extract_audio", lambda *a, **k: audio)
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: Engine())
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+
+    result = pipeline.transcribe(
+        source,
+        model="small",
+        language="en",
+        device="cpu",
+        formats=["json"],
+        output_dir=tmp_path,
+        resume_checkpoint=checkpoint.to_dict(),
+    )
+
+    assert result.transcript is transcript
+    assert "engine" in calls
+    assert "fetch" not in calls  # fetch stub is not recorded, but engine proves fallback
+
+
+def test_pipeline_checkpoints_follow_stage_order(monkeypatch, tmp_path):
+    from textflowkit.core import pipeline
+    from textflowkit.core.model import Segment, Transcript
+
+    source = "https://example.com/v"
+    media = tmp_path / "media.bin"
+    audio = tmp_path / "audio.wav"
+    media.write_bytes(b"media")
+    audio.write_bytes(b"audio")
+    transcript = Transcript(source=source, language="en", segments=[Segment(0.0, 1.0, "new")])
+    stages = []
+
+    class Ref:
+        platform = "youtube"
+        kind = "url"
+        location = source
+
+    class Engine:
+        def transcribe(self, audio_path, language=None):
+            return transcript
+
+    monkeypatch.setattr(pipeline, "resolve_source", lambda value: Ref())
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "fetch_media", lambda *a, **k: media)
+    monkeypatch.setattr(pipeline, "extract_audio", lambda *a, **k: audio)
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: Engine())
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+
+    pipeline.transcribe(
+        source,
+        model="small",
+        language="en",
+        formats=["json"],
+        output_dir=tmp_path,
+        on_checkpoint=lambda record: stages.append(record["finished_stages"][-1]),
+    )
+
+    assert stages == ["source", "fetch", "extract", "transcribe", "postprocess", "render"]
