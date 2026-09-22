@@ -122,26 +122,96 @@ reports plain `torch <ver>`.
 `--skip-transcribe` is cheap enough to run in CI and is exercised there on every
 platform.
 
-## Diarization: the torch-clobber trap (same class as above)
+## Diarization
 
-`pip install pyannote.audio` **will replace a ROCm torch with a stock PyPI CPU
-wheel** - verified by resolving the dependency: it pulls `torch==2.14.0`, while
-this machine runs `2.11.0+rocm7.13.0`. Installing the diarize extra naively
-therefore silently destroys GPU acceleration, exactly like the `openai-whisper`
-trap earlier in this document.
+Diarization is opt-in and needs three separate things, all verified on this
+machine (Windows, ROCm torch 2.11.0+rocm7.13.0, `pyannote.audio` 4.0.7).
 
-Install the extra with torch held back:
+### 1. Pick the version that matches your torchaudio
+
+`pyannote.audio` 3.4.x calls `torchaudio.AudioMetaData`, which no longer exists
+in torchaudio 2.11 - importing 3.4.0 raises `AttributeError: module 'torchaudio'
+has no attribute 'AudioMetaData'`. **4.x removed that dependency** and loads
+cleanly. Install 4.x:
 
 ```bash
-pip install "textflowkit[diarize]" --no-deps
-pip install pyannote.audio torchaudio torchmetrics torchcodec
+pip install "pyannote.audio==4.0.7"
 ```
 
-Then verify with `textflowkit selftest` that the torch build is still the ROCm one.
+### 2. Hold torch back, or you lose the GPU
 
-Note also that the pyannote diarization model is **gated**: it requires a Hugging
-Face token with access granted to the model on huggingface.co. Granting access is
-a manual step on their site and cannot be automated here.
+`pyannote.audio` requires `torch>=2.0.0` (open-ended, not pinned). A plain
+install can therefore resolve a stock CPU wheel over the ROCm build. Pin the
+whole torch stack on the command line:
+
+```bash
+pip install "pyannote.audio==4.0.7" \
+  "torch==2.11.0+rocm7.13.0" \
+  "torchaudio==2.11.0+rocm7.13.0" \
+  "torchvision==0.26.0+rocm7.13.0" \
+  --extra-index-url https://download.pytorch.org/whl/rocm7.13
+```
+
+Then confirm the build survived:
+
+```bash
+textflowkit selftest
+```
+
+A ROCm install reports `torch <ver>+rocm*`; a stock CPU wheel reports plain
+`torch <ver>`.
+
+### 3. `torchcodec` cannot load on this torch - the code works around it
+
+`pyannote.audio` 4.x decodes audio through `torchcodec`, whose bundled native
+DLLs are built against specific torch releases and fail against ROCm torch:
+
+```text
+OSError: Could not load this library: ...libtorchcodec_core5.dll
+```
+
+`PyannoteDiarizer` does not rely on it. It reads audio with `soundfile` (already
+a pyannote dependency) and hands pyannote an in-memory waveform dictionary -
+which is the workaround pyannote's own error message names. You do not need a
+working `torchcodec`.
+
+### Access: three gated repos, not one
+
+The model cards mention two. There are **three**, and the third is the one that
+actually blocks a run:
+
+| Repo | License | Needed for |
+|---|---|---|
+| `pyannote/speaker-diarization-3.1` | MIT (weights gated) | the pipeline definition |
+| `pyannote/segmentation-3.0` | MIT (weights gated) | the segmentation stage |
+| `pyannote/speaker-diarization-community-1` | **CC-BY-4.0** | the weights the pipeline downloads at runtime |
+
+Accepting only the first two gets you a `403 GatedRepoError` on
+`speaker-diarization-community-1` partway through loading. Each one needs
+"Agree and access repository" clicked on its own page while logged in, then a
+read token:
+
+```bash
+setx HF_TOKEN hf_xxxxxxxx
+```
+
+A **read** token is sufficient. Verify it reaches all three before blaming the
+code:
+
+```bash
+python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', token=__import__('os').environ['HF_TOKEN']) for r in ['pyannote/speaker-diarization-3.1','pyannote/segmentation-3.0','pyannote/speaker-diarization-community-1']]; print('all three OK')"
+```
+
+### Running it
+
+```bash
+textflowkit transcribe clip.wav --diarize --format json
+```
+
+Segments come back with a `speaker` field (`SPEAKER_00`, `SPEAKER_01`, ...) and
+`metadata.diarization` records the backend, the speaker list, the turn count and
+how many segments were labelled. If the backend or token is missing, the run
+**fails with an actionable error** rather than returning empty speakers.
 
 ## CPU fallback
 

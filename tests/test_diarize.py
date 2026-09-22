@@ -10,6 +10,8 @@ The important guarantees here are about *honesty*, not model quality:
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 from textflowkit.core.diarize import (
@@ -243,3 +245,124 @@ def test_pipeline_without_diarize_leaves_speakers_empty(monkeypatch, tmp_path):
     result = transcribe(str(media), input_root=tmp_path)
     assert result.transcript.segments[0].speaker is None
     assert "diarization" not in result.transcript.metadata
+
+
+# --- pyannote 4.x compatibility --------------------------------------------
+# These three each correspond to a real break found while running the live
+# gated pipeline for the first time. They are cheap and they pin behaviour that
+# would otherwise regress silently the next time pyannote changes a signature.
+
+
+def test_load_passes_token_kwarg_when_signature_accepts_it(monkeypatch):
+    """pyannote 4.x renamed use_auth_token -> token."""
+    import sys
+    import types
+
+    captured = {}
+
+    def fake_from_pretrained(name, revision=None, hparams_file=None, subfolder=None,
+                             token=None, cache_dir=None):
+        captured["name"] = name
+        captured["kwargs"] = {"token": token}
+        return "pipeline"
+
+    fake = types.ModuleType("pyannote.audio")
+    fake.Pipeline = types.SimpleNamespace(from_pretrained=fake_from_pretrained)
+    monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
+    monkeypatch.setitem(sys.modules, "pyannote.audio", fake)
+
+    d = PyannoteDiarizer(token="tok-123")
+    d._load()
+    assert captured["kwargs"] == {"token": "tok-123"}
+
+
+def test_load_passes_use_auth_token_for_older_signatures(monkeypatch):
+    """Pre-4.0 pyannote only accepts use_auth_token."""
+    import sys
+    import types
+
+    captured = {}
+
+    def fake_from_pretrained(name, use_auth_token=None):
+        captured["kwargs"] = {"use_auth_token": use_auth_token}
+        return "pipeline"
+
+    fake = types.ModuleType("pyannote.audio")
+    fake.Pipeline = types.SimpleNamespace(from_pretrained=fake_from_pretrained)
+    monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
+    monkeypatch.setitem(sys.modules, "pyannote.audio", fake)
+
+    d = PyannoteDiarizer(token="tok-456")
+    d._load()
+    assert captured["kwargs"] == {"use_auth_token": "tok-456"}
+
+
+def test_diarize_accepts_a_diarize_output_wrapper(monkeypatch, tmp_path):
+    """pyannote 4.x returns DiarizeOutput; earlier releases return Annotation.
+
+    Both expose the tracks via `.speaker_diarization` / direct iteration, and
+    the code must not care which one it got.
+    """
+    class FakeAnnotation:
+        def itertracks(self, yield_label=False):
+            return iter([(types.SimpleNamespace(start=0.0, end=1.0), None, "SPEAKER_00")])
+
+    class FakeOutput:
+        def __init__(self):
+            self.speaker_diarization = FakeAnnotation()
+
+    wav = tmp_path / "clip.wav"
+    wav.write_bytes(b"not really audio")
+
+    d = PyannoteDiarizer(token="tok")
+    monkeypatch.setattr(d, "_pipeline", lambda payload: FakeOutput())
+    monkeypatch.setattr(PyannoteDiarizer, "_load_waveform", staticmethod(lambda p: {}))
+
+    turns = d.diarize(wav)
+    assert len(turns) == 1
+    assert turns[0].speaker == "SPEAKER_00"
+
+
+def test_diarize_accepts_a_bare_annotation(monkeypatch, tmp_path):
+    """The pre-4.0 shape: the pipeline returns the annotation directly."""
+    class FakeAnnotation:
+        def itertracks(self, yield_label=False):
+            return iter([(types.SimpleNamespace(start=2.0, end=3.0), None, "SPEAKER_01")])
+
+    wav = tmp_path / "clip.wav"
+    wav.write_bytes(b"x")
+
+    d = PyannoteDiarizer(token="tok")
+    monkeypatch.setattr(d, "_pipeline", lambda payload: FakeAnnotation())
+    monkeypatch.setattr(PyannoteDiarizer, "_load_waveform", staticmethod(lambda p: {}))
+
+    turns = d.diarize(wav)
+    assert turns[0].speaker == "SPEAKER_01"
+
+
+def test_waveform_loading_downmixes_to_mono(tmp_path):
+    """Multi-channel input must be averaged, matching pyannote's documented behaviour."""
+    import numpy as np
+    import soundfile as sf
+    import torch
+
+    wav = tmp_path / "stereo.wav"
+    left = np.zeros(1600, dtype="float32")
+    right = np.ones(1600, dtype="float32")
+    sf.write(str(wav), np.stack([left, right], axis=1), 16000)
+
+    payload = PyannoteDiarizer._load_waveform(wav)
+    assert payload["sample_rate"] == 16000
+    assert payload["waveform"].shape == (1, 1600)
+    # Writing a float32 ramp through soundfile quantizes to int16, so exact
+    # equality is not available. One int16 LSB is ~3.05e-05, so allow that.
+    expected = torch.full((1, 1600), 0.5, dtype=torch.float32)
+    assert torch.allclose(payload["waveform"], expected, atol=1e-4)
+
+
+def test_waveform_loading_error_is_actionable(tmp_path):
+    bad = tmp_path / "nope.wav"
+    bad.write_bytes(b"definitely not audio")
+    with pytest.raises(DiarizationError) as exc:
+        PyannoteDiarizer._load_waveform(bad)
+    assert "could not read audio" in str(exc.value)

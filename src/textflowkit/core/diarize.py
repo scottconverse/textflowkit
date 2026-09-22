@@ -130,20 +130,63 @@ class PyannoteDiarizer:
                 f"'{self.model_name}'. Set {ENV_HF_TOKEN}, or pass token=... . "
                 "The model is gated, so access must also be granted on Hugging Face."
             )
+        # pyannote.audio renamed `use_auth_token` to `token` in 4.0. Pass the
+        # keyword the installed version actually accepts rather than pinning the
+        # code to one release.
         try:
-            self._pipeline = Pipeline.from_pretrained(self.model_name, use_auth_token=self._token)
+            import inspect
+
+            params = inspect.signature(Pipeline.from_pretrained).parameters
+            kwargs = {"token": self._token} if "token" in params else {"use_auth_token": self._token}
+            self._pipeline = Pipeline.from_pretrained(self.model_name, **kwargs)
         except Exception as exc:  # provider errors vary
             raise DiarizationError(
                 f"could not load diarization model '{self.model_name}': {exc}"
             ) from exc
         return self._pipeline
 
+    @staticmethod
+    def _load_waveform(audio_path: str | Path) -> dict:
+        """Read audio ourselves instead of letting pyannote decode it.
+
+        pyannote.audio 4.x decodes through `torchcodec`, whose bundled DLLs are
+        built against specific torch releases and fail to load against the ROCm
+        torch build this project targets. Its own error message names the way
+        out: "provide audio as a waveform dictionary". Reading with `soundfile`
+        (already a pyannote dependency) avoids that native-extension coupling
+        entirely and skips a decode step.
+        """
+        try:
+            import soundfile as sf
+            import torch
+        except ImportError as exc:  # pragma: no cover - both are hard deps of pyannote
+            raise DiarizationError(f"diarization requires soundfile and torch: {exc}") from exc
+
+        try:
+            data, sample_rate = sf.read(str(audio_path), dtype="float32", always_2d=True)
+        except Exception as exc:
+            raise DiarizationError(f"could not read audio '{audio_path}': {exc}") from exc
+
+        waveform = torch.from_numpy(data.T)  # (channels, samples)
+        if waveform.shape[0] > 1:
+            # pyannote expects mono; averaging is what it documents for
+            # multi-channel input.
+            waveform = waveform.mean(dim=0, keepdim=True)
+        return {"waveform": waveform, "sample_rate": sample_rate}
+
     def diarize(self, audio_path: str | Path) -> list[SpeakerTurn]:
         pipeline = self._load()
         try:
-            annotation = pipeline(str(audio_path))
+            annotation = pipeline(self._load_waveform(audio_path))
+        except DiarizationError:
+            raise
         except Exception as exc:
             raise DiarizationError(f"diarization failed: {exc}") from exc
+
+        # pyannote.audio 4.x returns a DiarizeOutput wrapper exposing the
+        # annotation as `.speaker_diarization`; earlier releases returned the
+        # Annotation directly. Accept either rather than pinning to one version.
+        annotation = getattr(annotation, "speaker_diarization", annotation)
 
         turns: list[SpeakerTurn] = []
         for turn, _, speaker in annotation.itertracks(yield_label=True):
