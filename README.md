@@ -83,8 +83,8 @@ Not published to PyPI; the repository and its releases are the distribution path
 Release v0.1.0 artifacts (SHA-256). Both build reproducibly - a clean
 clone at the tag produces these exact bytes:
 
-- `textflowkit-0.1.0-py3-none-any.whl` - `b0859ff0bbdaeddcbcd3ec09934f4e404aa877ec92aa81bd30c8168f3bd23cb6`
-- `textflowkit-0.1.0.tar.gz` - `22ba1e597a7be99ef7d12f65514db8b5aca82fabe67560b77d067169897940f9`
+- `textflowkit-0.1.0-py3-none-any.whl` - `a13cda4b9663acedb56ce56a4bf38b11454d4d6730bfe43a2f09b69c53cc7048`
+- `textflowkit-0.1.0.tar.gz` - `335682529a5f74cceb72a901331daa0dc26f728525004c20ae5a873c8a596b06`
 
 Optional extras:
 
