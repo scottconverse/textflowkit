@@ -9,7 +9,9 @@ Platform differences live entirely in the source layer.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,13 +26,20 @@ from textflowkit.core.paths import (
     default_input_root,
     resolve_input_path,
 )
+from textflowkit.core.service import enforce_media_limits
 from textflowkit.core.translate import (
     TranslationError,
     get_translator,
     translate_segments,
 )
 from textflowkit.render import SUPPORTED_FORMATS, write_all
-from textflowkit.sources.acquire import AcquisitionError, extract_audio, fetch_media, require_tool
+from textflowkit.sources.acquire import (
+    AcquisitionError,
+    extract_audio,
+    fetch_media,
+    require_tool,
+    stage_confined_local_media,
+)
 from textflowkit.sources.detect import resolve_source
 
 
@@ -94,6 +103,7 @@ def transcribe(
     translator_backend: str = "ollama",
     resume_checkpoint: dict[str, Any] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
+    output_id: str | None = None,
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
 
@@ -171,122 +181,144 @@ def transcribe(
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured
     # root if one is set", which keeps the CLI unconfined by default.
+    root = input_root if input_root is not None else default_input_root()
+    resolved_source = source
     if not source.startswith(("http://", "https://")):
         try:
-            root = input_root if input_root is not None else default_input_root()
-            resolve_input_path(source, root=root)
+            resolved_source = str(resolve_input_path(source, root=root))
         except (FileNotFoundError, ValueError, UnsafeInputPathError) as exc:
             raise PipelineError(str(exc)) from exc
 
     try:
-        ref = resolve_source(source)
+        ref = resolve_source(resolved_source)
     except (FileNotFoundError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
     _checkpoint("source")
 
-    scratch = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="textflowkit-"))
-    scratch.mkdir(parents=True, exist_ok=True)
-
-    transcript = _resume_transcript(resumed, source=source, ref=ref)
-    if resumed is not None:
-        media = _existing_path(resumed.media_path)
-        audio = _existing_path(resumed.audio_path)
-
-    # Resuming means "the transcript already exists, do not transcribe again".
-    # The media files are a separate question: they live in scratch and are
-    # deleted after every run, so requiring them would make resume impossible.
-    # If a later stage (diarization) genuinely needs the audio and it is gone,
-    # re-acquire it - that is far cheaper than re-running Whisper.
-    can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
-    need_media_for_later_stage = diarize and audio is None
-    if can_resume and need_media_for_later_stage:
-        can_resume = False
-
-    if not can_resume:
-        transcript = None
+    if work_dir is not None:
+        Path(work_dir).mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(prefix="textflowkit-", dir=work_dir))
 
     try:
+        transcript = _resume_transcript(resumed, source=source, ref=ref)
+        if resumed is not None:
+            media = _existing_path(resumed.media_path)
+            audio = _existing_path(resumed.audio_path)
+
+        # Resuming means "the transcript already exists, do not transcribe again".
+        # The media files are a separate question: they live in scratch and are
+        # deleted after every run, so requiring them would make resume impossible.
+        # If a later stage (diarization) genuinely needs the audio and it is gone,
+        # re-acquire it - that is far cheaper than re-running Whisper.
+        can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
         if not can_resume:
-            require_tool("ffmpeg")
-            media = fetch_media(
-                ref,
-                work_dir=scratch,
-                cookies_from_browser=cookies_from_browser,
-                check_cancel=check_cancel,
-            )
-            _checkpoint("fetch")
-            audio = extract_audio(media, work_dir=scratch)
-            _checkpoint("extract")
+            transcript = None
 
-            eng = get_engine(engine, model=model, device=device)
+        try:
+            if not can_resume:
+                require_tool("ffmpeg")
+                if ref.kind == "file" and root is not None:
+                    media = stage_confined_local_media(
+                        ref.location, work_dir=scratch, input_root=root
+                    )
+                else:
+                    media = fetch_media(
+                        ref,
+                        work_dir=scratch,
+                        cookies_from_browser=cookies_from_browser,
+                        check_cancel=check_cancel,
+                    )
+                _checkpoint("fetch")
+                audio = extract_audio(media, work_dir=scratch)
+                enforce_media_limits(media, audio)
+                _checkpoint("extract")
+
+                eng = get_engine(engine, model=model, device=device)
+                try:
+                    transcript = eng.transcribe(audio, language=language)
+                except Exception as exc:  # engine failures are user-facing
+                    raise PipelineError(f"transcription failed: {exc}") from exc
+                _checkpoint("transcribe")
+            elif diarize and audio is None:
+                # A finished transcript is the expensive checkpoint. Reacquire
+                # only the audio required by pyannote; never rerun Whisper.
+                require_tool("ffmpeg")
+                if media is None:
+                    if ref.kind == "file" and root is not None:
+                        media = stage_confined_local_media(
+                            ref.location, work_dir=scratch, input_root=root
+                        )
+                    else:
+                        media = fetch_media(
+                            ref, work_dir=scratch,
+                            cookies_from_browser=cookies_from_browser,
+                            check_cancel=check_cancel,
+                        )
+                    _checkpoint("fetch")
+                audio = extract_audio(media, work_dir=scratch)
+                enforce_media_limits(media, audio)
+                _checkpoint("extract")
+        except (AcquisitionError, UnsafeInputPathError) as exc:
+            raise PipelineError(str(exc)) from exc
+
+        if diarize:
+            # Refuse loudly rather than returning a transcript with empty speakers.
+            # A silent no-op here is exactly the defect that was removed from
+            # --speaker-labels, and it must not come back through this door.
+            if audio is None:
+                raise PipelineError("diarization requested but no audio is available for resume")
             try:
-                transcript = eng.transcribe(audio, language=language)
-            except Exception as exc:  # engine failures are user-facing
-                raise PipelineError(f"transcription failed: {exc}") from exc
-            _checkpoint("transcribe")
-    except AcquisitionError as exc:
-        raise PipelineError(str(exc)) from exc
+                diarizer = get_diarizer(diarizer_backend)
+                turns = diarizer.diarize(audio)
+            except DiarizationError as exc:
+                raise PipelineError(f"diarization requested but unavailable: {exc}") from exc
+            except Exception as exc:
+                raise PipelineError(f"diarization failed: {exc}") from exc
+            labelled = assign_speakers(transcript.segments, turns)
+            transcript.metadata["diarization"] = {
+                "backend": getattr(diarizer, "name", diarizer_backend),
+                "speakers": sorted({t.speaker for t in turns}),
+                "turns": len(turns),
+                "segments_labelled": labelled,
+            }
 
-    if diarize:
-        # Refuse loudly rather than returning a transcript with empty speakers.
-        # A silent no-op here is exactly the defect that was removed from
-        # --speaker-labels, and it must not come back through this door.
-        if audio is None:
-            raise PipelineError("diarization requested but no audio is available for resume")
-        try:
-            diarizer = get_diarizer(diarizer_backend)
-            turns = diarizer.diarize(audio)
-        except DiarizationError as exc:
-            raise PipelineError(f"diarization requested but unavailable: {exc}") from exc
-        except Exception as exc:
-            raise PipelineError(f"diarization failed: {exc}") from exc
-        labelled = assign_speakers(transcript.segments, turns)
-        transcript.metadata["diarization"] = {
-            "backend": getattr(diarizer, "name", diarizer_backend),
-            "speakers": sorted({t.speaker for t in turns}),
-            "turns": len(turns),
-            "segments_labelled": labelled,
-        }
+        if translate_to:
+            # Refuse loudly: never present source text as though it were translated.
+            try:
+                translator = get_translator(translator_backend)
+                translated = translate_segments(
+                    transcript.segments, translate_to, translator=translator
+                )
+            except TranslationError as exc:
+                raise PipelineError(f"translation requested but unavailable: {exc}") from exc
+            except ValueError as exc:
+                raise PipelineError(f"translation failed: {exc}") from exc
+            transcript.metadata["translation"] = {
+                "backend": getattr(translator, "name", translator_backend),
+                "route": getattr(translator, "route", "unknown"),
+                "target": translate_to,
+                "segments_translated": translated,
+            }
 
-    if translate_to:
-        # Refuse loudly: never present source text as though it were translated.
-        try:
-            translator = get_translator(translator_backend)
-            translated = translate_segments(
-                transcript.segments, translate_to, translator=translator
-            )
-        except TranslationError as exc:
-            raise PipelineError(f"translation requested but unavailable: {exc}") from exc
-        except ValueError as exc:
-            raise PipelineError(f"translation failed: {exc}") from exc
-        transcript.metadata["translation"] = {
-            "backend": getattr(translator, "name", translator_backend),
-            "target": translate_to,
-            "segments_translated": translated,
-        }
+        _checkpoint("postprocess")
 
-    _checkpoint("postprocess")
+        transcript.source = source
+        transcript.platform = ref.platform
 
-    transcript.source = source
-    transcript.platform = ref.platform
+        outputs: list[Path] = []
+        if output_dir is not None:
+            stem = Path(ref.location).stem if ref.kind != "url" else "transcript"
+            stem = stem.replace("textflowkit-", "") or "transcript"
+            stem = f"{stem}-{output_id or uuid.uuid4().hex[:16]}"
+            outputs = write_all(transcript, formats=formats, output_dir=output_dir, stem=stem)
+        _checkpoint("render")
 
-    outputs: list[Path] = []
-    if output_dir is not None:
-        stem = Path(scratch.name if ref.kind == "url" else ref.location).stem
-        stem = stem.replace("textflowkit-", "") or "transcript"
-        outputs = write_all(transcript, formats=formats, output_dir=output_dir, stem=stem)
-    _checkpoint("render")
-
+        assert transcript is not None
+        result = TranscribeResult(transcript=transcript, outputs=outputs)
+    except BaseException:
+        shutil.rmtree(scratch, ignore_errors=True)
+        raise
     if not keep_media:
-        for f in (media, audio):
-            if f is None:
-                continue
-            try:
-                if f.exists() and scratch in f.parents:
-                    f.unlink()
-            except OSError:
-                pass
-
-    assert transcript is not None
-    return TranscribeResult(transcript=transcript, outputs=outputs)
+        shutil.rmtree(scratch)
+    return result

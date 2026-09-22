@@ -14,8 +14,16 @@ from textflowkit.core.engine import get_engine
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
-from textflowkit.core.pipeline import PipelineError, transcribe
-from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.core.pipeline import TranscribeResult
+from textflowkit.core.runner import transcript_for
+from textflowkit.core.submission import SubmissionRequest, submit_request
+from textflowkit.render import (
+    BINARY_FORMATS,
+    SUPPORTED_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 from textflowkit.sources.acquire import AcquisitionError
 from textflowkit.sources.detect import PLATFORMS
 
@@ -118,26 +126,12 @@ def _store_is_durable() -> bool:
     return bool(os.environ.get("TEXTFLOWKIT_DB"))
 
 
-def _checkpoint_writer(store, job_id: str):
-    def write(record: dict) -> None:
-        store.update(job_id, checkpoint=record)
-
-    return write
-
-
 def _cmd_transcribe(args: argparse.Namespace) -> int:
     formats = _formats(args.formats)
     output_dir = args.output_dir
     if output_dir is None and not args.stdout:
         output_dir = "."
-
-    store = get_default_store()
-    resume_checkpoint = None
-    job = None
     if args.resume and not _store_is_durable():
-        # The default store lives in this process, so nothing from a previous
-        # invocation can be resumed. Say so rather than silently doing the full
-        # transcription the user was trying to avoid.
         print(
             "warning: --resume needs a durable store; TEXTFLOWKIT_DB is not set, "
             "so no checkpoint from an earlier run can be found. Re-running from "
@@ -145,88 +139,29 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    if args.resume:
-        # Search BEFORE creating a job. Creating the new job first would put an
-        # empty record in the store and there would be nothing to find, which is
-        # exactly how an earlier version silently re-transcribed everything.
-        from textflowkit.core.checkpoint import (
-            find_resumable_checkpoint,
-            prepare_resume,
-            reusable_done_result,
-        )
-
-        found = find_resumable_checkpoint(
-            store,
-            source=args.source,
-            model=args.model,
-            language=args.language,
-            device=args.device,
-            options={
-                "formats": formats,
-                "diarize": args.diarize,
-                "diarizer_backend": "pyannote",
-                "translate_to": args.translate_to,
-                "translator_backend": "ollama",
-            },
-        )
-        if found is not None:
-            prior, checkpoint = found
-            prepared = prepare_resume(store, prior, checkpoint)
-            if prepared is None:
-                reused = reusable_done_result(
-                    store,
-                    prior,
-                    formats=formats,
-                    output_dir=output_dir,
-                    stem=_output_stem(store, prior.id, args.source),
-                )
-                if reused is not None:
-                    result = reused
-                    job = store.get(prior.id) or prior
-                    return _finish_transcribe(args, result, job, store)
-            else:
-                job, resume_checkpoint = prepared
-
-    if job is None:
-        job = store.create(args.source)
-
     try:
-        result = transcribe(
-            args.source,
-            language=args.language,
-            formats=formats,
-            output_dir=output_dir,
-            model=args.model,
-            device=args.device,
+        request = SubmissionRequest(
+            source=args.source, language=args.language, formats=formats,
+            output_dir=output_dir, model=args.model, device=args.device,
             cookies_from_browser=args.cookies_from_browser,
-            diarize=args.diarize,
-            translate_to=args.translate_to,
-            resume_checkpoint=resume_checkpoint,
-            on_checkpoint=_checkpoint_writer(store, job.id),
+            diarize=args.diarize, translate_to=args.translate_to,
         )
-    except PipelineError as exc:
-        store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
+        store = get_default_store()
+        job = submit_request(store, request, background=False, resume=args.resume)
+    except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    else:
-        return _finish_transcribe(args, result, job, store)
-
-
-def _output_stem(store, job_id: str, source: str) -> str:
-    current = store.get(job_id)
-    if current is not None:
-        existing = [Path(p) for p in current.outputs]
-        if existing:
-            return existing[0].stem
-    return _source_stem(source)
-
-
-def _source_stem(source: str) -> str:
-    from urllib.parse import urlparse
-
-    parsed = urlparse(source)
-    raw = Path(parsed.path).stem if parsed.scheme in {"http", "https"} else Path(source).stem
-    return (raw or "transcript").replace("textflowkit-", "") or "transcript"
+    if job.state is not JobState.DONE:
+        print(f"error: {job.error or job.state.value}", file=sys.stderr)
+        return 1
+    transcript = transcript_for(job)
+    if transcript is None:
+        print("error: completed job contains no transcript", file=sys.stderr)
+        return 1
+    return _finish_transcribe(
+        args, TranscribeResult(transcript=transcript, outputs=[Path(p) for p in job.outputs]),
+        job, store,
+    )
 
 
 def _finish_transcribe(
@@ -268,6 +203,13 @@ def _finish_transcribe(
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
+    if args.resume and not _store_is_durable():
+        print(
+            "warning: batch --resume cannot survive a process restart without "
+            "TEXTFLOWKIT_DB; this run may repeat completed transcription. "
+            "Set TEXTFLOWKIT_DB for durable resume.",
+            file=sys.stderr,
+        )
     report = run_batch(
         list(args.sources),
         store=get_default_store(),
@@ -304,15 +246,22 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"error: could not read transcript: {exc}", file=sys.stderr)
         return 1
     try:
-        content = render(tr, args.format, title=path.stem)
-    except ValueError as exc:
+        fmt = args.format.lower().lstrip(".")
+        if fmt in BINARY_FORMATS and not args.output:
+            raise ValueError(f"--output is required for binary {fmt} export")
+        content = render_bytes(tr, fmt, title=path.stem)
+    except (ValueError, ImportError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
+        try:
+            atomic_write_bytes(Path(args.output), content, replace=True)
+        except OSError as exc:
+            print(f"error: could not write export: {exc}", file=sys.stderr)
+            return 1
         print(str(Path(args.output)))
     else:
-        sys.stdout.write(content)
+        sys.stdout.write(content.decode("utf-8"))
     return 0
 
 
@@ -379,17 +328,34 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
         else:
             line(label, "installed")
 
-    # compute
+    # Compute devices are separate decisions: pyannote may be pinned to CPU
+    # while Whisper uses ROCm/CUDA, or vice versa.
     try:
         import torch
 
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
-            line("device", f"{name} (torch {torch.__version__})")
+            auto_device = "cuda"
+            device_label = f"{name} (torch {torch.__version__})"
         else:
-            line("device", f"cpu (torch {torch.__version__})")
+            auto_device = "cpu"
+            device_label = f"cpu (torch {torch.__version__})"
     except ImportError:
-        line("device", "torch not installed")
+        auto_device = "cpu"
+        device_label = "torch not installed"
+
+    line("whisper device", f"{auto_device}: {device_label}")
+    from textflowkit.core.diarize import ENV_DIARIZE_DEVICE
+
+    diarize_device = os.environ.get(ENV_DIARIZE_DEVICE) or auto_device
+    line("diarize device", f"{diarize_device}: {device_label if diarize_device == auto_device else 'configured'}")
+
+    from textflowkit.core.translate import ENV_OLLAMA_MODEL, OllamaTranslator
+
+    translation_model = os.environ.get(ENV_OLLAMA_MODEL)
+    line("translation model", translation_model or f"not configured (set {ENV_OLLAMA_MODEL})")
+    if translation_model:
+        line("translation route", OllamaTranslator().route)
 
     line("input root", str(default_input_root() or "unconfined (CLI default)"))
     line("output root", str(output_root()))
@@ -448,30 +414,29 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         return summarise()
 
     print("transcribe")
-    scratch = Path(tempfile.mkdtemp(prefix="tfk-selftest-"))
-    wav = scratch / "probe.wav"
-    try:
-        # 1 second of silence, written as a real PCM wav - enough to drive the
-        # whole audio->model path without needing a speech sample.
-        with wave.open(str(wav), "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(16000)
-            w.writeframes(b"\x00\x00" * 16000)
-        ok("generated probe audio", f"{wav.stat().st_size} bytes")
-    except Exception as exc:  # noqa: BLE001 - diagnostic
-        bad("generated probe audio", f"{type(exc).__name__}: {exc}")
-        return 1
+    with tempfile.TemporaryDirectory(prefix="tfk-selftest-") as scratch:
+        wav = Path(scratch) / "probe.wav"
+        try:
+            # 1 second of silence, written as real PCM wav.
+            with wave.open(str(wav), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(16000)
+                w.writeframes(b"\x00\x00" * 16000)
+            ok("generated probe audio", f"{wav.stat().st_size} bytes")
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("generated probe audio", f"{type(exc).__name__}: {exc}")
+            return 1
 
-    try:
-        engine = get_engine("whisper", model=args.model)
-        transcript = engine.transcribe(wav)
-        ok(
-            "whisper ran on this device",
-            f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
-        )
-    except Exception as exc:  # noqa: BLE001 - diagnostic
-        bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
+        try:
+            engine = get_engine("whisper", model=args.model)
+            transcript = engine.transcribe(wav)
+            ok(
+                "whisper ran on this device",
+                f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
 
     return summarise()
 

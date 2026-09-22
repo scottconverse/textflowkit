@@ -10,11 +10,42 @@ from collections.abc import Callable
 from pathlib import Path
 
 from textflowkit.core.cancel import CancelledError
-from textflowkit.sources.detect import SourceRef
+from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
+from textflowkit.core.service import (
+    ENV_EGRESS_PROXY,
+    ENV_MAX_MEDIA_BYTES,
+    positive_limit,
+    production_enabled,
+)
+from textflowkit.sources.detect import SourceRef, UnsafeUrlError, assert_url_is_fetchable
 
 
 class AcquisitionError(RuntimeError):
     """Raised when media cannot be obtained."""
+
+
+def stage_confined_local_media(
+    source: str | Path, *, work_dir: Path, input_root: str | Path
+) -> Path:
+    """Copy a handle-verified local input into isolated scratch before ffmpeg."""
+    base = Path(input_root).expanduser().resolve()
+    path = Path(source)
+    out = work_dir / f"input{path.suffix.lower()}"
+    maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production_enabled() else None
+    with path.open("rb") as opened:
+        actual = opened_file_path(opened.fileno(), path)
+        if actual != base and base not in actual.parents:
+            raise UnsafeInputPathError(
+                f"opened input file '{actual}' is outside the allowed root '{base}'"
+            )
+        written = 0
+        with out.open("xb") as destination:
+            while chunk := opened.read(1024 * 1024):
+                written += len(chunk)
+                if maximum is not None and written > maximum:
+                    raise AcquisitionError("media exceeds the configured size limit")
+                destination.write(chunk)
+    return out
 
 
 def require_tool(name: str, *, module: str | None = None) -> str | None:
@@ -90,7 +121,7 @@ def _fetch_with_module(
     cookies_from_browser: str | None,
     check_cancel: Callable[[], None] | None = None,
 ) -> Path:
-    """Download using the yt_dlp Python API (used when no CLI binary is on PATH)."""
+    """Download using the yt_dlp Python API so URL checks cover its requests."""
     from yt_dlp import YoutubeDL
 
     outtmpl = str(work_dir / "%(id)s.%(ext)s")
@@ -120,10 +151,35 @@ def _fetch_with_module(
     }
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = (cookies_from_browser,)
+    if production_enabled():
+        proxy = os.environ.get(ENV_EGRESS_PROXY)
+        if not proxy:
+            raise AcquisitionError(
+                f"production URL acquisition requires an SSRF-filtering {ENV_EGRESS_PROXY}"
+            )
+        opts["proxy"] = proxy
+        # External JS runtimes are separate processes and are not guaranteed to
+        # honor yt-dlp's proxy option. Do not let them create an egress bypass.
+        opts["js_runtimes"] = {}
 
     try:
         with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            original_open = ydl.urlopen
+
+            def checked_open(request):
+                requested = request if isinstance(request, str) else request.url
+                _validate_fetch_url(requested)
+                response = original_open(request)
+                final = getattr(response, "url", None)
+                if final:
+                    _validate_fetch_url(final)
+                return response
+
+            ydl.urlopen = checked_open
+            _validate_fetch_url(url)
+            info = ydl.extract_info(url, download=False)
+            _validate_download_info(info)
+            ydl.process_info(info)
     except CancelledError:
         raise  # an orderly stop, not a fetch failure
     except Exception as exc:
@@ -150,6 +206,32 @@ def _fetch_with_module(
     raise AcquisitionError("yt-dlp reported success but no output file was found")
 
 
+def _validate_fetch_url(url: str) -> None:
+    if not url.startswith(("http://", "https://")):
+        raise AcquisitionError(f"refusing non-HTTP download destination: {url[:100]}")
+    try:
+        assert_url_is_fetchable(url)
+    except UnsafeUrlError as exc:
+        raise AcquisitionError(f"unsafe download destination: {exc}") from exc
+
+
+def _validate_download_info(info: dict | None) -> None:
+    """Recheck final media/fragment URLs selected after yt-dlp extraction."""
+    if not isinstance(info, dict) or info.get("_type", "video") != "video":
+        raise AcquisitionError("yt-dlp did not resolve a single video")
+    selected = [info]
+    selected.extend(item for item in info.get("requested_formats") or [] if isinstance(item, dict))
+    for item in selected:
+        for key in ("url", "manifest_url", "fragment_base_url"):
+            value = item.get(key)
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                _validate_fetch_url(value)
+        for fragment in item.get("fragments") or []:
+            value = fragment.get("url") if isinstance(fragment, dict) else None
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                _validate_fetch_url(value)
+
+
 def fetch_media(
     source: SourceRef,
     *,
@@ -159,8 +241,8 @@ def fetch_media(
 ) -> Path:
     """Return a local path to the media.
 
-    Local files are returned unchanged. URLs are downloaded with yt-dlp, using
-    the CLI when available and the Python API otherwise.
+    Local files are returned unchanged. URLs use yt-dlp's in-process API so
+    requested and selected media URLs can be checked before download.
     """
     if source.kind == "file":
         return Path(source.location)
@@ -171,53 +253,12 @@ def fetch_media(
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
 
-    yt_dlp = require_tool("yt-dlp", module="yt_dlp")
-    # The CLI cannot be interrupted mid-download, so when the caller wants
-    # cancellation we use the Python API even if a binary is available.
-    if yt_dlp is None or check_cancel is not None:
-        return _fetch_with_module(
-            source.location,
-            work_dir=work,
-            cookies_from_browser=cookies_from_browser,
-            check_cancel=check_cancel,
-        )
-
-    outtmpl = str(work / "%(id)s.%(ext)s")
-    cmd = [
-        yt_dlp,
-        *_js_runtime_args(),
-        "--no-playlist",
-        "--no-progress",
-        "--restrict-filenames",
-        "-f", "bestaudio/best",
-        "-o", outtmpl,
-        "--print", "after_move:filepath",
-    ]
-    if cookies_from_browser:
-        cmd += ["--cookies-from-browser", cookies_from_browser]
-    cmd.append(source.location)
-
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise AcquisitionError("download timed out after 1 hour") from exc
-
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-        tail = " | ".join(detail[-4:]) if detail else "unknown error"
-        raise AcquisitionError(f"yt-dlp failed: {tail}")
-
-    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
-    for line in reversed(lines):
-        candidate = Path(line)
-        if candidate.exists():
-            return candidate
-
-    matches = sorted(work.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    files = [m for m in matches if m.is_file()]
-    if files:
-        return files[0]
-    raise AcquisitionError("yt-dlp reported success but no output file was found")
+    return _fetch_with_module(
+        source.location,
+        work_dir=work,
+        cookies_from_browser=cookies_from_browser,
+        check_cancel=check_cancel,
+    )
 
 def extract_audio(media_path: str | Path, *, work_dir: str | Path, sample_rate: int = 16000) -> Path:
     """Extract mono PCM WAV via ffmpeg - what Whisper wants."""

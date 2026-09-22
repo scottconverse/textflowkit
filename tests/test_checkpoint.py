@@ -294,7 +294,7 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
     ])
 
     assert rc == 0, f"cli.main failed with {rc}"
-    out = (tmp_path / "clip.json")
+    out = (tmp_path / f"clip-{prior.id}.json")
     assert out.exists(), "resume produced no output file"
     import json
     written = json.loads(out.read_text(encoding="utf-8"))
@@ -489,6 +489,58 @@ def test_pipeline_resume_skips_acquisition_extraction_and_engine(monkeypatch, tm
     assert result.transcript.segments[0].text == "kept"
     assert result.transcript.platform == "youtube"
     assert calls == []
+
+
+def test_diarization_resume_reacquires_audio_without_whisper(monkeypatch, tmp_path):
+    from textflowkit.core import pipeline
+    from textflowkit.core.diarize import SpeakerTurn
+    from textflowkit.core.model import Segment, Transcript
+
+    source = "https://example.com/v"
+    transcript = Transcript(source=source, language="en",
+                            segments=[Segment(0.0, 1.0, "kept")])
+    checkpoint = _record(source=source, transcript=transcript.to_dict())
+    calls: list[str] = []
+
+    class Ref:
+        platform = "youtube"
+        kind = "url"
+        location = source
+
+    def fetch(ref, *, work_dir, **kwargs):
+        calls.append("fetch")
+        media = work_dir / "media.bin"
+        media.write_bytes(b"media")
+        return media
+
+    def extract(media, *, work_dir):
+        calls.append("extract")
+        audio = work_dir / "audio.wav"
+        audio.write_bytes(b"audio")
+        return audio
+
+    class Diarizer:
+        name = "test"
+
+        def diarize(self, audio):
+            calls.append("diarize")
+            return [SpeakerTurn(0.0, 1.0, "SPEAKER_00")]
+
+    monkeypatch.setattr(pipeline, "resolve_source", lambda value: Ref())
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "fetch_media", fetch)
+    monkeypatch.setattr(pipeline, "extract_audio", extract)
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("Whisper must not run")))
+    monkeypatch.setattr(pipeline, "get_diarizer", lambda *a, **k: Diarizer())
+
+    result = pipeline.transcribe(
+        source, model="small", language="en", device="cpu", diarize=True,
+        resume_checkpoint=checkpoint.to_dict(),
+    )
+    assert calls == ["fetch", "extract", "diarize"]
+    assert result.transcript.segments[0].text == "kept"
+    assert result.transcript.segments[0].speaker == "SPEAKER_00"
 
 
 def test_pipeline_resume_falls_back_when_transcribe_stage_is_missing(monkeypatch, tmp_path):

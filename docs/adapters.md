@@ -2,7 +2,7 @@
 
 textflowkit has one core and several thin doors. Nothing is duplicated between
 them: the CLI, the MCP server, and the HTTP API all call
-`textflowkit.core.runner.submit` and share one job model.
+`textflowkit.core.submission` and share one job model.
 
 ```
                     ┌──────────────────────┐
@@ -18,7 +18,9 @@ them: the CLI, the MCP server, and the HTTP API all call
 `textflowkit transcribe --resume` reuses completed work, and
 `textflowkit batch` runs many sources in one invocation.
 
-Both need a **durable job store**: set `TEXTFLOWKIT_DB` to a SQLite file path.
+Resuming across process restarts needs a **durable job store**: set
+`TEXTFLOWKIT_DB` to a SQLite file path. Batch can run ephemerally, but
+`batch --resume` cannot recover past work without it.
 Without it the store lives in the process, so no checkpoint can outlive the run
 and `--resume` cannot find anything to reuse. The CLI says so on stderr rather
 than silently re-transcribing - if you see that warning, set `TEXTFLOWKIT_DB`.
@@ -29,17 +31,17 @@ them; a mismatch starts clean rather than mixing two runs into one transcript.
 
 ## Harness transport support
 
-**Evidence tier: `browsed` / live-connection.** Each harness's own MCP client was
-pointed at this server and reported a connection, on 2026-09-21. This is stronger
-than reading config files, and it is still **not** an end-to-end transcription run
-driven by each harness — no harness was asked to complete a real transcription
-task through the tools.
+**Evidence tier: historical live-connection.** DSH, Claude Code, and OpenCode's
+own MCP clients connected on 2026-09-21; Codex desktop later made a successful
+`list_jobs` call after its unrelated model-catalog repair. These checks are
+stronger than reading config files, but are **not** end-to-end transcription
+runs driven by each harness. Versions and behavior can change.
 
 | Harness | Version | Transport used | How it was verified |
 |---|---|---|---|
-| **DSH** | 0.1.5-rc.2 | stdio | Profile composed with an `insert` patch and `failOnStartupError: true`; DSH's own MCP client spawned the server as a child, completed the handshake, discovered **all 8 tools**, and a real `list_sources` call returned data |
+| **DSH** | 0.1.5-rc.2 | stdio | Profile composed with an `insert` patch and `failOnStartupError: true`; DSH's own MCP client spawned the server as a child, completed the handshake, discovered all **then-current 8 tools**, and a real `list_sources` call returned data. Resume/batch tools were added later and are not covered by this historical harness check. |
 | **Claude Code** | 2.1.269 | stdio | `claude mcp add` + `claude mcp list` → `√ Connected` |
-| **Codex CLI** | 0.147.0 | stdio | Entry present in `~/.codex/config.toml`. **Not live-verified on 2026-09-21**: the CLI aborts on an unrelated malformed model-catalog file, so no handshake was observed this run. The earlier note above reflects a previous run and is not current evidence. |
+| **Codex desktop** | later check | stdio | After an unrelated model-catalog compatibility repair, a live textflowkit `list_jobs` call succeeded. The 2026-09-21 Codex CLI 0.147.0 attempt had failed before connection; that older failure is not a current textflowkit result. |
 | **OpenCode** | 1.18.18 | Streamable HTTP | `opencode mcp add --url` + `opencode mcp list` → `✓ textflowkit connected`; `opencode mcp debug` → `HTTP response: 200 OK` |
 
 Two transport notes learned from doing this:
@@ -131,6 +133,8 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | GET | `/health` | liveness |
 | GET | `/sources` | platforms, formats |
 | POST | `/jobs` | submit a job (202 + job id) |
+| POST | `/jobs/batch` | submit independent jobs (`{"jobs":[...],"resume":true}`) |
+| POST | `/jobs/{id}/resume` | resume a saved durable request/checkpoint |
 | GET | `/jobs` | list recent jobs |
 | GET | `/jobs/{id}` | job status |
 | GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=` | rendered transcript, optionally sliced |
@@ -138,10 +142,10 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
-### Binding beyond loopback is refused
+### Developer mode and production profile
 
-The HTTP surfaces have no authentication, so binding one to a reachable
-interface would expose it. That specific configuration is **refused at startup**:
+Developer mode is localhost-only by default and has no authentication. Binding
+to a reachable interface is **refused at startup** unless explicitly enabled:
 
 ```bash
 textflowkit-http --host 0.0.0.0
@@ -156,13 +160,34 @@ textflowkit-http --host 0.0.0.0 --allow-remote
 TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
 ```
 
-Only do that behind your own gateway. The guard deliberately does not add
-authentication - it makes the unsafe configuration an explicit decision instead
-of a default.
+Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
+`TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit
+input/output/work roots, and an on-disk SQLite job store are configured. It
+enforces a bounded request body, per-process rate limit, pending queue, media
+size, source duration, rendered-output size, and transcript page size. Each job
+gets its own scratch directory under `TEXTFLOWKIT_WORK_ROOT`.
 
-**No authentication is included.** Bind to localhost, or front it with your own
-gateway before exposing it. That is deliberate: auth belongs to the deployment,
-not to a transcript library.
+```bash
+export TEXTFLOWKIT_PROFILE=production
+export TEXTFLOWKIT_API_TOKEN='replace-with-a-long-random-secret'
+export TEXTFLOWKIT_INPUT_ROOT=/srv/textflowkit/input
+export TEXTFLOWKIT_OUTPUT_ROOT=/srv/textflowkit/output
+export TEXTFLOWKIT_WORK_ROOT=/srv/textflowkit/work
+export TEXTFLOWKIT_DB=/srv/textflowkit/jobs.db
+export TEXTFLOWKIT_EGRESS_PROXY=http://127.0.0.1:8888 # SSRF-filtering proxy, required for URL input
+textflowkit-http --host 127.0.0.1 --port 8767
+```
+
+Send `Authorization: Bearer <token>` on every request. For remote clients,
+terminate TLS and enforce independent rate/egress policy at a trusted gateway;
+the built-in limiter is per process, not a distributed quota. A proxy is not
+bundled: production URL jobs fail if `TEXTFLOWKIT_EGRESS_PROXY` is unset, and
+the operator must ensure that proxy blocks private/loopback destinations and
+DNS rebinding. External JavaScript runtimes are disabled for production URL
+jobs because they are not guaranteed to honor yt-dlp's proxy; this may limit
+some YouTube formats. Local-file jobs do not require network egress. Streamable-HTTP
+MCP is a separate surface and should remain on loopback or behind a gateway;
+the JSON HTTP production token does not automatically secure it.
 
 ## Durable job state
 
@@ -248,12 +273,19 @@ than returning output that quietly lacks the feature.
 ### Translation
 
 ```bash
+export TEXTFLOWKIT_TRANSLATE_MODEL=your-local-ollama-model
 textflowkit transcribe "$URL" --translate-to Spanish
-TEXTFLOWKIT_TRANSLATE_MODEL=glm-5.3-flash:cloud    # which model
-TEXTFLOWKIT_OLLAMA_HOST=http://127.0.0.1:11434     # which server
 ```
 
-Backend is local Ollama by default, so transcript text stays on the machine.
+Translation requires an explicit `TEXTFLOWKIT_TRANSLATE_MODEL`; there is **no
+default model** and textflowkit will not silently choose a cloud model. The
+default Ollama host is `http://127.0.0.1:11434`, but a model tagged `:cloud`
+can send transcript text beyond that local host. Likewise, setting
+`TEXTFLOWKIT_OLLAMA_HOST` to a remote server sends text to that host. `doctor`
+reports the selected model and route, and each translated transcript records
+the route in metadata. Choose a local model if transcripts must stay on this
+machine.
+
 Requests are **batched** (20 segments per round trip), and if a batch comes back
 unparseable the chunk is retried one segment at a time - correctness does not
 depend on the model obeying a format. Identical text is cached, which matters
@@ -263,7 +295,7 @@ The result length is checked against the input, so a misbehaving model cannot
 shift text onto the wrong segment. An unreachable backend raises; it never
 returns the source text as a translation.
 
-`translation` metadata is recorded on the transcript (backend, target, how many
+`translation` metadata is recorded on the transcript (backend, route, target, how many
 segments were translated).
 
 ### Speaker labels
@@ -271,6 +303,7 @@ segments were translated).
 ```bash
 textflowkit transcribe "$URL" --diarize
 HF_TOKEN=hf_...                   # required: the model is gated
+TEXTFLOWKIT_DIARIZE_DEVICE=cuda  # optional; ROCm also appears as cuda in torch
 ```
 
 Requires the optional `diarize` extra (`pip install 'textflowkit[diarize]'`) and a

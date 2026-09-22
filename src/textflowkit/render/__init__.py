@@ -14,9 +14,12 @@ Two paths, because two kinds of output:
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 from textflowkit.core.model import Transcript
+from textflowkit.core.service import enforce_output_limit
 from textflowkit.render.markdown import render_markdown
 from textflowkit.render.srt import render_srt
 from textflowkit.render.txt import render_txt
@@ -32,6 +35,51 @@ RENDERERS = {
 TEXT_FORMATS = tuple(RENDERERS) + ("json",)
 BINARY_FORMATS = ("docx", "pdf")
 SUPPORTED_FORMATS = TEXT_FORMATS + BINARY_FORMATS
+
+
+def _render_requested(
+    transcript: Transcript, formats: list[str], title: str | None
+) -> list[tuple[str, bytes]]:
+    """Validate and render every format before touching any destination file."""
+    rendered: list[tuple[str, bytes]] = []
+    seen: set[str] = set()
+    for fmt in formats:
+        norm = fmt.lower().lstrip(".")
+        if norm not in SUPPORTED_FORMATS:
+            raise ValueError(f"unsupported format: {fmt}")
+        if norm in seen:
+            raise ValueError(f"duplicate output format: {fmt}")
+        seen.add(norm)
+        rendered.append((norm, render_bytes(transcript, norm, title=title)))
+    enforce_output_limit(sum(len(data) for _, data in rendered))
+    return rendered
+
+
+def atomic_write_bytes(path: Path, data: bytes, *, replace: bool = False) -> None:
+    """Publish a complete file; optionally replace an explicitly chosen path."""
+    from textflowkit.core.paths import verify_output_file_target
+
+    enforce_output_limit(len(data))
+    verify_output_file_target(path)
+    temp: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
+                                         suffix=".tmp", delete=False) as handle:
+            temp = Path(handle.name)
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # A hard link commits the fully-written temp file atomically and fails
+        # if the destination already exists, unlike os.replace().
+        verify_output_file_target(path)
+        if replace:
+            os.replace(temp, path)
+            temp = None
+        else:
+            os.link(temp, path)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 def render(transcript: Transcript, fmt: str, *, title: str | None = None) -> str:
@@ -87,19 +135,20 @@ def ensure_outputs(
     from textflowkit.core.paths import ensure_output_dir
 
     out_dir = ensure_output_dir(str(output_dir))
+    rendered = _render_requested(transcript, formats, title)
     by_suffix: dict[str, Path] = {}
     for raw in existing or []:
         path = Path(raw)
-        by_suffix[path.suffix.lower().lstrip(".")] = path
+        if path.parent.resolve() == out_dir.resolve():
+            by_suffix[path.suffix.lower().lstrip(".")] = path
     written: list[Path] = []
-    for fmt in formats:
-        norm = fmt.lower().lstrip(".")
+    for norm, data in rendered:
         prior = by_suffix.get(norm)
         if prior is not None and prior.exists():
             written.append(prior)
             continue
         path = out_dir / f"{stem}.{norm}"
-        path.write_bytes(render_bytes(transcript, norm, title=title))
+        atomic_write_bytes(path, data)
         written.append(path)
     return written
 
@@ -116,11 +165,11 @@ def write_all(
     from textflowkit.core.paths import ensure_output_dir
 
     out_dir = ensure_output_dir(str(output_dir))
+    rendered = _render_requested(transcript, formats, title)
     written: list[Path] = []
-    for fmt in formats:
-        norm = fmt.lower().lstrip(".")
+    for norm, data in rendered:
         path = out_dir / f"{stem}.{norm}"
-        path.write_bytes(render_bytes(transcript, norm, title=title))
+        atomic_write_bytes(path, data)
         written.append(path)
     return written
 
@@ -130,6 +179,7 @@ __all__ = [
     "RENDERERS",
     "SUPPORTED_FORMATS",
     "TEXT_FORMATS",
+    "atomic_write_bytes",
     "ensure_outputs",
     "render",
     "render_bytes",

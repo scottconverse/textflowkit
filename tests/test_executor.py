@@ -17,6 +17,7 @@ from textflowkit.core.executor import (
     CancelToken,
     JobCancelled,
     JobExecutor,
+    QueueFullError,
     get_default_executor,
     reset_default_executor,
 )
@@ -353,19 +354,55 @@ def test_executor_passes_input_root_through(monkeypatch, tmp_path):
     ex.shutdown()
 
 
-def test_worker_never_leaves_a_job_pending_on_crash(monkeypatch):
-    """An unexpected TypeError in the worker must not strand a job in PENDING."""
+def test_worker_records_crash_and_runs_next_job(monkeypatch):
+    """One unexpected worker exception must not strand it or later jobs."""
     from textflowkit.core import runner
 
-    def boom(job, store, *, source, **kwargs):
-        raise RuntimeError("worker exploded")
+    original_run_job = runner.run_job
 
-    monkeypatch.setattr(runner, "run_job", boom)
+    def crash_once(job, store, *, source, **kwargs):
+        if source == "broken":
+            raise RuntimeError("worker exploded")
+        return original_run_job(job, store, source=source, **kwargs)
+
+    monkeypatch.setattr(runner, "run_job", crash_once)
+    monkeypatch.setattr(runner, "transcribe", lambda source, **kwargs: _ok_result(source))
     store = MemoryJobStore()
     ex = JobExecutor(store, max_concurrency=1)
-    job = ex.submit(source="x")
-    time.sleep(0.3)
-    # The executor's job is to not hang; run_job owns state. Document current
-    # behaviour: the exception propagates out of the worker thread.
-    assert store.get(job.id) is not None
+    failed = ex.submit(source="broken")
+    next_job = ex.submit(source="healthy")
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and store.get(next_job.id).state is not JobState.DONE:
+        time.sleep(0.02)
+
+    assert store.get(failed.id).state is JobState.ERROR
+    assert "worker exploded" in store.get(failed.id).error
+    assert store.get(next_job.id).state is JobState.DONE
+    assert all(worker.is_alive() for worker in ex._workers)
     ex.shutdown()
+
+
+def test_queue_rejects_extra_job_without_creating_a_record(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_transcribe(source, **kwargs):
+        started.set()
+        assert release.wait(timeout=5)
+        return _ok_result(source)
+
+    monkeypatch.setattr(runner, "transcribe", slow_transcribe)
+    store = MemoryJobStore()
+    ex = JobExecutor(store, max_concurrency=1, max_pending=1)
+    try:
+        first = ex.submit(source="running")
+        assert started.wait(timeout=5)
+        second = ex.submit(source="queued")
+        with pytest.raises(QueueFullError, match="queue is full"):
+            ex.submit(source="rejected")
+        assert {job.source for job in store.list()} == {"running", "queued"}
+    finally:
+        release.set()
+        ex.shutdown()
+    assert store.get(first.id).state is JobState.DONE
+    assert store.get(second.id).state is JobState.DONE

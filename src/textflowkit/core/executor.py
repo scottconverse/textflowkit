@@ -28,6 +28,12 @@ from textflowkit.core.jobs import Job, JobState, JobStore, get_default_store
 
 ENV_CONCURRENCY = "TEXTFLOWKIT_MAX_CONCURRENCY"
 DEFAULT_CONCURRENCY = 1
+ENV_MAX_PENDING = "TEXTFLOWKIT_MAX_PENDING_JOBS"
+DEFAULT_MAX_PENDING = 100
+
+
+class QueueFullError(RuntimeError):
+    """The executor cannot accept another pending job right now."""
 
 
 # The signal itself lives in a leaf module so the source layer can re-raise it
@@ -67,7 +73,13 @@ class JobExecutor:
     saturates a GPU on its own; override with `TEXTFLOWKIT_MAX_CONCURRENCY`.
     """
 
-    def __init__(self, store: JobStore, *, max_concurrency: int | None = None) -> None:
+    def __init__(
+        self,
+        store: JobStore,
+        *,
+        max_concurrency: int | None = None,
+        max_pending: int | None = None,
+    ) -> None:
         self._store = store
         if max_concurrency is None:
             raw = os.environ.get(ENV_CONCURRENCY)
@@ -76,6 +88,17 @@ class JobExecutor:
             except ValueError:
                 max_concurrency = DEFAULT_CONCURRENCY
         self._max_concurrency = max(1, max_concurrency)
+
+        if max_pending is None:
+            raw = os.environ.get(ENV_MAX_PENDING)
+            try:
+                max_pending = int(raw) if raw else DEFAULT_MAX_PENDING
+            except ValueError:
+                max_pending = DEFAULT_MAX_PENDING
+        self._max_pending = max(1, max_pending)
+        # This semaphore counts queued jobs, not running workers. It also lets
+        # shutdown enqueue sentinels without deadlocking on a full queue.
+        self._pending_slots = threading.BoundedSemaphore(self._max_pending)
 
         self._queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
         self._workers: list[threading.Thread] = []
@@ -94,6 +117,10 @@ class JobExecutor:
     @property
     def max_concurrency(self) -> int:
         return self._max_concurrency
+
+    @property
+    def max_pending(self) -> int:
+        return self._max_pending
 
     def start(self) -> None:
         """Start worker threads. Idempotent; called lazily by submit()."""
@@ -135,12 +162,42 @@ class JobExecutor:
 
     # -- work --------------------------------------------------------------
 
-    def submit(self, *, source: str, **kwargs: Any) -> Job:
+    def submit(
+        self, *, source: str, request: dict[str, Any] | None = None, **kwargs: Any
+    ) -> Job:
         """Queue a job and return it immediately."""
         self.start()
-        job = self._store.create(source)
-        self._queue.put((job.id, {"source": source, **kwargs}))
-        return job
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("job executor is shut down")
+            if not self._pending_slots.acquire(blocking=False):
+                raise QueueFullError(
+                    f"job queue is full ({self._max_pending} pending); retry later"
+                )
+            try:
+                job = self._store.create(source, request=request)
+                self._queue.put_nowait((job.id, {"source": source, **kwargs}))
+            except Exception:
+                self._pending_slots.release()
+                raise
+            return job
+
+    def enqueue(self, job: Job, *, source: str, **kwargs: Any) -> Job:
+        """Queue an existing prepared job (the durable resume path)."""
+        self.start()
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("job executor is shut down")
+            if not self._pending_slots.acquire(blocking=False):
+                raise QueueFullError(
+                    f"job queue is full ({self._max_pending} pending); retry later"
+                )
+            try:
+                self._queue.put_nowait((job.id, {"source": source, **kwargs}))
+            except Exception:
+                self._pending_slots.release()
+                raise
+            return job
 
     def cancel(self, job_id: str) -> bool:
         """Request cancellation. True if the job was live.
@@ -188,6 +245,7 @@ class JobExecutor:
             try:
                 if item is None:
                     return
+                self._pending_slots.release()
                 job_id, kwargs = item
 
                 # Register the token BEFORE inspecting state, so a concurrent
@@ -197,7 +255,15 @@ class JobExecutor:
                 with self._lock:
                     self._tokens[job_id] = token
                 try:
-                    self._run_one(job_id, kwargs, token)
+                    try:
+                        self._run_one(job_id, kwargs, token)
+                    except Exception as exc:  # noqa: BLE001 - keep the worker alive
+                        self._store.update(
+                            job_id,
+                            state=JobState.ERROR,
+                            error=f"{type(exc).__name__}: {exc}",
+                            progress="failed",
+                        )
                 finally:
                     with self._lock:
                         self._tokens.pop(job_id, None)

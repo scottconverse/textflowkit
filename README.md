@@ -55,13 +55,15 @@ the core; the interfaces are thin.
 Because the core owns the pipeline, adding a door is cheap — and adding a platform
 means writing one source adapter, not another tool.
 
-## Supported sources
+## Recognized sources
 
 YouTube · TikTok · Facebook · Instagram · Vimeo · Twitch · Bilibili · Rumble ·
 Kick · Zoom · Medal · Loom · Dropbox — plus **direct media URLs and local files**.
 
-Platform coverage depends on `yt-dlp`; some sources require cookies or change
-their access rules frequently. See [docs/sources.md](docs/sources.md).
+All 13 are recognised through `yt-dlp`; only YouTube has a maintained live
+end-to-end smoke test. Local files have also been transcribed live. The other
+12 are not release-verified end to end, and some sources require cookies or
+change their access rules frequently. See [docs/sources.md](docs/sources.md).
 
 ## Install
 
@@ -76,7 +78,7 @@ pip install -e .
 Or install the built wheel from the release page:
 
 ```bash
-pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.0/textflowkit-0.1.0-py3-none-any.whl
+pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.1/textflowkit-0.1.1-py3-none-any.whl
 ```
 
 Not published to PyPI; the repository and its releases are the distribution path.
@@ -133,26 +135,24 @@ textflowkit-mcp                                  # stdio
 textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
 
-Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
+Tools: `transcribe_media`, `submit_batch_media`, `resume_job`,
+`get_job_status`, `get_transcript`,
 `export_transcript`, `list_sources`, `list_jobs`, `cancel_job`,
 `search_transcript`.
 
-**Verified against DSH, Claude Code, and OpenCode** - verified that each
-harness's own MCP client connects and sees the tools. This is **not** an
-end-to-end transcription run driven by each harness; no harness was asked to
-complete a real transcription through the tools:
+**Connection-smoked against DSH, Claude Code, OpenCode, and Codex desktop.**
+These checks are not end-to-end transcription runs driven by each harness:
 
 - **DSH** - the server spawned as a child of the harness's MCP client, which
-  then completed an MCP handshake, discovered all 8 tools, and returned real
+  then completed an MCP handshake, discovered the tools, and returned real
   data from a `list_sources` call.
 - **Claude Code** - `claude mcp list` reports `textflowkit: √ Connected` (stdio).
 - **OpenCode** - `opencode mcp list` reports `textflowkit connected` over
   Streamable HTTP.
 
-**Codex** is configured but not live-verified: the entry is present in
-`~/.codex/config.toml`, and the CLI could not be exercised because an unrelated
-model-catalog file in that config fails to parse. That is a pre-existing issue
-with the Codex configuration, not with this server.
+- **Codex desktop** - after repair of an unrelated model-catalog issue, a live
+  `list_jobs` tool call succeeded. This does not prove every tool or a full
+  transcription in Codex.
 
 There is also a protocol test that launches the server as a real subprocess and
 speaks newline-delimited JSON-RPC over stdio, so the entry point, framing, and
@@ -166,8 +166,11 @@ pip install -e ".[http]"
 textflowkit-http --port 8767
 ```
 
-Submit a job, poll it, fetch the transcript. No authentication is bundled —
-bind to localhost or front it with your own gateway.
+Submit a job, poll it, fetch the transcript. Developer mode is unauthenticated
+and defaults to localhost. The opt-in JSON HTTP production profile requires a
+Bearer token, explicit roots, durable SQLite jobs, and request/rate/media/output
+limits; URL input additionally requires an SSRF-filtering egress proxy. See
+[adapter deployment details](docs/adapters.md#developer-mode-and-production-profile).
 
 ## Durable, bounded, cancellable
 
@@ -181,15 +184,17 @@ boundary. See [docs/adapters.md](docs/adapters.md).
 
 ## Long jobs never block
 
-Every interface is **job-based**: `transcribe_media` returns a job id
-immediately and you poll for completion. That is what lets the same core serve a
-CLI, AI harnesses, software products, and a future web frontend without
-interface changes.
+The MCP and HTTP adapters are **job-based**: submission returns a job id
+immediately and clients poll for completion. The CLI uses the same core but
+waits for the result. This lets AI harnesses, software products, and a future
+web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.0 — early.** Core, CLI, MCP, and HTTP all work and are verified
-end-to-end on real media. See [docs/roadmap.md](docs/roadmap.md).
+**v0.1.1 stabilization.** Core, CLI, MCP, and HTTP have automated
+coverage; Windows-native ROCm and live YouTube transcription are verified.
+This does not imply that all 13 platforms or every harness workflow has been
+tested end to end. See [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 

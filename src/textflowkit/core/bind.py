@@ -1,9 +1,9 @@
 """Bind-safety guard for the HTTP surfaces.
 
-The HTTP adapters ship no authentication by design - auth belongs to the
-deployment. The dangerous configuration is therefore not "HTTP" but "HTTP bound
-somewhere other than loopback", which puts an unauthenticated, file-writing,
-network-fetching API on a reachable interface.
+Developer-mode HTTP and Streamable-HTTP MCP are unauthenticated. The JSON HTTP
+adapter has a separate opt-in production Bearer-token profile. The dangerous
+configuration is an unauthenticated, file-writing, network-fetching API bound
+beyond loopback.
 
 This guard does not add auth. It refuses that specific configuration unless the
 operator says so explicitly, so the failure mode is a clear startup error rather
@@ -21,7 +21,7 @@ _LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", "::1"})
 
 
 class UnsafeBindError(ValueError):
-    """Raised when a bind address would expose an unauthenticated service."""
+    """Raised when a bind address would expose a service without explicit opt-in."""
 
 
 def is_loopback_host(host: str) -> bool:
@@ -59,7 +59,7 @@ def check_bind_safety(host: str, *, allow_remote: bool | None = None) -> None:
     if remote_allowed(allow_remote):
         return
     raise UnsafeBindError(
-        f"refusing to bind to '{host}': the HTTP surface has no authentication, "
+        f"refusing to bind to '{host}': developer HTTP/MCP is unauthenticated, "
         "so binding beyond loopback would expose it on the network. "
         "Bind to 127.0.0.1, or pass --allow-remote (or set "
         f"{ENV_ALLOW_REMOTE}=1) if you have a gateway in front of it."

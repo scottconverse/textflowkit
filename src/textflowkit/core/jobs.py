@@ -37,6 +37,13 @@ class JobState(str, Enum):
 
 
 TERMINAL_STATES = frozenset({JobState.DONE, JobState.ERROR, JobState.CANCELLED})
+MAX_LIST_LIMIT = 1000
+
+
+def validate_list_limit(limit: int) -> int:
+    if limit < 0 or limit > MAX_LIST_LIMIT:
+        raise ValueError(f"limit must be between 0 and {MAX_LIST_LIMIT}")
+    return limit
 
 # A job in one of these states expects a worker to be running it. Across a
 # restart there is no worker, so any such job is orphaned and must be reaped -
@@ -59,12 +66,15 @@ class Job:
     outputs: list[str] = field(default_factory=list)
     cancel_requested: bool = False
     checkpoint: dict[str, Any] | None = None
+    request: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
         return self.state in TERMINAL_STATES
 
-    def to_dict(self, *, include_transcript: bool = False) -> dict[str, Any]:
+    def to_dict(
+        self, *, include_transcript: bool = False, include_checkpoint: bool = False
+    ) -> dict[str, Any]:
         data = {
             "id": self.id,
             "source": self.source,
@@ -75,8 +85,9 @@ class Job:
             "error": self.error,
             "outputs": list(self.outputs),
             "cancel_requested": self.cancel_requested,
-            "checkpoint": self.checkpoint,
         }
+        if include_checkpoint and self.checkpoint is not None:
+            data["checkpoint"] = self.checkpoint
         if include_transcript and self.transcript is not None:
             data["transcript"] = self.transcript
         return data
@@ -90,7 +101,7 @@ class JobStore(ABC):
     """
 
     @abstractmethod
-    def create(self, source: str) -> Job:
+    def create(self, source: str, *, request: dict[str, Any] | None = None) -> Job:
         """Create a pending job and return it."""
 
     @abstractmethod
@@ -140,8 +151,8 @@ class MemoryJobStore(JobStore):
         self._lock = threading.RLock()
         self._max_jobs = max_jobs
 
-    def create(self, source: str) -> Job:
-        job = Job(id=uuid.uuid4().hex[:12], source=source)
+    def create(self, source: str, *, request: dict[str, Any] | None = None) -> Job:
+        job = Job(id=uuid.uuid4().hex[:12], source=source, request=request)
         with self._lock:
             self._jobs[job.id] = job
             self._order.append(job.id)
@@ -163,6 +174,8 @@ class MemoryJobStore(JobStore):
             return job
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
         with self._lock:
             jobs = [self._jobs[i] for i in reversed(self._order) if i in self._jobs]
         if state is not None:

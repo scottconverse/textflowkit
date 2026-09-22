@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     transcript       TEXT,
     outputs          TEXT    NOT NULL DEFAULT '[]',
     cancel_requested INTEGER NOT NULL DEFAULT 0,
-    checkpoint       TEXT
+    checkpoint       TEXT,
+    request          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
 """
@@ -48,6 +49,7 @@ _MUTABLE = frozenset(
         "outputs",
         "cancel_requested",
         "checkpoint",
+        "request",
     }
 )
 
@@ -60,6 +62,8 @@ def _row_to_job(row: sqlite3.Row) -> Job:
     keys = set(row.keys())
     raw_checkpoint = row["checkpoint"] if "checkpoint" in keys else None
     checkpoint = json.loads(raw_checkpoint) if raw_checkpoint else None
+    raw_request = row["request"] if "request" in keys else None
+    request = json.loads(raw_request) if raw_request else None
     return Job(
         id=row["id"],
         source=row["source"],
@@ -72,6 +76,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         outputs=list(outputs),
         cancel_requested=bool(row["cancel_requested"]),
         checkpoint=checkpoint,
+        request=request,
     )
 
 
@@ -96,7 +101,7 @@ class SqliteJobStore(JobStore):
 
     # -- interface ---------------------------------------------------------
 
-    def create(self, source: str) -> Job:
+    def create(self, source: str, *, request: dict[str, Any] | None = None) -> Job:
         now = time.time()
         job = Job(
             id=uuid.uuid4().hex[:12],
@@ -104,12 +109,13 @@ class SqliteJobStore(JobStore):
             state=JobState.PENDING,
             created_at=now,
             updated_at=now,
+            request=request,
         )
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, source, state, created_at, updated_at,"
-                " progress, error, transcript, outputs, cancel_requested, checkpoint)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " progress, error, transcript, outputs, cancel_requested, checkpoint, request)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id,
                     job.source,
@@ -122,6 +128,7 @@ class SqliteJobStore(JobStore):
                     json.dumps([]),
                     int(job.cancel_requested),
                     None,
+                    json.dumps(request) if request is not None else None,
                 ),
             )
             self._conn.commit()
@@ -150,7 +157,7 @@ class SqliteJobStore(JobStore):
                 values.append(json.dumps(value) if value is not None else None)
             elif key == "outputs":
                 values.append(json.dumps(list(value or [])))
-            elif key == "checkpoint":
+            elif key in {"checkpoint", "request"}:
                 values.append(json.dumps(value) if value is not None else None)
             elif key == "cancel_requested":
                 values.append(int(bool(value)))
@@ -172,6 +179,8 @@ class SqliteJobStore(JobStore):
         return self.get(job_id)
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
         with self._lock:
             if state is None:
                 rows = self._conn.execute(
@@ -198,6 +207,8 @@ class SqliteJobStore(JobStore):
         }
         if _CHECKPOINT_COLUMN not in existing:
             self._conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint TEXT")
+        if "request" not in existing:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN request TEXT")
 
     def _prune_locked(self) -> None:
         """Drop the oldest terminal jobs once over capacity."""

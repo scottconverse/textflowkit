@@ -4,19 +4,25 @@ A small JSON API over the same core and job store the MCP adapter uses. This is
 the door for software products and for the eventual website: it is deliberately
 job-based so a long video never blocks a request.
 
-Not started by default. There is no authentication here by design - bind it to
-localhost, or put it behind your own gateway before exposing it.
+Not started by default. Developer mode is unauthenticated and loopback-only by
+default. The opt-in JSON HTTP production profile requires Bearer authentication
+and a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
 """
 
 from __future__ import annotations
 
+import hmac
+import json
+import os
 import sys
+import threading
+import time
 from typing import Annotated, Any
 
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
-from textflowkit.core.executor import get_default_executor
-from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
@@ -24,12 +30,37 @@ from textflowkit.core.paths import (
     server_input_root,
 )
 from textflowkit.core.retrieval import page_segments, search_segments
-from textflowkit.core.runner import submit, transcript_for
-from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
+from textflowkit.core.runner import transcript_for
+from textflowkit.core.service import (
+    ENV_API_TOKEN,
+    ENV_MAX_REQUEST_BYTES,
+    ENV_RATE_PER_MINUTE,
+    ServiceConfigurationError,
+    enforce_output_limit,
+    positive_limit,
+    production_enabled,
+    service_work_root,
+    validate_production_config,
+)
+from textflowkit.core.submission import (
+    SubmissionRequest,
+    submit_batch,
+    submit_request,
+)
+from textflowkit.core.submission import (
+    resume_job as core_resume_job,
+)
+from textflowkit.render import (
+    SUPPORTED_FORMATS,
+    TEXT_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 
 try:  # optional extra
-    from fastapi import FastAPI, HTTPException, Query
-    from fastapi.responses import PlainTextResponse
+    from fastapi import FastAPI, HTTPException, Query, Request
+    from fastapi.responses import JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
@@ -42,6 +73,51 @@ app = FastAPI(
     description="Cross-platform media transcription API. Job-based: submit, poll, fetch.",
 )
 
+_RATE_LOCK = threading.Lock()
+_RATE_BUCKETS: dict[str, tuple[float, int]] = {}
+
+
+@app.middleware("http")
+async def production_guard(request: Request, call_next):
+    try:
+        if not production_enabled():
+            return await call_next(request)
+        validate_production_config()
+    except ServiceConfigurationError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {os.environ[ENV_API_TOKEN]}"
+    if not hmac.compare_digest(supplied, expected):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    max_bytes = positive_limit(ENV_MAX_REQUEST_BYTES, 64 * 1024)
+    length = request.headers.get("content-length")
+    if length is not None and (not length.isdecimal() or int(length) > max_bytes):
+        return JSONResponse({"error": "request body too large"}, status_code=413)
+    # Do not call request.body() first: absent Content-Length, it buffers an
+    # arbitrarily large chunked body before the check can run. Cache only after
+    # incrementally enforcing the limit so call_next can replay it to FastAPI.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > max_bytes:
+            return JSONResponse({"error": "request body too large"}, status_code=413)
+        body.extend(chunk)
+    request._body = bytes(body)
+
+    rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
+    peer = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    with _RATE_LOCK:
+        started, count = _RATE_BUCKETS.get(peer, (now, 0))
+        if now - started >= 60:
+            started, count = now, 0
+        if count >= rate:
+            return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
+        _RATE_BUCKETS[peer] = started, count + 1
+        if len(_RATE_BUCKETS) > 10000:
+            _RATE_BUCKETS.clear()
+    return await call_next(request)
+
 
 class TranscribeRequest(BaseModel):
     source: str = Field(..., description="Media URL or local file path")
@@ -53,6 +129,17 @@ class TranscribeRequest(BaseModel):
     cookies_from_browser: str | None = None
     diarize: bool = False
     translate_to: str | None = None
+
+
+class BatchRequest(BaseModel):
+    jobs: list[TranscribeRequest]
+    resume: bool = False
+
+
+def _submission_request(req: TranscribeRequest) -> SubmissionRequest:
+    return SubmissionRequest(
+        **req.model_dump(), input_root=server_input_root(), work_dir=service_work_root()
+    )
 
 
 @app.get("/health")
@@ -76,34 +163,50 @@ def sources() -> dict[str, Any]:
 @app.post("/jobs", status_code=202)
 def create_job(req: TranscribeRequest) -> dict[str, Any]:
     """Submit a transcription job. Returns 202 with a job id immediately."""
-    bad = [f for f in req.formats if f.lower().lstrip(".") not in SUPPORTED_FORMATS]
-    if bad:
-        raise HTTPException(
-            status_code=422,
-            detail={"error": f"unsupported format(s): {', '.join(bad)}",
-                    "available_formats": list(SUPPORTED_FORMATS)},
-        )
-
     store = get_default_store()
-    job = submit(
-        store,
-        source=req.source,
-        language=req.language,
-        formats=[f.lower().lstrip(".") for f in req.formats],
-        output_dir=req.output_dir,
-        model=req.model,
-        device=req.device,
-        cookies_from_browser=req.cookies_from_browser,
-        input_root=server_input_root(),
-        diarize=req.diarize,
-        translate_to=req.translate_to,
-    )
+    try:
+        job = submit_request(store, _submission_request(req))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return job.to_dict()
+
+
+@app.post("/jobs/batch", status_code=202)
+def create_batch(req: BatchRequest) -> dict[str, Any]:
+    """Queue multiple independent jobs through the same core contract."""
+    try:
+        requests = [_submission_request(item) for item in req.jobs]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    results = submit_batch(get_default_store(), requests, resume=req.resume)
+    return {"count": len(results), "jobs": results}
+
+
+@app.post("/jobs/{job_id}/resume", status_code=202)
+def resume_job(job_id: str) -> dict[str, Any]:
+    """Resume a durable interrupted job by its saved request and checkpoint."""
+    try:
+        job = core_resume_job(
+            get_default_store(), job_id,
+            input_root=str(server_input_root()) if server_input_root() else None,
+            work_dir=service_work_root(),
+        )
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return job.to_dict()
 
 
 @app.get("/jobs")
 def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
     """List recent jobs, newest first."""
+    try:
+        validate_list_limit(limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     store = get_default_store()
     filter_state = None
     if state:
@@ -121,11 +224,11 @@ def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
-    """Job status. Includes the transcript only once the job is done."""
+    """Lean job status; use the paged transcript endpoint for content."""
     job = get_default_store().get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
-    return job.to_dict(include_transcript=job.state is JobState.DONE)
+    return job.to_dict()
 
 
 @app.post("/jobs/{job_id}/cancel")
@@ -187,6 +290,10 @@ def get_transcript(
     seconds. The JSON form reports total_segments and has_more.
     """
     job, tr = _finished_transcript(job_id)
+    if production_enabled():
+        limit = 100 if limit is None else limit
+        if limit > 500:
+            raise HTTPException(status_code=422, detail="transcript page limit must be <= 500")
 
     fmt = format.lower().lstrip(".")
     if fmt not in TEXT_FORMATS:
@@ -215,12 +322,22 @@ def get_transcript(
     )
 
     if fmt == "json":
-        return {
+        response = {
             "job_id": job.id,
             **page.as_dict(),
             "transcript": sliced.to_dict(),
         }
-    return PlainTextResponse(render(sliced, fmt))
+        try:
+            enforce_output_limit(len(json.dumps(response, ensure_ascii=False).encode("utf-8")))
+        except ServiceConfigurationError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        return response
+    content = render(sliced, fmt)
+    try:
+        enforce_output_limit(len(content.encode("utf-8")))
+    except ServiceConfigurationError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return PlainTextResponse(content)
 
 
 @app.get("/jobs/{job_id}/search")
@@ -228,6 +345,8 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
            case_sensitive: bool = False) -> dict[str, Any]:
     """Search a completed transcript for a phrase."""
     job, tr = _finished_transcript(job_id)
+    if production_enabled() and (limit > 500 or context > 20):
+        raise HTTPException(status_code=422, detail="search limit/context exceeds production cap")
     try:
         matches = search_segments(
             tr, q, limit=limit, context=context, case_sensitive=case_sensitive
@@ -235,7 +354,7 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return {
+    response = {
         "job_id": job.id,
         "query": q,
         "match_count": len(matches),
@@ -251,6 +370,11 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
             for m in matches
         ],
     }
+    try:
+        enforce_output_limit(len(json.dumps(response, ensure_ascii=False).encode("utf-8")))
+    except ServiceConfigurationError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return response
 
 
 @app.post("/jobs/{job_id}/export")
@@ -278,18 +402,25 @@ def export(
         raise HTTPException(status_code=500, detail="job contains no transcript")
 
     fmt_list = formats or ["srt", "vtt", "txt", "json"]
+    normalized = [f.lower().lstrip(".") for f in fmt_list]
+    bad = [f for f in normalized if f not in SUPPORTED_FORMATS]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"unsupported format(s): {', '.join(bad)}")
+    if len(normalized) != len(set(normalized)):
+        raise HTTPException(status_code=422, detail="duplicate output format")
+    try:
+        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in normalized]
+    except (ValueError, ImportError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         out = ensure_output_dir(output_dir)
     except UnsafeOutputPathError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     written = []
-    for f in fmt_list:
-        norm = f.lower().lstrip(".")
-        if norm not in SUPPORTED_FORMATS:
-            raise HTTPException(status_code=422, detail=f"unsupported format '{f}'")
+    for norm, content in rendered:
         path = out / f"{job.id}.{norm}"
-        path.write_bytes(render_bytes(tr, norm, title=job.id))
+        atomic_write_bytes(path, content, replace=True)
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 
@@ -308,16 +439,18 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-remote",
         action="store_true",
         help=(
-            "permit binding to a non-loopback address. This surface has no "
-            f"authentication; only do this behind your own gateway. ({ENV_ALLOW_REMOTE}=1 also works)"
+            "permit binding to a non-loopback address. Developer mode has no "
+            "authentication; use a gateway or the production profile. "
+            f"({ENV_ALLOW_REMOTE}=1 also works)"
         ),
     )
     parser.add_argument("--version", action="version", version=f"textflowkit-http {__version__}")
     args = parser.parse_args(argv)
 
     try:
+        validate_production_config()
         check_bind_safety(args.host, allow_remote=args.allow_remote or None)
-    except UnsafeBindError as exc:
+    except (UnsafeBindError, ServiceConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

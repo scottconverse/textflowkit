@@ -44,7 +44,7 @@ def test_non_loopback_bind_refused(monkeypatch):
     with pytest.raises(UnsafeBindError) as exc:
         check_bind_safety("0.0.0.0")
     msg = str(exc.value)
-    assert "no authentication" in msg
+    assert "unauthenticated" in msg
     assert "--allow-remote" in msg
     assert ENV_ALLOW_REMOTE in msg
 

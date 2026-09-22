@@ -8,6 +8,8 @@ can be added without touching the pipeline.
 
 from __future__ import annotations
 
+import threading
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -49,17 +51,19 @@ class WhisperEngine:
             fp16 = self.device != "cpu"
         self.fp16 = fp16
         self._model: Any = None
+        self._lock = threading.RLock()
 
     def _load(self):
-        if self._model is None:
-            try:
-                import whisper
-            except ImportError as exc:
-                raise RuntimeError(
-                    "openai-whisper is not installed. Install with: pip install openai-whisper"
-                ) from exc
-            self._model = whisper.load_model(self.model_name, device=self.device)
-        return self._model
+        with self._lock:
+            if self._model is None:
+                try:
+                    import whisper
+                except ImportError as exc:
+                    raise RuntimeError(
+                        "openai-whisper is not installed. Install with: pip install openai-whisper"
+                    ) from exc
+                self._model = whisper.load_model(self.model_name, device=self.device)
+            return self._model
 
     def transcribe(
         self,
@@ -67,14 +71,15 @@ class WhisperEngine:
         *,
         language: str | None = None,
     ) -> Transcript:
-        model = self._load()
-        result = model.transcribe(
-            str(audio_path),
-            language=language,
-            fp16=self.fp16,
-            verbose=False,
-            word_timestamps=True,
-        )
+        with self._lock:
+            model = self._load()
+            result = model.transcribe(
+                str(audio_path),
+                language=language,
+                fp16=self.fp16,
+                verbose=False,
+                word_timestamps=True,
+            )
 
         segments: list[Segment] = []
         for raw in result.get("segments", []) or []:
@@ -101,8 +106,22 @@ class WhisperEngine:
         )
 
 
+_ENGINE_CACHE_LOCK = threading.Lock()
+
+
+@lru_cache(maxsize=8)
+def _cached_whisper(model: str, device: str | None, fp16: bool | None) -> WhisperEngine:
+    return WhisperEngine(model=model, device=device, fp16=fp16)
+
+
 def get_engine(name: str = "whisper", **kwargs: Any) -> Engine:
     if name in ("whisper", "openai-whisper", "default"):
-        return WhisperEngine(**kwargs)
+        model = kwargs.pop("model", "small")
+        device = kwargs.pop("device", None)
+        fp16 = kwargs.pop("fp16", None)
+        if kwargs:
+            raise TypeError(f"unknown Whisper options: {', '.join(kwargs)}")
+        with _ENGINE_CACHE_LOCK:
+            return _cached_whisper(model, device, fp16)
     raise ValueError(f"unknown engine: {name}")
 

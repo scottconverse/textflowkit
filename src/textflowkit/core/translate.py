@@ -4,9 +4,9 @@ Translation is a separate stage from transcription: it runs after the transcript
 exists, writes into `Segment.translated_text` (a field the model already had), and
 is opt-in.
 
-The backend is pluggable. The shipped implementation talks to a local Ollama
-instance, which keeps media and transcript text on the machine - the same
-property the rest of the tool has.
+The backend is pluggable. The shipped implementation talks to an Ollama host,
+local by default. The selected model may itself be cloud-hosted, so an explicit
+model is required and the route is reported rather than assuming locality.
 
 Two engineering choices worth stating:
 
@@ -29,13 +29,13 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from typing import Protocol
+from urllib.parse import urlparse
 
 from textflowkit.core.model import Segment
 
 ENV_OLLAMA_HOST = "TEXTFLOWKIT_OLLAMA_HOST"
 ENV_OLLAMA_MODEL = "TEXTFLOWKIT_TRANSLATE_MODEL"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-DEFAULT_OLLAMA_MODEL = "deepseek-v4.1-flash:cloud"
 BATCH_SIZE = 20
 
 _NUMBERED = re.compile(r"^\s*(\d+)\s*[.):\-]\s*(.*)$")
@@ -71,8 +71,19 @@ class OllamaTranslator:
         *,
         timeout: float = 300.0,
     ) -> None:
-        self.model = model or os.environ.get(ENV_OLLAMA_MODEL, DEFAULT_OLLAMA_MODEL)
+        self.model = model or os.environ.get(ENV_OLLAMA_MODEL)
+        if not self.model:
+            raise TranslationError(
+                f"translation requires an explicit model; set {ENV_OLLAMA_MODEL}. "
+                "A cloud model is never selected automatically."
+            )
         self.host = (host or os.environ.get(ENV_OLLAMA_HOST, DEFAULT_OLLAMA_HOST)).rstrip("/")
+        hostname = urlparse(self.host).hostname or ""
+        self.route = (
+            "cloud model" if self.model.endswith(":cloud")
+            else "local Ollama" if hostname in {"localhost", "127.0.0.1", "::1"}
+            else "remote Ollama host"
+        )
         self.timeout = timeout
         self._cache: dict[tuple[str, str], str] = {}
 

@@ -120,6 +120,8 @@ def search_segments(
         raise ValueError("limit must be >= 0")
     if context < 0:
         raise ValueError("context must be >= 0")
+    if limit == 0:
+        return []
 
     needle = query if case_sensitive else query.lower()
     visible = [s for s in transcript.segments if not s.hidden]

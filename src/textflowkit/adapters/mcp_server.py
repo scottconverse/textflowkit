@@ -24,8 +24,8 @@ from typing import Any
 
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
-from textflowkit.core.executor import get_default_executor
-from textflowkit.core.jobs import Job, JobState, get_default_store
+from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
@@ -33,8 +33,22 @@ from textflowkit.core.paths import (
     server_input_root,
 )
 from textflowkit.core.retrieval import page_segments, search_segments
-from textflowkit.core.runner import submit, transcript_for
-from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
+from textflowkit.core.runner import transcript_for
+from textflowkit.core.submission import (
+    SubmissionRequest,
+    submit_batch,
+    submit_request,
+)
+from textflowkit.core.submission import (
+    resume_job as core_resume_job,
+)
+from textflowkit.render import (
+    SUPPORTED_FORMATS,
+    TEXT_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 from textflowkit.sources.detect import PLATFORMS
 
 try:  # the MCP SDK is an optional extra
@@ -140,27 +154,69 @@ def transcribe_media(
             "available_formats": list(SUPPORTED_FORMATS),
         }
 
-    store = get_default_store()
-    job = submit(
-        store,
-        source=source,
-        language=language,
-        formats=fmt_list,
-        output_dir=output_dir,
-        model=model,
-        device=device,
-        cookies_from_browser=cookies_from_browser,
-        work_dir=None,
-        input_root=server_input_root(),
-        diarize=diarize,
-        translate_to=translate_to,
-    )
+    try:
+        request = SubmissionRequest(
+            source=source,
+            language=language,
+            formats=fmt_list,
+            output_dir=output_dir,
+            model=model,
+            device=device,
+            cookies_from_browser=cookies_from_browser,
+            input_root=server_input_root(),
+            diarize=diarize,
+            translate_to=translate_to,
+        )
+        job = submit_request(get_default_store(), request)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except QueueFullError as exc:
+        return {"error": str(exc), "retryable": True}
     return {
         "job_id": job.id,
         "state": job.state.value,
         "source": job.source,
         "next": f"Poll get_job_status with job_id='{job.id}' until state is 'done'.",
     }
+
+
+@mcp.tool(annotations=OPEN_WORLD)
+def submit_batch_media(
+    sources: list[str],
+    language: str | None = None,
+    formats: str = "json,srt,txt",
+    output_dir: str | None = None,
+    model: str = "small",
+    device: str | None = None,
+    diarize: bool = False,
+    translate_to: str | None = None,
+    resume: bool = False,
+) -> dict[str, Any]:
+    """Queue multiple independent media jobs and return each job handle."""
+    fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
+    try:
+        requests = [SubmissionRequest(
+            source=source, language=language, formats=fmt_list,
+            output_dir=output_dir, model=model, device=device,
+            diarize=diarize, translate_to=translate_to,
+            input_root=server_input_root(),
+        ) for source in sources]
+    except ValueError as exc:
+        return {"error": str(exc)}
+    results = submit_batch(get_default_store(), requests, resume=resume)
+    return {"count": len(results), "jobs": results}
+
+
+@mcp.tool(annotations=MUTATING)
+def resume_job(job_id: str) -> dict[str, Any]:
+    """Resume an interrupted job using its saved request and transcript checkpoint."""
+    try:
+        job = core_resume_job(get_default_store(), job_id)
+    except QueueFullError as exc:
+        return {"error": str(exc), "retryable": True}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"job_id": job.id, "state": job.state.value}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -348,6 +404,12 @@ def export_transcript(
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
     if bad:
         return {"error": f"unsupported format(s): {', '.join(bad)}"}
+    if len(fmt_list) != len(set(fmt_list)):
+        return {"error": "duplicate output format"}
+    try:
+        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in fmt_list]
+    except (ValueError, ImportError) as exc:
+        return {"error": str(exc)}
 
     try:
         out = ensure_output_dir(output_dir)
@@ -355,9 +417,9 @@ def export_transcript(
         return {"error": str(exc)}
 
     written = []
-    for f in fmt_list:
+    for f, content in rendered:
         path = out / f"{job.id}.{f}"
-        path.write_bytes(render_bytes(tr, f, title=job.id))
+        atomic_write_bytes(path, content, replace=True)
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 
@@ -370,6 +432,10 @@ def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
         limit: Maximum number of jobs to return.
         state: Optional filter - pending, running, done, error, or cancelled.
     """
+    try:
+        validate_list_limit(limit)
+    except ValueError as exc:
+        return {"error": str(exc)}
     store = get_default_store()
     filter_state = None
     if state:

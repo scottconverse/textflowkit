@@ -30,6 +30,24 @@ from textflowkit.core.translate import (
 )
 
 
+@pytest.fixture(autouse=True)
+def configured_local_translation_model(monkeypatch, request):
+    if request.node.name != "test_live_ollama_translates":
+        monkeypatch.setenv("TEXTFLOWKIT_TRANSLATE_MODEL", "test-local-model")
+
+
+def test_translation_refuses_to_choose_a_cloud_model(monkeypatch):
+    monkeypatch.delenv("TEXTFLOWKIT_TRANSLATE_MODEL", raising=False)
+    with pytest.raises(TranslationError, match="explicit model"):
+        OllamaTranslator()
+
+
+def test_translation_reports_cloud_and_remote_routes():
+    assert OllamaTranslator(model="chosen:cloud").route == "cloud model"
+    assert OllamaTranslator(model="local-model").route == "local Ollama"
+    assert OllamaTranslator(model="model", host="https://other.example").route == "remote Ollama host"
+
+
 class FakeTranslator:
     name = "fake"
 
@@ -275,6 +293,8 @@ def _ollama_reachable() -> bool:
 @pytest.mark.skipif(not _ollama_reachable(), reason="no local Ollama server")
 def test_live_ollama_translates():
     """Real backend smoke test. CI has no Ollama, so this skips there."""
+    if not os.environ.get("TEXTFLOWKIT_TRANSLATE_MODEL"):
+        pytest.skip("no explicit translation model configured")
     t = OllamaTranslator(timeout=300.0)
     out = t.translate(["Hello, good morning."], "Spanish")
     assert out and out[0].strip()

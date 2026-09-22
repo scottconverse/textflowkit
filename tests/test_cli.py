@@ -41,6 +41,9 @@ def test_doctor_reports_the_essentials():
         "output root",
         "jobs store",
         "device",
+        "whisper device",
+        "diarize device",
+        "translation model",
     ):
         assert label in out, label
 
