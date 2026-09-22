@@ -1,0 +1,22 @@
+# Normalise line endings so a build is the same on every platform.
+#
+# Without this, core.autocrlf rewrites text files on Windows checkout, so a
+# wheel built from a Windows clone differs byte-for-byte from one built on
+# Linux - same code, different bytes - and a published hash cannot be
+# reproduced. Text is stored as LF in the repository and in every build.
+* text=auto eol=lf
+
+# Binary assets must never be rewritten.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.whl binary
+*.gz binary
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
