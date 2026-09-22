@@ -22,7 +22,7 @@
 - [x] JavaScript runtime auto-detection for yt-dlp (deno/node/bun/quickjs)
 - [x] MCP server adapter (stdio + Streamable HTTP)
 - [x] HTTP service adapter (FastAPI, job-based)
-- [x] Translation stage (`--translate-to`, local Ollama backend)
+- [x] Translation stage (`--translate-to`, explicitly configured Ollama model)
 - [x] Speaker diarization (`--diarize`, optional pyannote backend)
 - [x] Durable job store (SQLite via `TEXTFLOWKIT_DB`)
 - [x] Bounded concurrency (`TEXTFLOWKIT_MAX_CONCURRENCY`)

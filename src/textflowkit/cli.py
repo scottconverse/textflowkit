@@ -315,17 +315,34 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
         else:
             line(label, "installed")
 
-    # compute
+    # Compute devices are separate decisions: pyannote may be pinned to CPU
+    # while Whisper uses ROCm/CUDA, or vice versa.
     try:
         import torch
 
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
-            line("device", f"{name} (torch {torch.__version__})")
+            auto_device = "cuda"
+            device_label = f"{name} (torch {torch.__version__})"
         else:
-            line("device", f"cpu (torch {torch.__version__})")
+            auto_device = "cpu"
+            device_label = f"cpu (torch {torch.__version__})"
     except ImportError:
-        line("device", "torch not installed")
+        auto_device = "cpu"
+        device_label = "torch not installed"
+
+    line("whisper device", f"{auto_device}: {device_label}")
+    from textflowkit.core.diarize import ENV_DIARIZE_DEVICE
+
+    diarize_device = os.environ.get(ENV_DIARIZE_DEVICE) or auto_device
+    line("diarize device", f"{diarize_device}: {device_label if diarize_device == auto_device else 'configured'}")
+
+    from textflowkit.core.translate import ENV_OLLAMA_MODEL, OllamaTranslator
+
+    translation_model = os.environ.get(ENV_OLLAMA_MODEL)
+    line("translation model", translation_model or f"not configured (set {ENV_OLLAMA_MODEL})")
+    if translation_model:
+        line("translation route", OllamaTranslator().route)
 
     line("input root", str(default_input_root() or "unconfined (CLI default)"))
     line("output root", str(output_root()))

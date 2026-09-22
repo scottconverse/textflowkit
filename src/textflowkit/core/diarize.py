@@ -19,14 +19,18 @@ tested without any model at all.
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from textflowkit.core.engine import _pick_device
 from textflowkit.core.model import Segment
 
 ENV_HF_TOKEN = "HF_TOKEN"
 ENV_PYANNOTE_MODEL = "TEXTFLOWKIT_PYANNOTE_MODEL"
+ENV_DIARIZE_DEVICE = "TEXTFLOWKIT_DIARIZE_DEVICE"
 DEFAULT_PYANNOTE_MODEL = "pyannote/speaker-diarization-3.1"
 
 
@@ -109,10 +113,15 @@ class PyannoteDiarizer:
 
     name = "pyannote"
 
-    def __init__(self, model: str | None = None, token: str | None = None) -> None:
+    def __init__(
+        self, model: str | None = None, token: str | None = None,
+        device: str | None = None,
+    ) -> None:
         self.model_name = model or os.environ.get(ENV_PYANNOTE_MODEL, DEFAULT_PYANNOTE_MODEL)
         self._token = token or os.environ.get(ENV_HF_TOKEN)
+        self.device = _pick_device(device or os.environ.get(ENV_DIARIZE_DEVICE))
         self._pipeline = None
+        self._lock = threading.RLock()
 
     def _load(self):
         if self._pipeline is not None:
@@ -138,7 +147,12 @@ class PyannoteDiarizer:
 
             params = inspect.signature(Pipeline.from_pretrained).parameters
             kwargs = {"token": self._token} if "token" in params else {"use_auth_token": self._token}
-            self._pipeline = Pipeline.from_pretrained(self.model_name, **kwargs)
+            loaded = Pipeline.from_pretrained(self.model_name, **kwargs)
+            if hasattr(loaded, "to"):
+                import torch
+
+                loaded.to(torch.device(self.device))
+            self._pipeline = loaded
         except Exception as exc:  # provider errors vary
             raise DiarizationError(
                 f"could not load diarization model '{self.model_name}': {exc}"
@@ -175,9 +189,10 @@ class PyannoteDiarizer:
         return {"waveform": waveform, "sample_rate": sample_rate}
 
     def diarize(self, audio_path: str | Path) -> list[SpeakerTurn]:
-        pipeline = self._load()
         try:
-            annotation = pipeline(self._load_waveform(audio_path))
+            with self._lock:
+                pipeline = self._load()
+                annotation = pipeline(self._load_waveform(audio_path))
         except DiarizationError:
             raise
         except Exception as exc:
@@ -194,7 +209,21 @@ class PyannoteDiarizer:
         return turns
 
 
+_DIARIZER_CACHE_LOCK = threading.Lock()
+
+
+@lru_cache(maxsize=4)
+def _cached_diarizer(model: str, token: str | None, device: str) -> PyannoteDiarizer:
+    return PyannoteDiarizer(model=model, token=token, device=device)
+
+
 def get_diarizer(backend: str = "pyannote", **kwargs) -> Diarizer:
     if backend in ("pyannote", "default"):
-        return PyannoteDiarizer(**kwargs)
+        model = kwargs.pop("model", None) or os.environ.get(ENV_PYANNOTE_MODEL, DEFAULT_PYANNOTE_MODEL)
+        token = kwargs.pop("token", None) or os.environ.get(ENV_HF_TOKEN)
+        device = _pick_device(kwargs.pop("device", None) or os.environ.get(ENV_DIARIZE_DEVICE))
+        if kwargs:
+            raise TypeError(f"unknown diarizer options: {', '.join(kwargs)}")
+        with _DIARIZER_CACHE_LOCK:
+            return _cached_diarizer(model, token, device)
     raise DiarizationError(f"unknown diarization backend: {backend}")

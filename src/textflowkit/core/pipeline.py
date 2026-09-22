@@ -276,6 +276,7 @@ def transcribe(
                 raise PipelineError(f"translation failed: {exc}") from exc
             transcript.metadata["translation"] = {
                 "backend": getattr(translator, "name", translator_backend),
+                "route": getattr(translator, "route", "unknown"),
                 "target": translate_to,
                 "segments_translated": translated,
             }

@@ -298,6 +298,33 @@ def test_load_passes_use_auth_token_for_older_signatures(monkeypatch):
     assert captured["kwargs"] == {"use_auth_token": "tok-456"}
 
 
+def test_pyannote_pipeline_is_moved_to_selected_gpu(monkeypatch):
+    import sys
+
+    moved = []
+
+    class FakePipeline:
+        def to(self, device):
+            moved.append(device)
+
+    fake = types.ModuleType("pyannote.audio")
+    fake.Pipeline = types.SimpleNamespace(from_pretrained=lambda name, token=None: FakePipeline())
+    monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
+    monkeypatch.setitem(sys.modules, "pyannote.audio", fake)
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(device=lambda name: name))
+
+    d = PyannoteDiarizer(token="tok", device="cuda")
+    d._load()
+    assert moved == ["cuda"]
+
+
+def test_diarizer_cache_reuses_same_instance(monkeypatch):
+    monkeypatch.setenv(ENV_HF_TOKEN, "cache-test-token")
+    assert get_diarizer("pyannote", model="cache-test-model", device="cpu") is get_diarizer(
+        "pyannote", model="cache-test-model", device="cpu"
+    )
+
+
 def test_diarize_accepts_a_diarize_output_wrapper(monkeypatch, tmp_path):
     """pyannote 4.x returns DiarizeOutput; earlier releases return Annotation.
 

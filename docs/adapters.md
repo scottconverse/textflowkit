@@ -248,12 +248,19 @@ than returning output that quietly lacks the feature.
 ### Translation
 
 ```bash
+export TEXTFLOWKIT_TRANSLATE_MODEL=your-local-ollama-model
 textflowkit transcribe "$URL" --translate-to Spanish
-TEXTFLOWKIT_TRANSLATE_MODEL=glm-5.3-flash:cloud    # which model
-TEXTFLOWKIT_OLLAMA_HOST=http://127.0.0.1:11434     # which server
 ```
 
-Backend is local Ollama by default, so transcript text stays on the machine.
+Translation requires an explicit `TEXTFLOWKIT_TRANSLATE_MODEL`; there is **no
+default model** and textflowkit will not silently choose a cloud model. The
+default Ollama host is `http://127.0.0.1:11434`, but a model tagged `:cloud`
+can send transcript text beyond that local host. Likewise, setting
+`TEXTFLOWKIT_OLLAMA_HOST` to a remote server sends text to that host. `doctor`
+reports the selected model and route, and each translated transcript records
+the route in metadata. Choose a local model if transcripts must stay on this
+machine.
+
 Requests are **batched** (20 segments per round trip), and if a batch comes back
 unparseable the chunk is retried one segment at a time - correctness does not
 depend on the model obeying a format. Identical text is cached, which matters
@@ -263,7 +270,7 @@ The result length is checked against the input, so a misbehaving model cannot
 shift text onto the wrong segment. An unreachable backend raises; it never
 returns the source text as a translation.
 
-`translation` metadata is recorded on the transcript (backend, target, how many
+`translation` metadata is recorded on the transcript (backend, route, target, how many
 segments were translated).
 
 ### Speaker labels
@@ -271,6 +278,7 @@ segments were translated).
 ```bash
 textflowkit transcribe "$URL" --diarize
 HF_TOKEN=hf_...                   # required: the model is gated
+TEXTFLOWKIT_DIARIZE_DEVICE=cuda  # optional; ROCm also appears as cuda in torch
 ```
 
 Requires the optional `diarize` extra (`pip install 'textflowkit[diarize]'`) and a
