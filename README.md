@@ -78,7 +78,7 @@ pip install -e .
 Or install the built wheel from the release page:
 
 ```bash
-pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.0/textflowkit-0.1.0-py3-none-any.whl
+pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.1/textflowkit-0.1.1-py3-none-any.whl
 ```
 
 Not published to PyPI; the repository and its releases are the distribution path.
@@ -191,7 +191,7 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.1 stabilization in progress.** Core, CLI, MCP, and HTTP have automated
+**v0.1.1 stabilization.** Core, CLI, MCP, and HTTP have automated
 coverage; Windows-native ROCm and live YouTube transcription are verified.
 This does not imply that all 13 platforms or every harness workflow has been
 tested end to end. See [docs/roadmap.md](docs/roadmap.md).

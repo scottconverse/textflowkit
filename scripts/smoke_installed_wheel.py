@@ -153,6 +153,8 @@ def main() -> None:
         cli = executable(env_root, "textflowkit")
         mcp = executable(env_root, "textflowkit-mcp")
         http = executable(env_root, "textflowkit-http")
+        for command in (cli, mcp, http):
+            assert "textflowkit" in run(command, "--version", cwd=root, env=env)
         assert "youtube" in run(cli, "sources", cwd=root, env=env).splitlines()
         mcp_smoke(mcp, root, env)
         http_smoke(http, root, env)
