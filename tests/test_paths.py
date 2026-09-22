@@ -81,6 +81,18 @@ def test_ensure_output_dir_creates_directory(confined_root):
     assert created == confined_root / "made" / "here"
 
 
+def test_atomic_file_write_rechecks_symlink_escape(confined_root, tmp_path):
+    from textflowkit.render import atomic_write_bytes
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = confined_root / "linked"
+    _make_link(link, outside, directory=True)
+    with pytest.raises(UnsafeOutputPathError):
+        atomic_write_bytes(link / "escape.txt", b"secret")
+    assert not (outside / "escape.txt").exists()
+
+
 def test_output_root_defaults_to_cwd_when_unset(monkeypatch, tmp_path):
     monkeypatch.delenv(ENV_OUTPUT_ROOT, raising=False)
     monkeypatch.chdir(tmp_path)
@@ -102,6 +114,35 @@ def test_input_confined_inside_root(tmp_path):
     f = root / "a.mp4"
     f.write_bytes(b"x")
     assert resolve_input_path(str(f), root=root) == f.resolve()
+
+
+def test_confined_input_is_staged_from_verified_open_handle(tmp_path):
+    from textflowkit.sources.acquire import stage_confined_local_media
+
+    root = tmp_path / "media"
+    root.mkdir()
+    source = root / "clip.wav"
+    source.write_bytes(b"owner media")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    staged = stage_confined_local_media(source, work_dir=scratch, input_root=root)
+    assert staged.read_bytes() == b"owner media"
+    assert staged != source
+
+
+def test_confined_input_rejects_handle_that_points_outside(tmp_path, monkeypatch):
+    from textflowkit.sources import acquire
+
+    root = tmp_path / "media"
+    root.mkdir()
+    source = root / "clip.wav"
+    source.write_bytes(b"x")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(acquire, "opened_file_path", lambda fd, path: tmp_path / "outside.wav")
+    with pytest.raises(UnsafeInputPathError, match="opened input file"):
+        acquire.stage_confined_local_media(source, work_dir=scratch, input_root=root)
+    assert list(scratch.iterdir()) == []
 
 
 def test_input_relative_path_resolves_inside_root(tmp_path):

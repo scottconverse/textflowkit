@@ -177,7 +177,7 @@ def test_mcp_http_resume_forward_job_id(monkeypatch):
 
     seen: list[str] = []
 
-    def fake_resume(store, job_id):
+    def fake_resume(store, job_id, **kwargs):
         seen.append(job_id)
         return store.create("x")
 

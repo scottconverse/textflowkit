@@ -131,6 +131,8 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | GET | `/health` | liveness |
 | GET | `/sources` | platforms, formats |
 | POST | `/jobs` | submit a job (202 + job id) |
+| POST | `/jobs/batch` | submit independent jobs (`{"jobs":[...],"resume":true}`) |
+| POST | `/jobs/{id}/resume` | resume a saved durable request/checkpoint |
 | GET | `/jobs` | list recent jobs |
 | GET | `/jobs/{id}` | job status |
 | GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=` | rendered transcript, optionally sliced |
@@ -138,10 +140,10 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
-### Binding beyond loopback is refused
+### Developer mode and production profile
 
-The HTTP surfaces have no authentication, so binding one to a reachable
-interface would expose it. That specific configuration is **refused at startup**:
+Developer mode is localhost-only by default and has no authentication. Binding
+to a reachable interface is **refused at startup** unless explicitly enabled:
 
 ```bash
 textflowkit-http --host 0.0.0.0
@@ -156,13 +158,34 @@ textflowkit-http --host 0.0.0.0 --allow-remote
 TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
 ```
 
-Only do that behind your own gateway. The guard deliberately does not add
-authentication - it makes the unsafe configuration an explicit decision instead
-of a default.
+Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
+`TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit
+input/output/work roots, and an on-disk SQLite job store are configured. It
+enforces a bounded request body, per-process rate limit, pending queue, media
+size, source duration, rendered-output size, and transcript page size. Each job
+gets its own scratch directory under `TEXTFLOWKIT_WORK_ROOT`.
 
-**No authentication is included.** Bind to localhost, or front it with your own
-gateway before exposing it. That is deliberate: auth belongs to the deployment,
-not to a transcript library.
+```bash
+export TEXTFLOWKIT_PROFILE=production
+export TEXTFLOWKIT_API_TOKEN='replace-with-a-long-random-secret'
+export TEXTFLOWKIT_INPUT_ROOT=/srv/textflowkit/input
+export TEXTFLOWKIT_OUTPUT_ROOT=/srv/textflowkit/output
+export TEXTFLOWKIT_WORK_ROOT=/srv/textflowkit/work
+export TEXTFLOWKIT_DB=/srv/textflowkit/jobs.db
+export TEXTFLOWKIT_EGRESS_PROXY=http://127.0.0.1:8888 # SSRF-filtering proxy, required for URL input
+textflowkit-http --host 127.0.0.1 --port 8767
+```
+
+Send `Authorization: Bearer <token>` on every request. For remote clients,
+terminate TLS and enforce independent rate/egress policy at a trusted gateway;
+the built-in limiter is per process, not a distributed quota. A proxy is not
+bundled: production URL jobs fail if `TEXTFLOWKIT_EGRESS_PROXY` is unset, and
+the operator must ensure that proxy blocks private/loopback destinations and
+DNS rebinding. External JavaScript runtimes are disabled for production URL
+jobs because they are not guaranteed to honor yt-dlp's proxy; this may limit
+some YouTube formats. Local-file jobs do not require network egress. Streamable-HTTP
+MCP is a separate surface and should remain on loopback or behind a gateway;
+the JSON HTTP production token does not automatically secure it.
 
 ## Durable job state
 

@@ -31,6 +31,7 @@ class SubmissionRequest:
     device: str | None = None
     cookies_from_browser: str | None = None
     input_root: str | None = None
+    work_dir: str | None = None
     diarize: bool = False
     diarizer_backend: str = "pyannote"
     translate_to: str | None = None
@@ -71,8 +72,14 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
         job = store.get(job_id)
         if job is None:
             raise ValueError(f"no job with id '{job_id}'")
-        if job.request is not None and job.request != request.to_dict():
-            raise ValueError("resume request does not match the saved request")
+        if job.request is not None:
+            saved = dict(job.request)
+            incoming = request.to_dict()
+            for key in ("input_root", "work_dir"):
+                saved.pop(key, None)
+                incoming.pop(key, None)
+            if saved != incoming:
+                raise ValueError("resume request does not match the saved request")
         checkpoint = load_checkpoint(job)
         if checkpoint is None:
             return job, None
@@ -130,6 +137,7 @@ def submit_request(
         if prepared is not None:
             job, checkpoint_payload = prepared
             kwargs = request.run_kwargs()
+            store.update(job.id, request=request.to_dict())
             if checkpoint_payload is not None:
                 kwargs["resume_checkpoint"] = checkpoint_payload
             if executor is not None and executor.store is store:
@@ -150,15 +158,23 @@ def submit_request(
     return store.get(job.id) or job
 
 
-def resume_job(store: JobStore, job_id: str, *, background: bool = True) -> Job:
+def resume_job(
+    store: JobStore, job_id: str, *, background: bool = True,
+    input_root: str | None = None, work_dir: str | None = None,
+) -> Job:
     """Resume an interrupted durable job using its original saved request."""
     job = store.get(job_id)
     if job is None:
         raise ValueError(f"no job with id '{job_id}'")
     if job.request is None:
         raise ValueError("job predates saved requests; resubmit its original options")
+    request_data = dict(job.request)
+    if input_root is not None:
+        request_data["input_root"] = input_root
+    if work_dir is not None:
+        request_data["work_dir"] = work_dir
     return submit_request(
-        store, SubmissionRequest.from_dict(job.request),
+        store, SubmissionRequest.from_dict(request_data),
         background=background, resume=True, resume_job_id=job_id,
     )
 

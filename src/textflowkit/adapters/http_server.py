@@ -10,7 +10,11 @@ localhost, or put it behind your own gateway before exposing it.
 
 from __future__ import annotations
 
+import hmac
+import os
 import sys
+import threading
+import time
 from typing import Annotated, Any
 
 from textflowkit import __version__
@@ -25,6 +29,16 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
+from textflowkit.core.service import (
+    ENV_API_TOKEN,
+    ENV_MAX_REQUEST_BYTES,
+    ENV_RATE_PER_MINUTE,
+    ServiceConfigurationError,
+    positive_limit,
+    production_enabled,
+    service_work_root,
+    validate_production_config,
+)
 from textflowkit.core.submission import (
     SubmissionRequest,
     submit_batch,
@@ -42,8 +56,8 @@ from textflowkit.render import (
 )
 
 try:  # optional extra
-    from fastapi import FastAPI, HTTPException, Query
-    from fastapi.responses import PlainTextResponse
+    from fastapi import FastAPI, HTTPException, Query, Request
+    from fastapi.responses import JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
@@ -55,6 +69,44 @@ app = FastAPI(
     version=__version__,
     description="Cross-platform media transcription API. Job-based: submit, poll, fetch.",
 )
+
+_RATE_LOCK = threading.Lock()
+_RATE_BUCKETS: dict[str, tuple[float, int]] = {}
+
+
+@app.middleware("http")
+async def production_guard(request: Request, call_next):
+    try:
+        if not production_enabled():
+            return await call_next(request)
+        validate_production_config()
+    except ServiceConfigurationError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {os.environ[ENV_API_TOKEN]}"
+    if not hmac.compare_digest(supplied, expected):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    max_bytes = positive_limit(ENV_MAX_REQUEST_BYTES, 64 * 1024)
+    length = request.headers.get("content-length")
+    if length is not None and (not length.isdecimal() or int(length) > max_bytes):
+        return JSONResponse({"error": "request body too large"}, status_code=413)
+    if len(await request.body()) > max_bytes:
+        return JSONResponse({"error": "request body too large"}, status_code=413)
+
+    rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
+    peer = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    with _RATE_LOCK:
+        started, count = _RATE_BUCKETS.get(peer, (now, 0))
+        if now - started >= 60:
+            started, count = now, 0
+        if count >= rate:
+            return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
+        _RATE_BUCKETS[peer] = started, count + 1
+        if len(_RATE_BUCKETS) > 10000:
+            _RATE_BUCKETS.clear()
+    return await call_next(request)
 
 
 class TranscribeRequest(BaseModel):
@@ -75,7 +127,9 @@ class BatchRequest(BaseModel):
 
 
 def _submission_request(req: TranscribeRequest) -> SubmissionRequest:
-    return SubmissionRequest(**req.model_dump(), input_root=server_input_root())
+    return SubmissionRequest(
+        **req.model_dump(), input_root=server_input_root(), work_dir=service_work_root()
+    )
 
 
 @app.get("/health")
@@ -124,7 +178,11 @@ def create_batch(req: BatchRequest) -> dict[str, Any]:
 def resume_job(job_id: str) -> dict[str, Any]:
     """Resume a durable interrupted job by its saved request and checkpoint."""
     try:
-        job = core_resume_job(get_default_store(), job_id)
+        job = core_resume_job(
+            get_default_store(), job_id,
+            input_root=str(server_input_root()) if server_input_root() else None,
+            work_dir=service_work_root(),
+        )
     except QueueFullError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except ValueError as exc:
@@ -222,6 +280,10 @@ def get_transcript(
     seconds. The JSON form reports total_segments and has_more.
     """
     job, tr = _finished_transcript(job_id)
+    if production_enabled():
+        limit = 100 if limit is None else limit
+        if limit > 500:
+            raise HTTPException(status_code=422, detail="transcript page limit must be <= 500")
 
     fmt = format.lower().lstrip(".")
     if fmt not in TEXT_FORMATS:
@@ -263,6 +325,8 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
            case_sensitive: bool = False) -> dict[str, Any]:
     """Search a completed transcript for a phrase."""
     job, tr = _finished_transcript(job_id)
+    if production_enabled() and (limit > 500 or context > 20):
+        raise HTTPException(status_code=422, detail="search limit/context exceeds production cap")
     try:
         matches = search_segments(
             tr, q, limit=limit, context=context, case_sensitive=case_sensitive
@@ -350,16 +414,18 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-remote",
         action="store_true",
         help=(
-            "permit binding to a non-loopback address. This surface has no "
-            f"authentication; only do this behind your own gateway. ({ENV_ALLOW_REMOTE}=1 also works)"
+            "permit binding to a non-loopback address. Developer mode has no "
+            "authentication; use a gateway or the production profile. "
+            f"({ENV_ALLOW_REMOTE}=1 also works)"
         ),
     )
     parser.add_argument("--version", action="version", version=f"textflowkit-http {__version__}")
     args = parser.parse_args(argv)
 
     try:
+        validate_production_config()
         check_bind_safety(args.host, allow_remote=args.allow_remote or None)
-    except UnsafeBindError as exc:
+    except (UnsafeBindError, ServiceConfigurationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

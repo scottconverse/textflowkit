@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 from textflowkit.core.model import Transcript
+from textflowkit.core.service import enforce_output_limit
 from textflowkit.render.markdown import render_markdown
 from textflowkit.render.srt import render_srt
 from textflowkit.render.txt import render_txt
@@ -50,11 +51,16 @@ def _render_requested(
             raise ValueError(f"duplicate output format: {fmt}")
         seen.add(norm)
         rendered.append((norm, render_bytes(transcript, norm, title=title)))
+    enforce_output_limit(sum(len(data) for _, data in rendered))
     return rendered
 
 
 def atomic_write_bytes(path: Path, data: bytes, *, replace: bool = False) -> None:
     """Publish a complete file; optionally replace an explicitly chosen path."""
+    from textflowkit.core.paths import verify_output_file_target
+
+    enforce_output_limit(len(data))
+    verify_output_file_target(path)
     temp: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
@@ -65,6 +71,7 @@ def atomic_write_bytes(path: Path, data: bytes, *, replace: bool = False) -> Non
             os.fsync(handle.fileno())
         # A hard link commits the fully-written temp file atomically and fails
         # if the destination already exists, unlike os.replace().
+        verify_output_file_target(path)
         if replace:
             os.replace(temp, path)
             temp = None

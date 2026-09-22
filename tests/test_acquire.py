@@ -116,6 +116,7 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
     class FakeYDL:
         def __init__(self, opts):
             captured.update(opts)
+            self.urlopen = lambda req: None
 
         def __enter__(self):
             return self
@@ -123,10 +124,13 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
         def __exit__(self, *a):
             return False
 
-        def extract_info(self, url, download=True):
+        def extract_info(self, url, download=False):
+            return {"id": "vid", "url": "https://example.com/media"}
+
+        def process_info(self, info):
             out = tmp_path / "vid.webm"
             out.write_bytes(b"x")
-            return {"id": "vid", "requested_downloads": [{"filepath": str(out)}]}
+            info["requested_downloads"] = [{"filepath": str(out)}]
 
     import sys
     import types
@@ -137,6 +141,68 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
 
     acquire._fetch_with_module("https://example.com/v", work_dir=tmp_path, cookies_from_browser=None)
     assert captured.get("js_runtimes") == {"node": {}}
+
+
+def test_selected_private_media_url_is_rejected_before_download():
+    from textflowkit.sources.acquire import _validate_download_info
+
+    with pytest.raises(AcquisitionError, match="unsafe download destination"):
+        _validate_download_info({
+            "id": "v", "url": "https://example.com/video",
+            "requested_formats": [{"url": "http://127.0.0.1/private.mp4"}],
+        })
+
+
+def test_private_fragment_url_is_rejected_before_download():
+    from textflowkit.sources.acquire import _validate_download_info
+
+    with pytest.raises(AcquisitionError, match="unsafe download destination"):
+        _validate_download_info({
+            "id": "v", "url": "https://example.com/video",
+            "fragments": [{"url": "http://169.254.169.254/secret"}],
+        })
+
+
+def test_redirect_to_private_host_is_rejected(monkeypatch, tmp_path):
+    import types
+
+    from textflowkit.sources import acquire
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.urlopen = lambda req: types.SimpleNamespace(url="http://127.0.0.1/private")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            self.urlopen(url)
+            raise AssertionError("the redirect should have been refused")
+
+        def process_info(self, info):
+            raise AssertionError("download must not start")
+
+    fake = types.ModuleType("yt_dlp")
+    fake.YoutubeDL = FakeYDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", fake)
+    with pytest.raises(AcquisitionError, match="unsafe download destination"):
+        acquire._fetch_with_module(
+            "https://example.com/video", work_dir=tmp_path, cookies_from_browser=None,
+        )
+
+
+def test_production_url_fetch_needs_ssrf_filtering_proxy(monkeypatch, tmp_path):
+    from textflowkit.sources import acquire
+
+    monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "production")
+    monkeypatch.delenv("TEXTFLOWKIT_EGRESS_PROXY", raising=False)
+    with pytest.raises(AcquisitionError, match="TEXTFLOWKIT_EGRESS_PROXY"):
+        acquire._fetch_with_module(
+            "https://example.com/video", work_dir=tmp_path, cookies_from_browser=None,
+        )
 
 
 # --- cancellation during download -----------------------------------------
@@ -154,6 +220,7 @@ def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_p
     class FakeYDL:
         def __init__(self, opts):
             self.opts = opts
+            self.urlopen = lambda req: None
 
         def __enter__(self):
             return self
@@ -161,7 +228,10 @@ def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_p
         def __exit__(self, *a):
             return False
 
-        def extract_info(self, url, download=True):
+        def extract_info(self, url, download=False):
+            return {"id": "v", "url": "https://example.com/media"}
+
+        def process_info(self, info):
             # simulate yt-dlp reporting progress
             for hook in self.opts.get("progress_hooks", []):
                 hook({"status": "downloading", "filename": None})
@@ -169,7 +239,7 @@ def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_p
             out.write_bytes(b"x")
             for hook in self.opts.get("progress_hooks", []):
                 hook({"status": "finished", "filename": str(out)})
-            return {"id": "v", "requested_downloads": [{"filepath": str(out)}]}
+            info["requested_downloads"] = [{"filepath": str(out)}]
 
     import sys
     import types
@@ -198,6 +268,7 @@ def test_download_cancel_aborts_the_fetch(monkeypatch, tmp_path):
     class FakeYDL:
         def __init__(self, opts):
             self.opts = opts
+            self.urlopen = lambda req: None
 
         def __enter__(self):
             return self
@@ -205,10 +276,12 @@ def test_download_cancel_aborts_the_fetch(monkeypatch, tmp_path):
         def __exit__(self, *a):
             return False
 
-        def extract_info(self, url, download=True):
+        def extract_info(self, url, download=False):
+            return {"id": "v", "url": "https://example.com/media"}
+
+        def process_info(self, info):
             for hook in self.opts.get("progress_hooks", []):
                 hook({"status": "downloading"})   # raises here
-            return {"id": "v"}
 
     import sys
     import types

@@ -92,7 +92,21 @@ def ensure_output_dir(requested: str | None) -> Path:
     """Resolve and create the output directory."""
     resolved = resolve_output_dir(requested)
     resolved.mkdir(parents=True, exist_ok=True)
-    return resolved
+    # Recheck after creation: a symlink/junction may have changed since the
+    # first resolve. File publishing repeats the check at point of use.
+    return resolve_output_dir(str(resolved))
+
+
+def verify_output_file_target(path: Path) -> None:
+    """Check the destination parent immediately before publishing a file."""
+    if not output_is_confined():
+        return
+    root = output_root()
+    parent = path.parent.resolve(strict=True)
+    if parent != root and root not in parent.parents:
+        raise UnsafeOutputPathError(
+            f"output file '{path}' is outside the allowed root '{root}'"
+        )
 
 
 # --- input confinement ----------------------------------------------------
@@ -134,6 +148,40 @@ def resolve_input_path(requested: str | Path, *, root: str | Path | None) -> Pat
     if not resolved.is_file():
         raise ValueError(f"not a file: {requested}")
     return resolved
+
+
+def opened_file_path(fd: int, fallback: Path) -> Path:
+    """Resolve the path of the *opened handle*, not a name checked earlier."""
+    if os.name == "nt":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        fn = kernel.GetFinalPathNameByHandleW
+        fn.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+        fn.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = fn(msvcrt.get_osfhandle(fd), buffer, len(buffer), 0)
+        if not length or length >= len(buffer):
+            raise UnsafeInputPathError("could not verify the opened input file path")
+        raw = buffer.value
+        if raw.startswith("\\\\?\\UNC\\"):
+            raw = "\\\\" + raw[8:]
+        elif raw.startswith("\\\\?\\"):
+            raw = raw[4:]
+        return Path(raw).resolve()
+    if os.path.exists(f"/proc/self/fd/{fd}"):
+        return Path(os.readlink(f"/proc/self/fd/{fd}")).resolve()
+    try:
+        import fcntl
+
+        if hasattr(fcntl, "F_GETPATH"):
+            raw = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 4096)
+            return Path(raw.split(b"\0", 1)[0].decode()).resolve()
+    except (ImportError, OSError, ValueError):
+        pass
+    raise UnsafeInputPathError(f"cannot verify opened input file path: {fallback}")
 
 
 def default_input_root() -> Path | None:

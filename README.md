@@ -166,8 +166,11 @@ pip install -e ".[http]"
 textflowkit-http --port 8767
 ```
 
-Submit a job, poll it, fetch the transcript. No authentication is bundled —
-bind to localhost or front it with your own gateway.
+Submit a job, poll it, fetch the transcript. Developer mode is unauthenticated
+and defaults to localhost. The opt-in JSON HTTP production profile requires a
+Bearer token, explicit roots, durable SQLite jobs, and request/rate/media/output
+limits; URL input additionally requires an SSRF-filtering egress proxy. See
+[adapter deployment details](docs/adapters.md#developer-mode-and-production-profile).
 
 ## Durable, bounded, cancellable
 

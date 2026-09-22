@@ -55,19 +55,32 @@ Expected on ROCm: `2.11.0+rocm7.13.0 7.13.99004 True`.
   path requires CUDA, and ROCm is only available by compiling from source with
   `-DWITH_HIP=ON`.
 
+### Build tooling is separate from the ROCm runtime
+
+The installed ROCm torch 2.11.0 declares `setuptools<82`. This conflicts with
+the requirement to use `setuptools>=83` in the development/build environment
+(the older line has a reported security issue). Do not force 83+ into the ROCm
+runtime and leave a broken dependency graph. Use a separate clean build venv;
+on Windows:
+
+```powershell
+python -m venv work/build-venv
+.\work\build-venv\Scripts\python.exe -m pip install "setuptools>=83" build hatchling
+.\work\build-venv\Scripts\python.exe -m build --wheel --sdist
+```
+
+The build environment does not install torch or process untrusted archives.
+Keep the ROCm runtime at a torch-compatible setuptools version until AMD's
+torch package relaxes its dependency; verify it with `python -m pip check`.
+
 ## yt-dlp resolution
 
-`textflowkit` resolves `yt-dlp` in this order:
-
-1. an executable on `PATH`
-2. an executable beside the running interpreter (e.g. the venv's `Scripts/yt-dlp.exe`)
-3. **the `yt_dlp` Python module, called in-process**
-
-The third case matters: installing `yt-dlp` as a dependency places an entry point in
-the environment, but that directory is not on `PATH` unless the environment is
-activated. Without the fallback you would hit
-`required tool 'yt-dlp' not found on PATH` even though the dependency is installed.
-Verified end-to-end against a public YouTube video.
+`textflowkit` now uses the **`yt_dlp` Python module** for URL acquisition. It is
+a declared dependency, so no separate `yt-dlp` executable is required. The
+in-process path lets textflowkit check selected media URLs before download and
+recheck returned request URLs. Production URL jobs also require an external
+SSRF-filtering egress proxy. The path was verified against a public YouTube
+video.
 
 ## JavaScript runtime (YouTube)
 
@@ -90,8 +103,7 @@ deno  ->  node  ->  bun  ->  quickjs
 ```
 
 - If `deno` is present, no flags are needed (it is yt-dlp's default).
-- If another runtime is found, `--no-js-runtimes --js-runtimes <name>` is passed so
-  the detected runtime actually takes effect.
+- If another runtime is found, it is enabled in the yt-dlp Python API options.
 - If **none** are found, nothing is passed and yt-dlp's normal fallback applies.
 
 This means **no specific runtime is required**. If you use YouTube heavily and want

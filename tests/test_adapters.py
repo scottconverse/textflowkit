@@ -172,10 +172,16 @@ def test_http_status_omits_complete_transcript():
 
     store = get_default_store()
     job = store.create("x")
-    store.update(job.id, state=JobState.DONE, transcript={"segments": [{"text": "private"}]})
+    store.update(
+        job.id, state=JobState.DONE,
+        transcript={"segments": [{"text": "private"}]},
+        checkpoint={"transcript": {"segments": [{"text": "private"}]}},
+    )
     body = TestClient(app).get(f"/jobs/{job.id}").json()
     assert body["state"] == "done"
     assert "transcript" not in body
+    assert "checkpoint" not in body
+    assert "private" not in str(body)
 
 
 @pytest.mark.parametrize("limit", [-1, 1001])

@@ -26,13 +26,20 @@ from textflowkit.core.paths import (
     default_input_root,
     resolve_input_path,
 )
+from textflowkit.core.service import enforce_media_limits
 from textflowkit.core.translate import (
     TranslationError,
     get_translator,
     translate_segments,
 )
 from textflowkit.render import SUPPORTED_FORMATS, write_all
-from textflowkit.sources.acquire import AcquisitionError, extract_audio, fetch_media, require_tool
+from textflowkit.sources.acquire import (
+    AcquisitionError,
+    extract_audio,
+    fetch_media,
+    require_tool,
+    stage_confined_local_media,
+)
 from textflowkit.sources.detect import resolve_source
 
 
@@ -174,15 +181,16 @@ def transcribe(
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured
     # root if one is set", which keeps the CLI unconfined by default.
+    root = input_root if input_root is not None else default_input_root()
+    resolved_source = source
     if not source.startswith(("http://", "https://")):
         try:
-            root = input_root if input_root is not None else default_input_root()
-            resolve_input_path(source, root=root)
+            resolved_source = str(resolve_input_path(source, root=root))
         except (FileNotFoundError, ValueError, UnsafeInputPathError) as exc:
             raise PipelineError(str(exc)) from exc
 
     try:
-        ref = resolve_source(source)
+        ref = resolve_source(resolved_source)
     except (FileNotFoundError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
@@ -210,14 +218,20 @@ def transcribe(
         try:
             if not can_resume:
                 require_tool("ffmpeg")
-                media = fetch_media(
-                    ref,
-                    work_dir=scratch,
-                    cookies_from_browser=cookies_from_browser,
-                    check_cancel=check_cancel,
-                )
+                if ref.kind == "file" and root is not None:
+                    media = stage_confined_local_media(
+                        ref.location, work_dir=scratch, input_root=root
+                    )
+                else:
+                    media = fetch_media(
+                        ref,
+                        work_dir=scratch,
+                        cookies_from_browser=cookies_from_browser,
+                        check_cancel=check_cancel,
+                    )
                 _checkpoint("fetch")
                 audio = extract_audio(media, work_dir=scratch)
+                enforce_media_limits(media, audio)
                 _checkpoint("extract")
 
                 eng = get_engine(engine, model=model, device=device)
@@ -231,15 +245,21 @@ def transcribe(
                 # only the audio required by pyannote; never rerun Whisper.
                 require_tool("ffmpeg")
                 if media is None:
-                    media = fetch_media(
-                        ref, work_dir=scratch,
-                        cookies_from_browser=cookies_from_browser,
-                        check_cancel=check_cancel,
-                    )
+                    if ref.kind == "file" and root is not None:
+                        media = stage_confined_local_media(
+                            ref.location, work_dir=scratch, input_root=root
+                        )
+                    else:
+                        media = fetch_media(
+                            ref, work_dir=scratch,
+                            cookies_from_browser=cookies_from_browser,
+                            check_cancel=check_cancel,
+                        )
                     _checkpoint("fetch")
                 audio = extract_audio(media, work_dir=scratch)
+                enforce_media_limits(media, audio)
                 _checkpoint("extract")
-        except AcquisitionError as exc:
+        except (AcquisitionError, UnsafeInputPathError) as exc:
             raise PipelineError(str(exc)) from exc
 
         if diarize:

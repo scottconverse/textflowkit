@@ -21,8 +21,9 @@ Pre-1.0: only the latest commit on `main` is supported.
 ## Threat model — what this project does and does not defend
 
 `textflowkit` fetches media from the network and runs speech-to-text locally. Its
-attack surface is the **input it accepts** and the **files it writes**, not a
-hosted service. There is no server-side multi-tenancy and no user account system.
+attack surface is the **input it accepts** and the **files it writes**. The JSON
+HTTP adapter has an opt-in production profile with a shared Bearer token, not
+user accounts or multi-tenancy.
 
 ### In scope (defended)
 
@@ -30,23 +31,28 @@ hosted service. There is no server-side multi-tenancy and no user account system
   `169.254.169.254`), private, CGNAT, multicast, and reserved ranges are rejected,
   by literal IP, by blocked hostname, and by resolving the hostname and checking
   every address it maps to. See `assert_url_is_fetchable` in
-  `src/textflowkit/sources/detect.py`.
+  `src/textflowkit/sources/detect.py`. yt-dlp's selected media/fragment URLs and
+  returned redirect URLs are rechecked before/after requests. **These checks do
+  not pin DNS at the socket connection.** Production URL input therefore
+  requires an operator-provided SSRF-filtering egress proxy; without one URL
+  jobs fail closed. Do not treat a generic unrestricted proxy as sufficient.
 - **Path traversal via an output directory.** Callers (a CLI user, an HTTP client,
   or a model) can supply an output directory. It is confined to an allowed root only
 when one is configured —
   `TEXTFLOWKIT_OUTPUT_ROOT`, defaulting to the current working directory. `..`
   escapes, absolute paths outside the root, and symlinks that escape are rejected.
   See `resolve_output_dir` in `src/textflowkit/core/paths.py`.
+  Confined local input is copied from a path-verified open handle into isolated
+  scratch before ffmpeg. Output paths are rechecked at file publication. Keep
+  the configured roots non-writable by untrusted local users to prevent races.
 
 ### Not defended (by design — read before deploying)
 
-- **No authentication on the HTTP adapter.** `textflowkit-http` ships no auth.
-  Auth belongs to the deployment, not to a transcript library, so this is not
-  "fixed" by adding a half-built login.
-  What *is* guarded: binding beyond loopback is **refused at startup** unless you
-  pass `--allow-remote` or set `TEXTFLOWKIT_ALLOW_REMOTE=1`. The failure mode is a
-  clear error rather than a silently exposed service. If you enable it, put your
-  own gateway and auth in front.
+- **Unauthenticated developer mode.** Binding beyond loopback is refused unless
+  explicitly enabled. The JSON HTTP production profile requires a shared Bearer
+  token, roots, durable storage, and limits, but is not a user-account system.
+  Put it behind a TLS gateway for remote use. Its rate limiter is per process.
+  Streamable-HTTP MCP is separate and not covered by this Bearer middleware.
 - **No sandboxing of `ffmpeg` / `yt-dlp`.** They run as your user on input you
   supply. Media is untrusted data; treat a malformed file as you would any
   untrusted input to those tools.

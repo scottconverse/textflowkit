@@ -72,7 +72,9 @@ class Job:
     def is_terminal(self) -> bool:
         return self.state in TERMINAL_STATES
 
-    def to_dict(self, *, include_transcript: bool = False) -> dict[str, Any]:
+    def to_dict(
+        self, *, include_transcript: bool = False, include_checkpoint: bool = False
+    ) -> dict[str, Any]:
         data = {
             "id": self.id,
             "source": self.source,
@@ -83,8 +85,9 @@ class Job:
             "error": self.error,
             "outputs": list(self.outputs),
             "cancel_requested": self.cancel_requested,
-            "checkpoint": self.checkpoint,
         }
+        if include_checkpoint and self.checkpoint is not None:
+            data["checkpoint"] = self.checkpoint
         if include_transcript and self.transcript is not None:
             data["transcript"] = self.transcript
         return data
