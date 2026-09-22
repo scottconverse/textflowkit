@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,22 @@ def test_confined_input_is_staged_from_verified_open_handle(tmp_path):
     staged = stage_confined_local_media(source, work_dir=scratch, input_root=root)
     assert staged.read_bytes() == b"owner media"
     assert staged != source
+
+
+def test_darwin_handle_path_uses_apple_constant_when_python_omits_it(tmp_path, monkeypatch):
+    from textflowkit.core.paths import _darwin_opened_file_path
+
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"x")
+    calls = []
+
+    def get_path(fd, command, buffer):
+        calls.append((fd, command, len(buffer)))
+        return os.fsencode(str(source)) + b"\0"
+
+    monkeypatch.setitem(sys.modules, "fcntl", types.SimpleNamespace(fcntl=get_path))
+    assert _darwin_opened_file_path(7) == source.resolve()
+    assert calls == [(7, 50, 4096)]
 
 
 def test_confined_input_rejects_handle_that_points_outside(tmp_path, monkeypatch):

@@ -19,6 +19,7 @@ Policy:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 ENV_OUTPUT_ROOT = "TEXTFLOWKIT_OUTPUT_ROOT"
@@ -173,15 +174,26 @@ def opened_file_path(fd: int, fallback: Path) -> Path:
         return Path(raw).resolve()
     if os.path.exists(f"/proc/self/fd/{fd}"):
         return Path(os.readlink(f"/proc/self/fd/{fd}")).resolve()
-    try:
-        import fcntl
-
-        if hasattr(fcntl, "F_GETPATH"):
-            raw = fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 4096)
-            return Path(raw.split(b"\0", 1)[0].decode()).resolve()
-    except (ImportError, OSError, ValueError):
-        pass
+    if sys.platform == "darwin":
+        try:
+            return _darwin_opened_file_path(fd)
+        except (OSError, ValueError):
+            pass
     raise UnsafeInputPathError(f"cannot verify opened input file path: {fallback}")
+
+
+def _darwin_opened_file_path(fd: int) -> Path:
+    """Use Apple's F_GETPATH even when Python omits the symbolic constant."""
+    import fcntl
+
+    # Apple bsd/sys/fcntl.h defines F_GETPATH as 50. Python's fcntl module
+    # does not expose it on every supported macOS/Python combination.
+    command = getattr(fcntl, "F_GETPATH", 50)
+    raw = fcntl.fcntl(fd, command, b"\0" * 4096)
+    path = os.fsdecode(raw.split(b"\0", 1)[0])
+    if not path:
+        raise ValueError("F_GETPATH returned an empty path")
+    return Path(path).resolve()
 
 
 def default_input_root() -> Path | None:
