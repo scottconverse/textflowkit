@@ -95,7 +95,20 @@ def mcp_smoke(command: Path, cwd: Path, env: dict[str, str]) -> None:
             proc.communicate(timeout=10)
 
 
-def http_smoke(command: Path, cwd: Path, env: dict[str, str]) -> None:
+def http_smoke(command: Path, cwd: Path, env: dict[str, str], *, production: bool = False) -> None:
+    env = dict(env)
+    headers: dict[str, str] = {}
+    if production:
+        input_root = cwd / "input"
+        input_root.mkdir()
+        env.update({
+            "TEXTFLOWKIT_PROFILE": "production",
+            "TEXTFLOWKIT_API_TOKEN": "wheel-smoke-secret-12345",
+            "TEXTFLOWKIT_INPUT_ROOT": str(input_root),
+            "TEXTFLOWKIT_WORK_ROOT": str(cwd / "work"),
+            "TEXTFLOWKIT_DB": str(cwd / "jobs.db"),
+        })
+        headers["Authorization"] = "Bearer wheel-smoke-secret-12345"
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -108,7 +121,8 @@ def http_smoke(command: Path, cwd: Path, env: dict[str, str]) -> None:
         deadline = time.monotonic() + 30
         while True:
             try:
-                with urllib.request.urlopen(base + "/health", timeout=2) as response:
+                request = urllib.request.Request(base + "/health", headers=headers)
+                with urllib.request.urlopen(request, timeout=2) as response:
                     health = json.load(response)
                 break
             except (OSError, urllib.error.URLError):
@@ -116,7 +130,15 @@ def http_smoke(command: Path, cwd: Path, env: dict[str, str]) -> None:
                     raise AssertionError(f"HTTP entry point failed; exit={proc.poll()}")
                 time.sleep(0.2)
         assert health["status"] == "ok", health
-        with urllib.request.urlopen(base + "/sources", timeout=5) as response:
+        if production:
+            try:
+                urllib.request.urlopen(base + "/health", timeout=5)
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 401, exc.code
+            else:
+                raise AssertionError("production HTTP accepted an unauthenticated request")
+        request = urllib.request.Request(base + "/sources", headers=headers)
+        with urllib.request.urlopen(request, timeout=5) as response:
             sources = json.load(response)
         assert "youtube" in sources["platforms"], sources
     finally:
@@ -158,6 +180,7 @@ def main() -> None:
         assert "youtube" in run(cli, "sources", cwd=root, env=env).splitlines()
         mcp_smoke(mcp, root, env)
         http_smoke(http, root, env)
+        http_smoke(http, root, env, production=True)
         print(f"installed wheel smoke passed: {wheel.name}; all three entry points")
 
 
