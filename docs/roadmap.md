@@ -29,6 +29,8 @@
 - [x] Job cancellation (`cancel_job`)
 - [x] Transcript paging, time-range reads, and search
 - [x] `doctor` diagnostic for yt-dlp / JS runtime / extras / device
+- [x] `selftest` for verifying the compute path on a given machine
+- [x] Translation transport tested in CI against a stub Ollama
 - [ ] Resumable / batched jobs
 - [x] DOCX and PDF export (`export` extra)
 

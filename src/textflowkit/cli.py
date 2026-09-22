@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from textflowkit import __version__
+from textflowkit.core.engine import get_engine
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
 from textflowkit.core.pipeline import PipelineError, transcribe
@@ -63,6 +64,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("sources", help="list recognised platforms")
     sub.add_parser("doctor", help="report the versions and tools this install will use")
+    st = sub.add_parser(
+        "selftest",
+        help="run a real end-to-end check on this machine (compute device + a tiny transcription)",
+    )
+    st.add_argument("--model", default="tiny", help="whisper model for the check (default tiny)")
+    st.add_argument(
+        "--skip-transcribe",
+        action="store_true",
+        help="only check the compute device, do not load a model",
+    )
     return p
 
 
@@ -210,6 +221,85 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_selftest(args: argparse.Namespace) -> int:
+    """Prove the compute path works on THIS machine, end to end.
+
+    The GPU path cannot run in hosted CI - no runner has an AMD GPU - so the
+    honest way to keep it verified is to make the check reproducible and runnable
+    on demand rather than relying on one engineer's memory of a good run.
+    """
+    import tempfile
+    import wave
+    from pathlib import Path
+
+    failures: list[str] = []
+
+    def ok(label: str, detail: str = "") -> None:
+        print(f"  PASS  {label}" + (f"  ({detail})" if detail else ""))
+
+    def bad(label: str, detail: str) -> None:
+        failures.append(label)
+        print(f"  FAIL  {label}  ({detail})")
+
+    print("compute")
+    try:
+        import torch
+
+        print(f"  torch {torch.__version__}, hip={torch.version.hip}, cuda_available={torch.cuda.is_available()}")
+        device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        a = torch.randn(512, 512, device=device)
+        b = torch.randn(512, 512, device=device)
+        c = a @ b
+        torch.cuda.synchronize() if torch.cuda.is_available() else None
+        assert c.shape == (512, 512)
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            ok("matmul on device", name)
+        else:
+            ok("matmul on device", "cpu (no GPU visible)")
+    except Exception as exc:  # noqa: BLE001 - this is a diagnostic
+        bad("matmul on device", f"{type(exc).__name__}: {exc}")
+
+    def summarise() -> int:
+        print()
+        if failures:
+            print(f"SELFTEST FAILED: {', '.join(failures)}")
+            return 1
+        print("SELFTEST PASSED")
+        return 0
+
+    if args.skip_transcribe:
+        return summarise()
+
+    print("transcribe")
+    scratch = Path(tempfile.mkdtemp(prefix="tfk-selftest-"))
+    wav = scratch / "probe.wav"
+    try:
+        # 1 second of silence, written as a real PCM wav - enough to drive the
+        # whole audio->model path without needing a speech sample.
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 16000)
+        ok("generated probe audio", f"{wav.stat().st_size} bytes")
+    except Exception as exc:  # noqa: BLE001 - diagnostic
+        bad("generated probe audio", f"{type(exc).__name__}: {exc}")
+        return 1
+
+    try:
+        engine = get_engine("whisper", model=args.model)
+        transcript = engine.transcribe(wav)
+        ok(
+            "whisper ran on this device",
+            f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
+        )
+    except Exception as exc:  # noqa: BLE001 - diagnostic
+        bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
+
+    return summarise()
+
+
 def _cmd_sources(_: argparse.Namespace) -> int:
     for name in sorted(PLATFORMS):
         print(name)
@@ -229,6 +319,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_sources(args)
     if args.command == "doctor":
         return _cmd_doctor(args)
+    if args.command == "selftest":
+        return _cmd_selftest(args)
     parser.print_help()
     return 2
 

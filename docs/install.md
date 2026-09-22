@@ -104,6 +104,45 @@ To check what was detected:
 python -c "from textflowkit.sources.acquire import detect_js_runtime; print(detect_js_runtime())"
 ```
 
+## Verifying the GPU path
+
+No hosted CI runner has an AMD GPU, so the ROCm path cannot be covered by CI. The
+honest substitute is a check you can run anywhere, on demand:
+
+```bash
+textflowkit selftest              # compute device + a real tiny transcription
+textflowkit selftest --skip-transcribe   # compute device only, no model download
+```
+
+It runs a real matmul on the selected device and then a real Whisper pass over a
+generated probe clip, printing PASS/FAIL for each and naming the torch build. A
+ROCm install reports `torch <ver>+rocm*` and the device name; a stock CPU wheel
+reports plain `torch <ver>`.
+
+`--skip-transcribe` is cheap enough to run in CI and is exercised there on every
+platform.
+
+## Diarization: the torch-clobber trap (same class as above)
+
+`pip install pyannote.audio` **will replace a ROCm torch with a stock PyPI CPU
+wheel** - verified by resolving the dependency: it pulls `torch==2.14.0`, while
+this machine runs `2.11.0+rocm7.13.0`. Installing the diarize extra naively
+therefore silently destroys GPU acceleration, exactly like the `openai-whisper`
+trap earlier in this document.
+
+Install the extra with torch held back:
+
+```bash
+pip install "textflowkit[diarize]" --no-deps
+pip install pyannote.audio torchaudio torchmetrics torchcodec
+```
+
+Then verify with `textflowkit selftest` that the torch build is still the ROCm one.
+
+Note also that the pyannote diarization model is **gated**: it requires a Hugging
+Face token with access granted to the model on huggingface.co. Granting access is
+a manual step on their site and cannot be automated here.
+
 ## CPU fallback
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.

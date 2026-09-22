@@ -280,3 +280,79 @@ def test_live_ollama_translates():
     assert out and out[0].strip()
     assert out[0].strip().lower() != "hello, good morning."
     print("live translation:", out[0])
+
+
+# --- over real HTTP, against the stub (runs in CI) ------------------------
+
+from ollama_stub import OllamaStub
+
+
+def test_translates_over_real_http():
+    """The transport is exercised for real, not mocked at the function level."""
+    with OllamaStub() as stub:
+        t = OllamaTranslator(host=stub.host, timeout=10)
+        out = t.translate(["hello", "world"], "es")
+    assert out == ["x-hello", "x-world"]
+
+
+def test_batching_is_one_round_trip_over_the_wire():
+    with OllamaStub() as stub:
+        t = OllamaTranslator(host=stub.host, timeout=10)
+        t.translate([f"line{i}" for i in range(5)], "es")
+        assert len(stub.calls) == 1, "five short lines should be one batch"
+
+
+def test_garbage_response_falls_back_over_the_wire():
+    """A stub that ignores the format must trigger per-segment retries."""
+    with OllamaStub(mode="garbage") as stub:
+        t = OllamaTranslator(host=stub.host, timeout=10)
+        out = t.translate(["a", "b", "c"], "es")
+        # 1 failed batch + 1 per item
+        assert len(stub.calls) == 4
+    assert len(out) == 3
+
+
+def test_http_error_is_actionable():
+    with OllamaStub() as stub:
+        t = OllamaTranslator(host=stub.host, timeout=10)
+        with pytest.raises(TranslationError) as exc:
+            t.translate(["please reject this"], "es")
+    assert "404" in str(exc.value) or "rejected" in str(exc.value)
+
+
+def test_model_name_is_forwarded():
+    with OllamaStub() as stub:
+        t = OllamaTranslator(model="my-model:tag", host=stub.host, timeout=10)
+        t.translate(["hi"], "es")
+    assert stub.calls[0]["model"] == "my-model:tag"
+
+
+def test_pipeline_translates_end_to_end_over_http(monkeypatch, tmp_path):
+    """Full pipeline: stub transcribe -> real HTTP translation -> transcript."""
+    from textflowkit.core import pipeline
+    from textflowkit.core.engine import WhisperEngine
+    from textflowkit.core.model import Transcript
+    from textflowkit.core.pipeline import transcribe
+
+    media = tmp_path / "clip.wav"
+    media.write_bytes(b"fake")
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: "ffmpeg")
+    monkeypatch.setattr(pipeline, "fetch_media", lambda *a, **k: media)
+    monkeypatch.setattr(pipeline, "extract_audio", lambda *a, **k: media)
+    monkeypatch.setattr(
+        WhisperEngine,
+        "transcribe",
+        lambda self, audio, *, language=None, **kw: Transcript(
+            source=str(audio),
+            language="en",
+            segments=[Segment(0, 1, "hello"), Segment(1, 2, "world")],
+        ),
+    )
+
+    with OllamaStub() as stub:
+        monkeypatch.setenv(ENV_OLLAMA_HOST, stub.host)
+        result = transcribe(str(media), input_root=tmp_path, translate_to="Spanish")
+
+    assert [s.translated_text for s in result.transcript.segments] == ["x-hello", "x-world"]
+    assert result.transcript.metadata["translation"]["segments_translated"] == 2
+    assert len(stub.calls) == 1   # the whole pipeline batched it

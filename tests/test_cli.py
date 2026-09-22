@@ -79,3 +79,24 @@ def test_version_flag():
     r = _run("--version")
     assert r.returncode == 0
     assert "textflowkit" in r.stdout
+
+
+def test_selftest_compute_only_passes():
+    """The compute check must work anywhere - it is the closest CI can get to
+    the GPU path, and it is what a user runs to verify their own machine."""
+    r = _run("selftest", "--skip-transcribe")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "PASS" in r.stdout
+    assert "SELFTEST PASSED" in r.stdout
+
+
+def test_selftest_reports_the_torch_build():
+    """Naming the torch build is the point: it is how a ROCm install is told
+    apart from a stock CPU wheel."""
+    r = _run("selftest", "--skip-transcribe")
+    assert "torch" in r.stdout
+
+
+def test_selftest_is_listed_in_help():
+    r = _run("--help")
+    assert "selftest" in r.stdout
