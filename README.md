@@ -80,12 +80,9 @@ pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.
 ```
 
 Not published to PyPI; the repository and its releases are the distribution path.
-Release v0.1.0 artifacts (SHA-256). Both build reproducibly - a clean
-clone at the tag produces these exact bytes:
-
-- `textflowkit-0.1.0-py3-none-any.whl` - `a13cda4b9663acedb56ce56a4bf38b11454d4d6730bfe43a2f09b69c53cc7048`
-- `textflowkit-0.1.0.tar.gz` - `335682529a5f74cceb72a901331daa0dc26f728525004c20ae5a873c8a596b06`
-
+The release page lists each artifact's SHA-256. (Those values are deliberately
+kept out of this file: the README is bundled into the wheel as its description,
+so a hash written here would change the artifact it describes.)
 Optional extras:
 
 ```bash
