@@ -67,6 +67,43 @@ def render_bytes(transcript: Transcript, fmt: str, *, title: str | None = None) 
     return render(transcript, fmt, title=title).encode("utf-8")
 
 
+def ensure_outputs(
+    transcript: Transcript,
+    *,
+    formats: list[str],
+    output_dir: str | Path | None,
+    stem: str,
+    existing: list[str | Path] | None = None,
+    title: str | None = None,
+) -> list[Path]:
+    """Write requested formats, reusing already-present outputs when possible.
+
+    Resume must not redo transcription. Rendering missing files is cheap and
+    keeps the checkpoint contract true even when the original output directory
+    was removed between runs.
+    """
+    if output_dir is None:
+        return []
+    from textflowkit.core.paths import ensure_output_dir
+
+    out_dir = ensure_output_dir(str(output_dir))
+    by_suffix: dict[str, Path] = {}
+    for raw in existing or []:
+        path = Path(raw)
+        by_suffix[path.suffix.lower().lstrip(".")] = path
+    written: list[Path] = []
+    for fmt in formats:
+        norm = fmt.lower().lstrip(".")
+        prior = by_suffix.get(norm)
+        if prior is not None and prior.exists():
+            written.append(prior)
+            continue
+        path = out_dir / f"{stem}.{norm}"
+        path.write_bytes(render_bytes(transcript, norm, title=title))
+        written.append(path)
+    return written
+
+
 def write_all(
     transcript: Transcript,
     *,
@@ -93,6 +130,7 @@ __all__ = [
     "RENDERERS",
     "SUPPORTED_FORMATS",
     "TEXT_FORMATS",
+    "ensure_outputs",
     "render",
     "render_bytes",
     "render_markdown",

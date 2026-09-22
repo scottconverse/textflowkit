@@ -23,9 +23,9 @@ task through the tools.
 
 | Harness | Version | Transport used | How it was verified |
 |---|---|---|---|
-| **DSH** | 0.1.1-rc.2 | stdio | Profile composed with an `insert` patch; the DSH node process **spawned our server as a child** (parent/child confirmed from the process table) |
+| **DSH** | 0.1.5-rc.2 | stdio | Profile composed with an `insert` patch and `failOnStartupError: true`; DSH's own MCP client spawned the server as a child, completed the handshake, discovered **all 8 tools**, and a real `list_sources` call returned data |
 | **Claude Code** | 2.1.269 | stdio | `claude mcp add` + `claude mcp list` → `√ Connected` |
-| **Codex CLI** | 0.147.0 | stdio | `codex mcp add` → `enabled: true`; server reachable via Codex's exact configured command; handshake returned 6 tools |
+| **Codex CLI** | 0.147.0 | stdio | Entry present in `~/.codex/config.toml`. **Not live-verified on 2026-09-21**: the CLI aborts on an unrelated malformed model-catalog file, so no handshake was observed this run. The earlier note above reflects a previous run and is not current evidence. |
 | **OpenCode** | 1.18.18 | Streamable HTTP | `opencode mcp add --url` + `opencode mcp list` → `✓ textflowkit connected`; `opencode mcp debug` → `HTTP response: 200 OK` |
 
 Two transport notes learned from doing this:
@@ -36,8 +36,9 @@ Two transport notes learned from doing this:
   version. Use the `textflowkit-mcp` console script instead — that form is
   verified connected above.
 
-The negotiated MCP protocol version from this server is **2025-11-25** — observed
-from a real stdio handshake.
+The negotiated MCP protocol version from a real stdio handshake on 2026-09-21 is
+**2025-06-18** (asserted by `tests/test_stdio_protocol.py`, which records the
+version the server actually reports rather than a remembered value).
 
 ### DSH configuration (stdio)
 

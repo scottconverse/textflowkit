@@ -31,7 +31,8 @@
 - [x] `doctor` diagnostic for yt-dlp / JS runtime / extras / device
 - [x] `selftest` for verifying the compute path on a given machine
 - [x] Translation transport tested in CI against a stub Ollama
-- [ ] Resumable / batched jobs
+- [x] Resumable jobs (`--resume`, checkpoint per source) and `batch` subcommand
+- [x] MCP protocol verified over real stdio (`tests/test_stdio_protocol.py`)
 - [x] DOCX and PDF export (`export` extra)
 
 ## Design constraints

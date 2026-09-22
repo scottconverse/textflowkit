@@ -32,20 +32,34 @@ CREATE TABLE IF NOT EXISTS jobs (
     error            TEXT,
     transcript       TEXT,
     outputs          TEXT    NOT NULL DEFAULT '[]',
-    cancel_requested INTEGER NOT NULL DEFAULT 0
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    checkpoint       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
 """
 
 # Columns a caller may patch through update().
 _MUTABLE = frozenset(
-    {"state", "progress", "error", "transcript", "outputs", "cancel_requested"}
+    {
+        "state",
+        "progress",
+        "error",
+        "transcript",
+        "outputs",
+        "cancel_requested",
+        "checkpoint",
+    }
 )
+
+_CHECKPOINT_COLUMN = "checkpoint"
 
 
 def _row_to_job(row: sqlite3.Row) -> Job:
     transcript = json.loads(row["transcript"]) if row["transcript"] else None
     outputs = json.loads(row["outputs"]) if row["outputs"] else []
+    keys = set(row.keys())
+    raw_checkpoint = row["checkpoint"] if "checkpoint" in keys else None
+    checkpoint = json.loads(raw_checkpoint) if raw_checkpoint else None
     return Job(
         id=row["id"],
         source=row["source"],
@@ -57,6 +71,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         transcript=transcript,
         outputs=list(outputs),
         cancel_requested=bool(row["cancel_requested"]),
+        checkpoint=checkpoint,
     )
 
 
@@ -75,6 +90,7 @@ class SqliteJobStore(JobStore):
         self._conn.execute("PRAGMA foreign_keys=ON")
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate_locked()
             self._conn.commit()
         self._max_jobs = max_jobs
 
@@ -92,8 +108,8 @@ class SqliteJobStore(JobStore):
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, source, state, created_at, updated_at,"
-                " progress, error, transcript, outputs, cancel_requested)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " progress, error, transcript, outputs, cancel_requested, checkpoint)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id,
                     job.source,
@@ -105,6 +121,7 @@ class SqliteJobStore(JobStore):
                     None,
                     json.dumps([]),
                     int(job.cancel_requested),
+                    None,
                 ),
             )
             self._conn.commit()
@@ -133,6 +150,8 @@ class SqliteJobStore(JobStore):
                 values.append(json.dumps(value) if value is not None else None)
             elif key == "outputs":
                 values.append(json.dumps(list(value or [])))
+            elif key == "checkpoint":
+                values.append(json.dumps(value) if value is not None else None)
             elif key == "cancel_requested":
                 values.append(int(bool(value)))
             else:
@@ -171,6 +190,14 @@ class SqliteJobStore(JobStore):
             self._conn.commit()
 
     # -- internals ---------------------------------------------------------
+
+    def _migrate_locked(self) -> None:
+        """Add columns introduced after the original schema."""
+        existing = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        if _CHECKPOINT_COLUMN not in existing:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint TEXT")
 
     def _prune_locked(self) -> None:
         """Drop the oldest terminal jobs once over capacity."""

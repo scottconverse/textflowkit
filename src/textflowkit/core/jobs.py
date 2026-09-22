@@ -58,6 +58,7 @@ class Job:
     transcript: dict[str, Any] | None = None
     outputs: list[str] = field(default_factory=list)
     cancel_requested: bool = False
+    checkpoint: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -74,6 +75,7 @@ class Job:
             "error": self.error,
             "outputs": list(self.outputs),
             "cancel_requested": self.cancel_requested,
+            "checkpoint": self.checkpoint,
         }
         if include_transcript and self.transcript is not None:
             data["transcript"] = self.transcript

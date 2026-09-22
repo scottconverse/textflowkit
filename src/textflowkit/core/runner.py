@@ -9,13 +9,18 @@ Cancellation contract:
 - `JobCancelled` is an orderly stop, not a failure. The job ends CANCELLED.
 - A job that finishes while a cancellation is in flight must not overwrite the
   cancelled state with DONE, so the final transition re-reads the job first.
+- Explicit resume of an interrupted job is the one path allowed past the
+  terminal-state guard. Callers use `prepare_resume` first, which resets the job
+  to PENDING while preserving its checkpoint.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+from textflowkit.core.checkpoint import write_checkpoint
 from textflowkit.core.executor import JobCancelled, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
@@ -42,9 +47,11 @@ def run_job(
     diarizer_backend: str = "pyannote",
     translate_to: str | None = None,
     translator_backend: str = "ollama",
+    resume_checkpoint: dict[str, Any] | None = None,
 ) -> None:
     """Execute a job, recording its terminal state. Callers decide the thread."""
-    # Do not start work that has already been cancelled while queued.
+    # Do not start work that has already been cancelled or otherwise finished.
+    # `submit` only hands us fresh jobs; explicit resume prepares the row first.
     current = store.get(job.id)
     if current is not None and current.is_terminal:
         return
@@ -69,6 +76,8 @@ def run_job(
             diarizer_backend=diarizer_backend,
             translate_to=translate_to,
             translator_backend=translator_backend,
+            resume_checkpoint=resume_checkpoint,
+            on_checkpoint=lambda record: write_checkpoint(store, job.id, record),
         )
     except JobCancelled:
         store.update(job.id, state=JobState.CANCELLED, progress="cancelled")

@@ -67,16 +67,13 @@ their access rules frequently. See [docs/sources.md](docs/sources.md).
 
 Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
 
-> **Not yet published to PyPI.** `pip install textflowkit` does not work today
-> (it 404s). Install from source until the first release is cut.
-
 ```bash
 git clone https://github.com/scottconverse/textflowkit
 cd textflowkit
 pip install -e .
 ```
 
-Optional extras (also from source):
+Optional extras:
 
 ```bash
 pip install -e ".[mcp]"    # MCP server adapter
@@ -118,10 +115,25 @@ Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
 `export_transcript`, `list_sources`, `list_jobs`, `cancel_job`,
 `search_transcript`.
 
-**Integration-checked against DSH, Claude Code, Codex, and OpenCode.** In each
-case the harness's own MCP client was pointed at this server and reported a live
-connection. See [docs/adapters.md](docs/adapters.md) for per-harness configuration
-and the exact evidence.
+**Verified against DSH, Claude Code, and OpenCode.** Each harness's own MCP
+client was pointed at this server and reported a live connection:
+
+- **DSH** - the server spawned as a child of the harness's MCP client, which
+  then completed an MCP handshake, discovered all 8 tools, and returned real
+  data from a `list_sources` call.
+- **Claude Code** - `claude mcp list` reports `textflowkit: √ Connected` (stdio).
+- **OpenCode** - `opencode mcp list` reports `textflowkit connected` over
+  Streamable HTTP.
+
+**Codex** is configured but not live-verified: the entry is present in
+`~/.codex/config.toml`, and the CLI could not be exercised because an unrelated
+model-catalog file in that config fails to parse. That is a pre-existing issue
+with the Codex configuration, not with this server.
+
+There is also a protocol test that launches the server as a real subprocess and
+speaks newline-delimited JSON-RPC over stdio, so the entry point, framing, and
+version negotiation are covered on every CI run (`tests/test_stdio_protocol.py`).
+See [docs/adapters.md](docs/adapters.md) for per-harness configuration.
 
 ## Use as an HTTP API
 

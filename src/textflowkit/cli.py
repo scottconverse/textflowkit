@@ -9,7 +9,9 @@ import sys
 from pathlib import Path
 
 from textflowkit import __version__
+from textflowkit.core.batch import run_batch
 from textflowkit.core.engine import get_engine
+from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
 from textflowkit.core.pipeline import PipelineError, transcribe
@@ -55,7 +57,31 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
     t.add_argument("--stdout-format", default="txt", help="format for --stdout (default txt)")
+    t.add_argument(
+        "--resume",
+        action="store_true",
+        help="reuse a completed checkpoint for the same source and options when one exists",
+    )
     t.add_argument("--quiet", "-q", action="store_true", help="suppress progress messages")
+
+    b = sub.add_parser("batch", help="transcribe many sources in one invocation")
+    b.add_argument("sources", nargs="+", help="media URLs or paths to local files")
+    b.add_argument("--formats", default="json,srt,txt",
+                   help=f"comma-separated outputs (default: json,srt,txt; available: {', '.join(SUPPORTED_FORMATS)})")
+    b.add_argument("--output-dir", "-o", default=None, help="directory for written outputs")
+    b.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
+    b.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
+    b.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    b.add_argument("--diarize", action="store_true", help="label speakers (same requirements as transcribe)")
+    b.add_argument("--translate-to", default=None, metavar="LANG", help="translate transcript into LANG")
+    b.add_argument("--cookies-from-browser", default=None,
+                   help="pass cookies to yt-dlp from a browser (e.g. firefox)")
+    b.add_argument(
+        "--resume",
+        action="store_true",
+        help="reuse a completed checkpoint for each matching source and options",
+    )
+    b.add_argument("--quiet", "-q", action="store_true", help="suppress per-item progress messages")
 
     l = sub.add_parser("export", help="re-render an existing transcript JSON")
     l.add_argument("transcript", help="path to a transcript .json file")
@@ -77,11 +103,70 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _formats(raw: str) -> list[str]:
+    return [f.strip().lower().lstrip(".") for f in raw.split(",") if f.strip()]
+
+
+def _checkpoint_writer(store, job_id: str):
+    def write(record: dict) -> None:
+        store.update(job_id, checkpoint=record)
+
+    return write
+
+
 def _cmd_transcribe(args: argparse.Namespace) -> int:
-    formats = [f.strip().lower().lstrip(".") for f in args.formats.split(",") if f.strip()]
+    formats = _formats(args.formats)
     output_dir = args.output_dir
     if output_dir is None and not args.stdout:
         output_dir = "."
+
+    store = get_default_store()
+    resume_checkpoint = None
+    job = None
+    if args.resume:
+        # Search BEFORE creating a job. Creating the new job first would put an
+        # empty record in the store and there would be nothing to find, which is
+        # exactly how an earlier version silently re-transcribed everything.
+        from textflowkit.core.checkpoint import (
+            find_resumable_checkpoint,
+            prepare_resume,
+            reusable_done_result,
+        )
+
+        found = find_resumable_checkpoint(
+            store,
+            source=args.source,
+            model=args.model,
+            language=args.language,
+            device=args.device,
+            options={
+                "formats": formats,
+                "diarize": args.diarize,
+                "diarizer_backend": "pyannote",
+                "translate_to": args.translate_to,
+                "translator_backend": "ollama",
+            },
+        )
+        if found is not None:
+            prior, checkpoint = found
+            prepared = prepare_resume(store, prior, checkpoint)
+            if prepared is None:
+                reused = reusable_done_result(
+                    store,
+                    prior,
+                    formats=formats,
+                    output_dir=output_dir,
+                    stem=_output_stem(store, prior.id, args.source),
+                )
+                if reused is not None:
+                    result = reused
+                    job = store.get(prior.id) or prior
+                    return _finish_transcribe(args, result, job, store)
+            else:
+                job, resume_checkpoint = prepared
+
+    if job is None:
+        job = store.create(args.source)
 
     try:
         result = transcribe(
@@ -94,10 +179,53 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             cookies_from_browser=args.cookies_from_browser,
             diarize=args.diarize,
             translate_to=args.translate_to,
+            resume_checkpoint=resume_checkpoint,
+            on_checkpoint=_checkpoint_writer(store, job.id),
         )
     except PipelineError as exc:
+        store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    else:
+        return _finish_transcribe(args, result, job, store)
+
+
+def _output_stem(store, job_id: str, source: str) -> str:
+    current = store.get(job_id)
+    if current is not None:
+        existing = [Path(p) for p in current.outputs]
+        if existing:
+            return existing[0].stem
+    return _source_stem(source)
+
+
+def _source_stem(source: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(source)
+    raw = Path(parsed.path).stem if parsed.scheme in {"http", "https"} else Path(source).stem
+    return (raw or "transcript").replace("textflowkit-", "") or "transcript"
+
+
+def _finish_transcribe(
+    args: argparse.Namespace,
+    result,
+    job,
+    store,
+) -> int:
+    """Record and print a result that came from the pipeline or reuse."""
+    from textflowkit.core.pipeline import TranscribeResult
+
+    if not isinstance(result, TranscribeResult):
+        transcript, outputs = result
+        result = TranscribeResult(transcript=transcript, outputs=list(outputs))
+    store.update(
+        job.id,
+        state=JobState.DONE,
+        progress="complete",
+        transcript=result.transcript.to_dict(),
+        outputs=[str(p) for p in result.outputs],
+    )
 
     tr = result.transcript
     if not args.quiet:
@@ -115,6 +243,32 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
     for path in result.outputs:
         print(str(path))
     return 0
+
+
+def _cmd_batch(args: argparse.Namespace) -> int:
+    report = run_batch(
+        list(args.sources),
+        store=get_default_store(),
+        resume=args.resume,
+        language=args.language,
+        formats=_formats(args.formats),
+        output_dir=args.output_dir or ".",
+        model=args.model,
+        device=args.device,
+        cookies_from_browser=args.cookies_from_browser,
+        diarize=args.diarize,
+        translate_to=args.translate_to,
+    )
+    if not args.quiet:
+        for item in report.items:
+            detail = item.error or ", ".join(item.outputs)
+            suffix = f" - {detail}" if detail else ""
+            print(f"{item.status:<9} {item.source}{suffix}")
+    print(
+        f"batch: {report.total} total, {report.succeeded} succeeded, "
+        f"{report.failed} failed, {report.skipped} skipped"
+    )
+    return 0 if report.ok else 1
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
@@ -313,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "transcribe":
         return _cmd_transcribe(args)
+    if args.command == "batch":
+        return _cmd_batch(args)
     if args.command == "export":
         return _cmd_export(args)
     if args.command == "sources":
@@ -327,5 +483,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
