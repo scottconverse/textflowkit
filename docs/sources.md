@@ -30,6 +30,40 @@ Add its domains to `PLATFORMS` in `src/textflowkit/sources/detect.py`. If `yt-dl
 already supports the site, that is usually the entire change. No pipeline or
 renderer code is involved.
 
+## Platform support depends on yt-dlp
+
+Every platform in the table above is fetched through **yt-dlp**. That is a real
+dependency on a third party, and it is the one part of this tool that can break
+without any change on our side: sites change their media URLs, their access
+rules, and their bot defences, and yt-dlp tracks those changes on its own
+schedule.
+
+**Posture, stated plainly:**
+
+- **Pin a floor, not a ceiling.** `yt-dlp>=2025.1.1` is a minimum. Upper bounds
+  are avoided because the fix for a broken site is usually *newer* yt-dlp, and a
+  ceiling would block the fix.
+- **Update yt-dlp first** when a site stops working. It is almost always the
+  cause, and it is a one-line upgrade rather than a change here.
+- **Keep the in-process fallback.** yt-dlp is used as a module when the CLI is
+  unavailable or cancellation is wanted, so a missing console script is not a
+  hard failure.
+- **Run `textflowkit doctor`** before diagnosing anything else. It reports the
+  yt-dlp version and how it is being invoked, the detected JavaScript runtime,
+  ffmpeg, the optional extras, the compute device, and the configured roots.
+
+```bash
+textflowkit doctor
+```
+
+YouTube additionally needs a JavaScript runtime for signature/n-param
+challenges; the detector enables whichever of deno/node/bun/quickjs is present
+(see [install.md](install.md)).
+
+**What is not attempted:** vendoring yt-dlp, or implementing per-site extractors.
+Both would be a permanent maintenance burden to duplicate work upstream already
+does better.
+
 ## URL safety (SSRF guard)
 
 textflowkit **only fetches publicly reachable URLs.** Caller-supplied URLs are

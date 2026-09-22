@@ -28,6 +28,7 @@
 - [x] Bounded concurrency (`TEXTFLOWKIT_MAX_CONCURRENCY`)
 - [x] Job cancellation (`cancel_job`)
 - [x] Transcript paging, time-range reads, and search
+- [x] `doctor` diagnostic for yt-dlp / JS runtime / extras / device
 - [ ] Resumable / batched jobs
 - [x] DOCX and PDF export (`export` extra)
 

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 from textflowkit import __version__
 from textflowkit.core.model import Transcript
+from textflowkit.core.paths import default_input_root, output_root
 from textflowkit.core.pipeline import PipelineError, transcribe
 from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.sources.acquire import AcquisitionError
 from textflowkit.sources.detect import PLATFORMS
 
 
@@ -58,6 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
     l.add_argument("--output", "-o", default=None, help="output file (default stdout)")
 
     sub.add_parser("sources", help="list recognised platforms")
+    sub.add_parser("doctor", help="report the versions and tools this install will use")
     return p
 
 
@@ -124,6 +129,87 @@ def _cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_doctor(_: argparse.Namespace) -> int:
+    """Print the environment this install will actually use.
+
+    Platform support depends on yt-dlp continuing to work against sites it does
+    not own, and that breaks from the outside. When a site stops working, the
+    first question is which yt-dlp and which JavaScript runtime are in play -
+    this answers it without guessing.
+    """
+    import shutil
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<18} {value}")
+
+    line("textflowkit", __version__)
+    line("python", sys.version.split()[0])
+
+    # ffmpeg
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        try:
+            out = subprocess.run(
+                [ffmpeg, "-version"], capture_output=True, text=True, check=False
+            ).stdout.splitlines()
+            line("ffmpeg", out[0] if out else ffmpeg)
+        except OSError as exc:
+            line("ffmpeg", f"{ffmpeg} (could not run: {exc})")
+    else:
+        line("ffmpeg", "MISSING - required")
+
+    # yt-dlp: which one, and how
+    from textflowkit.sources.acquire import detect_js_runtime, require_tool
+
+    try:
+        ytdlp_path = require_tool("yt-dlp", module="yt_dlp")
+    except AcquisitionError as exc:
+        line("yt-dlp", f"MISSING - {exc}")
+    else:
+        try:
+            import yt_dlp
+            version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
+        except ImportError:
+            version = "unknown"
+        how = "module (in-process)" if ytdlp_path is None else ytdlp_path
+        line("yt-dlp", f"{version} via {how}")
+
+    runtime = detect_js_runtime()
+    line("js runtime", runtime or "none found (YouTube formats may be limited)")
+
+    # optional extras
+    for label, module in (
+        ("mcp", "mcp"),
+        ("fastapi", "fastapi"),
+        ("pyannote", "pyannote.audio"),
+        ("python-docx", "docx"),
+        ("reportlab", "reportlab"),
+    ):
+        try:
+            __import__(module)
+        except ImportError:
+            line(label, "not installed")
+        else:
+            line(label, "installed")
+
+    # compute
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            line("device", f"{name} (torch {torch.__version__})")
+        else:
+            line("device", f"cpu (torch {torch.__version__})")
+    except ImportError:
+        line("device", "torch not installed")
+
+    line("input root", str(default_input_root() or "unconfined (CLI default)"))
+    line("output root", str(output_root()))
+    line("jobs store", os.environ.get("TEXTFLOWKIT_DB", "in-memory (not durable)"))
+    return 0
+
+
 def _cmd_sources(_: argparse.Namespace) -> int:
     for name in sorted(PLATFORMS):
         print(name)
@@ -141,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_export(args)
     if args.command == "sources":
         return _cmd_sources(args)
+    if args.command == "doctor":
+        return _cmd_doctor(args)
     parser.print_help()
     return 2
 
