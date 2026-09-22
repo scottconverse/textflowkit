@@ -99,7 +99,7 @@ def test_resume_warns_when_the_store_cannot_persist(monkeypatch, capsys, tmp_pat
     media.write_bytes(b"not really audio")
 
     # Stop before any real work: the warning is emitted ahead of the pipeline.
-    monkeypatch.setattr(cli_mod, "transcribe", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(cli_mod, "submit_request", lambda *a, **k: (_ for _ in ()).throw(
         SystemExit(0)
     ))
 
@@ -122,7 +122,7 @@ def test_no_resume_warning_when_the_store_is_durable(monkeypatch, capsys, tmp_pa
     media = tmp_path / "clip.wav"
     media.write_bytes(b"not really audio")
 
-    monkeypatch.setattr(cli_mod, "transcribe", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(cli_mod, "submit_request", lambda *a, **k: (_ for _ in ()).throw(
         SystemExit(0)
     ))
     try:
@@ -132,3 +132,12 @@ def test_no_resume_warning_when_the_store_is_durable(monkeypatch, capsys, tmp_pa
 
     err = capsys.readouterr().err
     assert "TEXTFLOWKIT_DB is not set" not in err
+
+
+def test_batch_resume_warns_without_durable_store(monkeypatch, capsys):
+    from textflowkit.core.batch import BatchReport
+
+    monkeypatch.delenv("TEXTFLOWKIT_DB", raising=False)
+    monkeypatch.setattr(cli_mod, "run_batch", lambda *a, **k: BatchReport())
+    assert cli_mod.main(["batch", "one", "--resume", "--quiet"]) == 0
+    assert "TEXTFLOWKIT_DB" in capsys.readouterr().err

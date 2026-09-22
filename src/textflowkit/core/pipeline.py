@@ -204,10 +204,6 @@ def transcribe(
         # If a later stage (diarization) genuinely needs the audio and it is gone,
         # re-acquire it - that is far cheaper than re-running Whisper.
         can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
-        need_media_for_later_stage = diarize and audio is None
-        if can_resume and need_media_for_later_stage:
-            can_resume = False
-
         if not can_resume:
             transcript = None
 
@@ -230,6 +226,19 @@ def transcribe(
                 except Exception as exc:  # engine failures are user-facing
                     raise PipelineError(f"transcription failed: {exc}") from exc
                 _checkpoint("transcribe")
+            elif diarize and audio is None:
+                # A finished transcript is the expensive checkpoint. Reacquire
+                # only the audio required by pyannote; never rerun Whisper.
+                require_tool("ffmpeg")
+                if media is None:
+                    media = fetch_media(
+                        ref, work_dir=scratch,
+                        cookies_from_browser=cookies_from_browser,
+                        check_cancel=check_cancel,
+                    )
+                    _checkpoint("fetch")
+                audio = extract_audio(media, work_dir=scratch)
+                _checkpoint("extract")
         except AcquisitionError as exc:
             raise PipelineError(str(exc)) from exc
 

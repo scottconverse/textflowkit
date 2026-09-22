@@ -24,7 +24,15 @@ from textflowkit.core.paths import (
     server_input_root,
 )
 from textflowkit.core.retrieval import page_segments, search_segments
-from textflowkit.core.runner import submit, transcript_for
+from textflowkit.core.runner import transcript_for
+from textflowkit.core.submission import (
+    SubmissionRequest,
+    submit_batch,
+    submit_request,
+)
+from textflowkit.core.submission import (
+    resume_job as core_resume_job,
+)
 from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
 
 try:  # optional extra
@@ -55,6 +63,15 @@ class TranscribeRequest(BaseModel):
     translate_to: str | None = None
 
 
+class BatchRequest(BaseModel):
+    jobs: list[TranscribeRequest]
+    resume: bool = False
+
+
+def _submission_request(req: TranscribeRequest) -> SubmissionRequest:
+    return SubmissionRequest(**req.model_dump(), input_root=server_input_root())
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     """Liveness probe."""
@@ -76,31 +93,36 @@ def sources() -> dict[str, Any]:
 @app.post("/jobs", status_code=202)
 def create_job(req: TranscribeRequest) -> dict[str, Any]:
     """Submit a transcription job. Returns 202 with a job id immediately."""
-    bad = [f for f in req.formats if f.lower().lstrip(".") not in SUPPORTED_FORMATS]
-    if bad:
-        raise HTTPException(
-            status_code=422,
-            detail={"error": f"unsupported format(s): {', '.join(bad)}",
-                    "available_formats": list(SUPPORTED_FORMATS)},
-        )
-
     store = get_default_store()
     try:
-        job = submit(
-            store,
-            source=req.source,
-            language=req.language,
-            formats=[f.lower().lstrip(".") for f in req.formats],
-            output_dir=req.output_dir,
-            model=req.model,
-            device=req.device,
-            cookies_from_browser=req.cookies_from_browser,
-            input_root=server_input_root(),
-            diarize=req.diarize,
-            translate_to=req.translate_to,
-        )
+        job = submit_request(store, _submission_request(req))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except QueueFullError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return job.to_dict()
+
+
+@app.post("/jobs/batch", status_code=202)
+def create_batch(req: BatchRequest) -> dict[str, Any]:
+    """Queue multiple independent jobs through the same core contract."""
+    try:
+        requests = [_submission_request(item) for item in req.jobs]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    results = submit_batch(get_default_store(), requests, resume=req.resume)
+    return {"count": len(results), "jobs": results}
+
+
+@app.post("/jobs/{job_id}/resume", status_code=202)
+def resume_job(job_id: str) -> dict[str, Any]:
+    """Resume a durable interrupted job by its saved request and checkpoint."""
+    try:
+        job = core_resume_job(get_default_store(), job_id)
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return job.to_dict()
 
 

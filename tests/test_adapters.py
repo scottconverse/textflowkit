@@ -101,7 +101,7 @@ def test_mcp_queue_full_is_explicit_and_retryable(monkeypatch):
     def full(*args, **kwargs):
         raise QueueFullError("job queue is full")
 
-    monkeypatch.setattr(mcp_server, "submit", full)
+    monkeypatch.setattr(mcp_server, "submit_request", full)
     out = mcp_server.transcribe_media("x")
     assert out == {"error": "job queue is full", "retryable": True}
 
@@ -184,7 +184,7 @@ def test_http_queue_full_returns_429(monkeypatch):
     def full(*args, **kwargs):
         raise QueueFullError("job queue is full")
 
-    monkeypatch.setattr(http_server, "submit", full)
+    monkeypatch.setattr(http_server, "submit_request", full)
     response = TestClient(http_server.app).post("/jobs", json={"source": "x"})
     assert response.status_code == 429
     assert "queue is full" in response.json()["detail"]

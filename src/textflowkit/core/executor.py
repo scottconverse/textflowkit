@@ -162,7 +162,9 @@ class JobExecutor:
 
     # -- work --------------------------------------------------------------
 
-    def submit(self, *, source: str, **kwargs: Any) -> Job:
+    def submit(
+        self, *, source: str, request: dict[str, Any] | None = None, **kwargs: Any
+    ) -> Job:
         """Queue a job and return it immediately."""
         self.start()
         with self._lock:
@@ -173,7 +175,24 @@ class JobExecutor:
                     f"job queue is full ({self._max_pending} pending); retry later"
                 )
             try:
-                job = self._store.create(source)
+                job = self._store.create(source, request=request)
+                self._queue.put_nowait((job.id, {"source": source, **kwargs}))
+            except Exception:
+                self._pending_slots.release()
+                raise
+            return job
+
+    def enqueue(self, job: Job, *, source: str, **kwargs: Any) -> Job:
+        """Queue an existing prepared job (the durable resume path)."""
+        self.start()
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("job executor is shut down")
+            if not self._pending_slots.acquire(blocking=False):
+                raise QueueFullError(
+                    f"job queue is full ({self._max_pending} pending); retry later"
+                )
+            try:
                 self._queue.put_nowait((job.id, {"source": source, **kwargs}))
             except Exception:
                 self._pending_slots.release()

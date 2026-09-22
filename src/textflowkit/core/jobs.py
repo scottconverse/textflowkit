@@ -59,6 +59,7 @@ class Job:
     outputs: list[str] = field(default_factory=list)
     cancel_requested: bool = False
     checkpoint: dict[str, Any] | None = None
+    request: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -90,7 +91,7 @@ class JobStore(ABC):
     """
 
     @abstractmethod
-    def create(self, source: str) -> Job:
+    def create(self, source: str, *, request: dict[str, Any] | None = None) -> Job:
         """Create a pending job and return it."""
 
     @abstractmethod
@@ -140,8 +141,8 @@ class MemoryJobStore(JobStore):
         self._lock = threading.RLock()
         self._max_jobs = max_jobs
 
-    def create(self, source: str) -> Job:
-        job = Job(id=uuid.uuid4().hex[:12], source=source)
+    def create(self, source: str, *, request: dict[str, Any] | None = None) -> Job:
+        job = Job(id=uuid.uuid4().hex[:12], source=source, request=request)
         with self._lock:
             self._jobs[job.id] = job
             self._order.append(job.id)

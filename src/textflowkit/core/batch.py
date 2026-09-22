@@ -25,6 +25,7 @@ from textflowkit.core.checkpoint import (
 from textflowkit.core.executor import JobCancelled
 from textflowkit.core.jobs import JobState, JobStore
 from textflowkit.core.runner import run_job
+from textflowkit.core.submission import SubmissionRequest
 
 
 @dataclass(slots=True)
@@ -104,8 +105,15 @@ def run_batch(
     """
     report = BatchReport()
     for source in sources:
-        item_kwargs = dict(kwargs)
         item = BatchItem(source=source, status="failed")
+        try:
+            request = SubmissionRequest(source=source, **kwargs)
+        except (TypeError, ValueError) as exc:
+            item.error = str(exc)
+            report.items.append(item)
+            continue
+        item_kwargs = request.run_kwargs()
+        item_kwargs.pop("source")
         if resume:
             found = find_resumable_checkpoint(
                 store,
@@ -130,17 +138,17 @@ def run_batch(
                         item.error = None
                         report.items.append(item)
                         continue
-                    job = store.create(source)
+                    job = store.create(source, request=request.to_dict())
                     item.job_id = job.id
                 else:
                     job, payload = prepared
                     item.resumed = True
                     item_kwargs["resume_checkpoint"] = payload
             else:
-                job = store.create(source)
+                job = store.create(source, request=request.to_dict())
                 item.job_id = job.id
         else:
-            job = store.create(source)
+            job = store.create(source, request=request.to_dict())
             item.job_id = job.id
 
         try:

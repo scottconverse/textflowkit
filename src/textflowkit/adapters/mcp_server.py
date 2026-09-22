@@ -33,7 +33,15 @@ from textflowkit.core.paths import (
     server_input_root,
 )
 from textflowkit.core.retrieval import page_segments, search_segments
-from textflowkit.core.runner import submit, transcript_for
+from textflowkit.core.runner import transcript_for
+from textflowkit.core.submission import (
+    SubmissionRequest,
+    submit_batch,
+    submit_request,
+)
+from textflowkit.core.submission import (
+    resume_job as core_resume_job,
+)
 from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
 from textflowkit.sources.detect import PLATFORMS
 
@@ -140,10 +148,8 @@ def transcribe_media(
             "available_formats": list(SUPPORTED_FORMATS),
         }
 
-    store = get_default_store()
     try:
-        job = submit(
-            store,
+        request = SubmissionRequest(
             source=source,
             language=language,
             formats=fmt_list,
@@ -151,11 +157,13 @@ def transcribe_media(
             model=model,
             device=device,
             cookies_from_browser=cookies_from_browser,
-            work_dir=None,
             input_root=server_input_root(),
             diarize=diarize,
             translate_to=translate_to,
         )
+        job = submit_request(get_default_store(), request)
+    except ValueError as exc:
+        return {"error": str(exc)}
     except QueueFullError as exc:
         return {"error": str(exc), "retryable": True}
     return {
@@ -164,6 +172,45 @@ def transcribe_media(
         "source": job.source,
         "next": f"Poll get_job_status with job_id='{job.id}' until state is 'done'.",
     }
+
+
+@mcp.tool(annotations=OPEN_WORLD)
+def submit_batch_media(
+    sources: list[str],
+    language: str | None = None,
+    formats: str = "json,srt,txt",
+    output_dir: str | None = None,
+    model: str = "small",
+    device: str | None = None,
+    diarize: bool = False,
+    translate_to: str | None = None,
+    resume: bool = False,
+) -> dict[str, Any]:
+    """Queue multiple independent media jobs and return each job handle."""
+    fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
+    try:
+        requests = [SubmissionRequest(
+            source=source, language=language, formats=fmt_list,
+            output_dir=output_dir, model=model, device=device,
+            diarize=diarize, translate_to=translate_to,
+            input_root=server_input_root(),
+        ) for source in sources]
+    except ValueError as exc:
+        return {"error": str(exc)}
+    results = submit_batch(get_default_store(), requests, resume=resume)
+    return {"count": len(results), "jobs": results}
+
+
+@mcp.tool(annotations=MUTATING)
+def resume_job(job_id: str) -> dict[str, Any]:
+    """Resume an interrupted job using its saved request and transcript checkpoint."""
+    try:
+        job = core_resume_job(get_default_store(), job_id)
+    except QueueFullError as exc:
+        return {"error": str(exc), "retryable": True}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return {"job_id": job.id, "state": job.state.value}
 
 
 @mcp.tool(annotations=READ_ONLY)
