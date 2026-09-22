@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Self
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:  # Self is 3.11+; typing_extensions backports it
+    from typing_extensions import Self
 
 _NUMBERED = re.compile(r"^\s*(\d+)\s*[.):\-]\s*(.*)$")
 

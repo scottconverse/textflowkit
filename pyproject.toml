@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5"]
 mcp = ["mcp>=2.0"]
 http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
 diarize = ["pyannote.audio>=3.1"]
