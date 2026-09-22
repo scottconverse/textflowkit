@@ -153,8 +153,6 @@ def transcribe(
             return None
         try:
             resolved = Path(path).resolve()
-        except NameError:  # pragma: no cover - scratch always exists by render time
-            return None
         except OSError:
             return None
         if scratch is not None and scratch.resolve() in resolved.parents:
@@ -209,9 +207,7 @@ def transcribe(
         transcript = None
 
     try:
-        if can_resume:
-            pass
-        else:
+        if not can_resume:
             require_tool("ffmpeg")
             media = fetch_media(
                 ref,

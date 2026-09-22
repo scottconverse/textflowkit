@@ -13,6 +13,20 @@ them: the CLI, the MCP server, and the HTTP API all call
    HTTP ───────────►└──────────────────────┘
 ```
 
+## Resuming and batching
+
+`textflowkit transcribe --resume` reuses completed work, and
+`textflowkit batch` runs many sources in one invocation.
+
+Both need a **durable job store**: set `TEXTFLOWKIT_DB` to a SQLite file path.
+Without it the store lives in the process, so no checkpoint can outlive the run
+and `--resume` cannot find anything to reuse. The CLI says so on stderr rather
+than silently re-transcribing - if you see that warning, set `TEXTFLOWKIT_DB`.
+
+Resume also requires the **source to still exist** and the same source, model,
+language, and options as the original run. A resumed run re-validates all of
+them; a mismatch starts clean rather than mixing two runs into one transcript.
+
 ## Harness transport support
 
 **Evidence tier: `browsed` / live-connection.** Each harness's own MCP client was
@@ -57,7 +71,7 @@ targeting an existing entry and fails with `patch: entry "<id>" not found`.
 ## MCP (for AI harnesses)
 
 ```bash
-pip install "textflowkit[mcp]"
+pip install -e ".[mcp]"
 textflowkit-mcp                      # stdio (default)
 textflowkit-mcp --transport http --host 127.0.0.1 --port 8766
 ```
@@ -108,7 +122,7 @@ OpenCode (`opencode.json`):
 ## HTTP (for software products and web frontends)
 
 ```bash
-pip install "textflowkit[http]"
+pip install -e ".[http]"
 textflowkit-http --host 127.0.0.1 --port 8767
 ```
 
@@ -210,7 +224,7 @@ Binary formats cannot be returned inline, and asking for one that way returns a
 clear message rather than failing deeper down.
 
 ```bash
-pip install "textflowkit[export]"        # python-docx + reportlab
+pip install -e ".[export]"        # python-docx + reportlab
 curl -X POST "http://127.0.0.1:8767/jobs/$ID/export?formats=docx&formats=pdf"
 ```
 

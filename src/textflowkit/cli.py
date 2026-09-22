@@ -107,6 +107,17 @@ def _formats(raw: str) -> list[str]:
     return [f.strip().lower().lstrip(".") for f in raw.split(",") if f.strip()]
 
 
+def _store_is_durable() -> bool:
+    """Whether the default store survives this process.
+
+    ``_make_store`` falls back to ``MemoryJobStore`` when TEXTFLOWKIT_DB is
+    unset, and an in-memory store cannot carry a checkpoint into a later
+    invocation. Resume depends on that carrying, so callers warn instead of
+    silently redoing the work.
+    """
+    return bool(os.environ.get("TEXTFLOWKIT_DB"))
+
+
 def _checkpoint_writer(store, job_id: str):
     def write(record: dict) -> None:
         store.update(job_id, checkpoint=record)
@@ -123,6 +134,17 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
     store = get_default_store()
     resume_checkpoint = None
     job = None
+    if args.resume and not _store_is_durable():
+        # The default store lives in this process, so nothing from a previous
+        # invocation can be resumed. Say so rather than silently doing the full
+        # transcription the user was trying to avoid.
+        print(
+            "warning: --resume needs a durable store; TEXTFLOWKIT_DB is not set, "
+            "so no checkpoint from an earlier run can be found. Re-running from "
+            "scratch. Set TEXTFLOWKIT_DB to persist jobs and checkpoints.",
+            file=sys.stderr,
+        )
+
     if args.resume:
         # Search BEFORE creating a job. Creating the new job first would put an
         # empty record in the store and there would be nothing to find, which is

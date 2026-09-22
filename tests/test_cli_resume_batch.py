@@ -82,3 +82,53 @@ def test_cmd_batch_returns_success_when_no_failures(monkeypatch, capsys):
     assert "batch: 2 total, 1 succeeded, 0 failed, 1 skipped" in out
     assert "succeeded" not in out.split("batch:", 1)[0]
 
+
+def test_resume_warns_when_the_store_cannot_persist(monkeypatch, capsys, tmp_path):
+    """--resume with no TEXTFLOWKIT_DB must say so instead of silently redoing work.
+
+    The default store is in-memory, so a checkpoint cannot survive to a later
+    invocation. Before this warning existed the CLI re-transcribed the whole file
+    with no indication that --resume had done nothing.
+    """
+    from textflowkit import cli as cli_mod
+
+    monkeypatch.delenv("TEXTFLOWKIT_DB", raising=False)
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+
+    media = tmp_path / "clip.wav"
+    media.write_bytes(b"not really audio")
+
+    # Stop before any real work: the warning is emitted ahead of the pipeline.
+    monkeypatch.setattr(cli_mod, "transcribe", lambda *a, **k: (_ for _ in ()).throw(
+        SystemExit(0)
+    ))
+
+    try:
+        cli_mod.main(["transcribe", str(media), "--resume", "--quiet"])
+    except SystemExit:
+        pass
+
+    err = capsys.readouterr().err
+    assert "TEXTFLOWKIT_DB" in err
+    assert "resume" in err.lower()
+
+
+def test_no_resume_warning_when_the_store_is_durable(monkeypatch, capsys, tmp_path):
+    from textflowkit import cli as cli_mod
+
+    monkeypatch.setenv("TEXTFLOWKIT_DB", str(tmp_path / "jobs.db"))
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+
+    media = tmp_path / "clip.wav"
+    media.write_bytes(b"not really audio")
+
+    monkeypatch.setattr(cli_mod, "transcribe", lambda *a, **k: (_ for _ in ()).throw(
+        SystemExit(0)
+    ))
+    try:
+        cli_mod.main(["transcribe", str(media), "--resume", "--quiet"])
+    except SystemExit:
+        pass
+
+    err = capsys.readouterr().err
+    assert "TEXTFLOWKIT_DB is not set" not in err

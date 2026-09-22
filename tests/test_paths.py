@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -211,3 +213,79 @@ def test_pipeline_ignores_input_root_for_urls(tmp_path):
     with pytest.raises(PipelineError) as exc:
         transcribe("http://169.254.169.254/x.mp4", input_root=root)
     assert "non-public IP" in str(exc.value)
+
+
+# --- symlink escapes -------------------------------------------------------
+# SECURITY.md states that symlinks which escape the root are rejected. The
+# implementation gets this from Path.resolve() following links before the
+# containment check, so the property is real but was untested: a refactor that
+# dropped resolve() would silently reopen the hole with no red test.
+
+
+def _make_link(link: Path, target: Path, *, directory: bool) -> None:
+    """Create a link for the confinement tests, or skip if impossible.
+
+    Windows symlinks need Developer Mode or elevation, but directory junctions
+    do not - and `Path.resolve()` follows both. Using a junction here means the
+    escape property is genuinely exercised on Windows rather than skipped.
+    """
+    import subprocess
+    import sys
+
+    if sys.platform == "win32" and directory:
+        proc = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0 and link.exists():
+            return
+        pytest.skip(f"cannot create a junction here: {proc.stderr.strip() or proc.stdout.strip()}")
+
+    try:
+        os.symlink(target, link, target_is_directory=directory)
+    except OSError as exc:
+        pytest.skip(f"cannot create links here: {exc}")
+
+
+def test_output_symlink_escape_is_blocked(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    link = root / "escape"
+    _make_link(link, outside, directory=True)
+
+    monkeypatch.setenv(ENV_OUTPUT_ROOT, str(root))
+    with pytest.raises(UnsafeOutputPathError):
+        resolve_output_dir(str(link))
+
+
+def test_output_symlink_staying_inside_is_allowed(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    real = root / "real"
+    root.mkdir()
+    real.mkdir()
+    link = root / "alias"
+    _make_link(link, real, directory=True)
+
+    monkeypatch.setenv(ENV_OUTPUT_ROOT, str(root))
+    # Resolves back inside the root, so it is permitted.
+    assert resolve_output_dir(str(link)) == real.resolve()
+
+
+def test_input_symlink_escape_is_blocked(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "secret.wav"
+    target.write_bytes(b"x")
+    link = root / "link.wav"
+    if sys.platform == "win32":
+        pytest.skip("file links need Developer Mode/elevation on Windows; junction case is covered above")
+    _make_link(link, target, directory=False)
+
+    with pytest.raises(UnsafeInputPathError):
+        resolve_input_path(str(link), root=root)

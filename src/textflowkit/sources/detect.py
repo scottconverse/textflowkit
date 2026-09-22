@@ -23,7 +23,7 @@ PLATFORMS: dict[str, tuple[str, ...]] = {
     "rumble": ("rumble.com",),
     "kick": ("kick.com",),
     "zoom": ("zoom.us", "zoom.com"),
-    "medal": ("medal.tv", "medal.tv"),
+    "medal": ("medal.tv",),
     "loom": ("loom.com",),
     "dropbox": ("dropbox.com", "dropboxusercontent.com"),
 }

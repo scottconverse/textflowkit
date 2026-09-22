@@ -99,6 +99,18 @@ textflowkit transcribe "$URL" --translate-to Spanish
 # label speakers (requires the optional extra and a Hugging Face token)
 textflowkit transcribe "$URL" --diarize
 
+# resume a previous run instead of starting over
+textflowkit transcribe "$URL" --resume
+```
+
+**Resume** reuses completed work from an earlier run. It needs two things: the
+same source, model, language, and options as the original run, and a durable job
+store (`TEXTFLOWKIT_DB`) - a checkpoint cannot outlive a process that kept it in
+memory. The source file must still exist; a resumed run re-validates it rather
+than trusting a stale path.
+
+```bash
+
 # re-render an existing transcript in another format
 textflowkit export ./transcript.json --format vtt
 ```
@@ -106,7 +118,7 @@ textflowkit export ./transcript.json --format vtt
 ## Use as an MCP server
 
 ```bash
-pip install "textflowkit[mcp]"
+pip install -e ".[mcp]"
 textflowkit-mcp                                  # stdio
 textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
@@ -115,8 +127,10 @@ Tools: `transcribe_media`, `get_job_status`, `get_transcript`,
 `export_transcript`, `list_sources`, `list_jobs`, `cancel_job`,
 `search_transcript`.
 
-**Verified against DSH, Claude Code, and OpenCode.** Each harness's own MCP
-client was pointed at this server and reported a live connection:
+**Verified against DSH, Claude Code, and OpenCode** - verified that each
+harness's own MCP client connects and sees the tools. This is **not** an
+end-to-end transcription run driven by each harness; no harness was asked to
+complete a real transcription through the tools:
 
 - **DSH** - the server spawned as a child of the harness's MCP client, which
   then completed an MCP handshake, discovered all 8 tools, and returned real
@@ -138,7 +152,7 @@ See [docs/adapters.md](docs/adapters.md) for per-harness configuration.
 ## Use as an HTTP API
 
 ```bash
-pip install "textflowkit[http]"
+pip install -e ".[http]"
 textflowkit-http --port 8767
 ```
 
