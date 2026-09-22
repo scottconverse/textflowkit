@@ -24,7 +24,7 @@ from typing import Any
 
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
-from textflowkit.core.executor import get_default_executor
+from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -141,20 +141,23 @@ def transcribe_media(
         }
 
     store = get_default_store()
-    job = submit(
-        store,
-        source=source,
-        language=language,
-        formats=fmt_list,
-        output_dir=output_dir,
-        model=model,
-        device=device,
-        cookies_from_browser=cookies_from_browser,
-        work_dir=None,
-        input_root=server_input_root(),
-        diarize=diarize,
-        translate_to=translate_to,
-    )
+    try:
+        job = submit(
+            store,
+            source=source,
+            language=language,
+            formats=fmt_list,
+            output_dir=output_dir,
+            model=model,
+            device=device,
+            cookies_from_browser=cookies_from_browser,
+            work_dir=None,
+            input_root=server_input_root(),
+            diarize=diarize,
+            translate_to=translate_to,
+        )
+    except QueueFullError as exc:
+        return {"error": str(exc), "retryable": True}
     return {
         "job_id": job.id,
         "state": job.state.value,

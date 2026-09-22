@@ -78,6 +78,7 @@ def run_job(
             translator_backend=translator_backend,
             resume_checkpoint=resume_checkpoint,
             on_checkpoint=lambda record: write_checkpoint(store, job.id, record),
+            output_id=job.id,
         )
     except JobCancelled:
         store.update(job.id, state=JobState.CANCELLED, progress="cancelled")

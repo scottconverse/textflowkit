@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
-from textflowkit.core.executor import get_default_executor
+from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -85,19 +85,22 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
         )
 
     store = get_default_store()
-    job = submit(
-        store,
-        source=req.source,
-        language=req.language,
-        formats=[f.lower().lstrip(".") for f in req.formats],
-        output_dir=req.output_dir,
-        model=req.model,
-        device=req.device,
-        cookies_from_browser=req.cookies_from_browser,
-        input_root=server_input_root(),
-        diarize=req.diarize,
-        translate_to=req.translate_to,
-    )
+    try:
+        job = submit(
+            store,
+            source=req.source,
+            language=req.language,
+            formats=[f.lower().lstrip(".") for f in req.formats],
+            output_dir=req.output_dir,
+            model=req.model,
+            device=req.device,
+            cookies_from_browser=req.cookies_from_browser,
+            input_root=server_input_root(),
+            diarize=req.diarize,
+            translate_to=req.translate_to,
+        )
+    except QueueFullError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return job.to_dict()
 
 

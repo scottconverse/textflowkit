@@ -203,6 +203,7 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             translate_to=args.translate_to,
             resume_checkpoint=resume_checkpoint,
             on_checkpoint=_checkpoint_writer(store, job.id),
+            output_id=job.id,
         )
     except PipelineError as exc:
         store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
@@ -218,7 +219,7 @@ def _output_stem(store, job_id: str, source: str) -> str:
         existing = [Path(p) for p in current.outputs]
         if existing:
             return existing[0].stem
-    return _source_stem(source)
+    return f"{_source_stem(source)}-{job_id}"
 
 
 def _source_stem(source: str) -> str:
@@ -448,30 +449,29 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         return summarise()
 
     print("transcribe")
-    scratch = Path(tempfile.mkdtemp(prefix="tfk-selftest-"))
-    wav = scratch / "probe.wav"
-    try:
-        # 1 second of silence, written as a real PCM wav - enough to drive the
-        # whole audio->model path without needing a speech sample.
-        with wave.open(str(wav), "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(16000)
-            w.writeframes(b"\x00\x00" * 16000)
-        ok("generated probe audio", f"{wav.stat().st_size} bytes")
-    except Exception as exc:  # noqa: BLE001 - diagnostic
-        bad("generated probe audio", f"{type(exc).__name__}: {exc}")
-        return 1
+    with tempfile.TemporaryDirectory(prefix="tfk-selftest-") as scratch:
+        wav = Path(scratch) / "probe.wav"
+        try:
+            # 1 second of silence, written as real PCM wav.
+            with wave.open(str(wav), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(16000)
+                w.writeframes(b"\x00\x00" * 16000)
+            ok("generated probe audio", f"{wav.stat().st_size} bytes")
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("generated probe audio", f"{type(exc).__name__}: {exc}")
+            return 1
 
-    try:
-        engine = get_engine("whisper", model=args.model)
-        transcript = engine.transcribe(wav)
-        ok(
-            "whisper ran on this device",
-            f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
-        )
-    except Exception as exc:  # noqa: BLE001 - diagnostic
-        bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
+        try:
+            engine = get_engine("whisper", model=args.model)
+            transcript = engine.transcribe(wav)
+            ok(
+                "whisper ran on this device",
+                f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
 
     return summarise()
 

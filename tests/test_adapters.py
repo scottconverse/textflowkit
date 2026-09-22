@@ -93,6 +93,19 @@ def test_mcp_transcribe_rejects_bad_format():
     assert "xyzzy" in out["error"]
 
 
+def test_mcp_queue_full_is_explicit_and_retryable(monkeypatch):
+    pytest.importorskip("mcp")
+    from textflowkit.adapters import mcp_server
+    from textflowkit.core.executor import QueueFullError
+
+    def full(*args, **kwargs):
+        raise QueueFullError("job queue is full")
+
+    monkeypatch.setattr(mcp_server, "submit", full)
+    out = mcp_server.transcribe_media("x")
+    assert out == {"error": "job queue is full", "retryable": True}
+
+
 def test_mcp_status_unknown_job():
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import get_job_status
@@ -159,6 +172,22 @@ def test_http_422_for_bad_format():
 
     r = TestClient(app).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
     assert r.status_code == 422
+
+
+def test_http_queue_full_returns_429(monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters import http_server
+    from textflowkit.core.executor import QueueFullError
+
+    def full(*args, **kwargs):
+        raise QueueFullError("job queue is full")
+
+    monkeypatch.setattr(http_server, "submit", full)
+    response = TestClient(http_server.app).post("/jobs", json={"source": "x"})
+    assert response.status_code == 429
+    assert "queue is full" in response.json()["detail"]
 
 
 def test_http_transcript_conflict_before_done():

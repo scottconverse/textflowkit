@@ -294,7 +294,7 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
     ])
 
     assert rc == 0, f"cli.main failed with {rc}"
-    out = (tmp_path / "clip.json")
+    out = (tmp_path / f"clip-{prior.id}.json")
     assert out.exists(), "resume produced no output file"
     import json
     written = json.loads(out.read_text(encoding="utf-8"))
