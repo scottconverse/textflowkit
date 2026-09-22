@@ -179,6 +179,8 @@ class SqliteJobStore(JobStore):
         return self.get(job_id)
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
         with self._lock:
             if state is None:
                 rows = self._conn.execute(

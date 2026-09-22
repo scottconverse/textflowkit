@@ -145,6 +145,10 @@ def test_search_respects_limit():
     assert len(search_segments(tr, "repeat", limit=4)) == 4
 
 
+def test_search_zero_limit_returns_no_matches():
+    assert search_segments(make(3), "word", limit=0) == []
+
+
 def test_search_returns_context():
     matches = search_segments(make(10), "word5", context=2)
     m = matches[0]

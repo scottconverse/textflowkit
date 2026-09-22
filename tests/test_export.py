@@ -126,6 +126,24 @@ def test_pdf_omits_hidden_segments():
     assert "hidden note" not in text
 
 
+def test_pdf_embeds_fonts_and_preserves_multilingual_text():
+    phrase = "你好 Привет مرحبا café"
+    tr = Transcript(source="local", segments=[Segment(0, 1, phrase)])
+    blob = render_bytes(tr, "pdf")
+    extracted = _pdf_text(blob)
+    for word in ("你好", "Привет", "café"):
+        assert word in extracted
+    # PDF text extraction reports RTL runs in visual order on some readers;
+    # every Arabic codepoint must survive even when word order is reversed.
+    assert set("مرحبا").issubset(set(extracted))
+    from pypdf import PdfReader
+
+    fonts = PdfReader(io.BytesIO(blob)).pages[0]["/Resources"]["/Font"].get_object()
+    names = [font.get_object().get("/BaseFont", "") for font in fonts.values()]
+    assert all(any(font in str(name) for name in names)
+               for font in ("NotoSans", "NotoSansArabic", "NotoSansSC"))
+
+
 # --- integration with the render layer ------------------------------------
 
 def test_render_refuses_binary_with_a_useful_message():
@@ -173,3 +191,24 @@ def test_write_all_writes_binary_correctly(tmp_path, monkeypatch):
 
 def test_binary_formats_constant():
     assert BINARY_FORMATS == ("docx", "pdf")
+
+
+@pytest.mark.parametrize("fmt,header", [("pdf", b"%PDF-"), ("docx", b"PK")])
+def test_cli_binary_export_writes_valid_file(tmp_path, fmt, header):
+    from textflowkit import cli
+
+    transcript_path = tmp_path / "talk.json"
+    rich_transcript().save_json(transcript_path)
+    output = tmp_path / f"talk.{fmt}"
+    assert cli.main(["export", str(transcript_path), "--format", fmt,
+                     "--output", str(output)]) == 0
+    assert output.read_bytes().startswith(header)
+
+
+def test_cli_binary_export_requires_output_path(tmp_path, capsys):
+    from textflowkit import cli
+
+    transcript_path = tmp_path / "talk.json"
+    rich_transcript().save_json(transcript_path)
+    assert cli.main(["export", str(transcript_path), "--format", "pdf"]) == 1
+    assert "--output is required" in capsys.readouterr().err

@@ -53,8 +53,8 @@ def _render_requested(
     return rendered
 
 
-def _atomic_write_new(path: Path, data: bytes) -> None:
-    """Publish a complete file without ever replacing an existing destination."""
+def atomic_write_bytes(path: Path, data: bytes, *, replace: bool = False) -> None:
+    """Publish a complete file; optionally replace an explicitly chosen path."""
     temp: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
@@ -65,7 +65,11 @@ def _atomic_write_new(path: Path, data: bytes) -> None:
             os.fsync(handle.fileno())
         # A hard link commits the fully-written temp file atomically and fails
         # if the destination already exists, unlike os.replace().
-        os.link(temp, path)
+        if replace:
+            os.replace(temp, path)
+            temp = None
+        else:
+            os.link(temp, path)
     finally:
         if temp is not None:
             temp.unlink(missing_ok=True)
@@ -137,7 +141,7 @@ def ensure_outputs(
             written.append(prior)
             continue
         path = out_dir / f"{stem}.{norm}"
-        _atomic_write_new(path, data)
+        atomic_write_bytes(path, data)
         written.append(path)
     return written
 
@@ -158,7 +162,7 @@ def write_all(
     written: list[Path] = []
     for norm, data in rendered:
         path = out_dir / f"{stem}.{norm}"
-        _atomic_write_new(path, data)
+        atomic_write_bytes(path, data)
         written.append(path)
     return written
 
@@ -168,6 +172,7 @@ __all__ = [
     "RENDERERS",
     "SUPPORTED_FORMATS",
     "TEXT_FORMATS",
+    "atomic_write_bytes",
     "ensure_outputs",
     "render",
     "render_bytes",

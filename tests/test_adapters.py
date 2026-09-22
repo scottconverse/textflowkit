@@ -164,6 +164,45 @@ def test_http_404_for_unknown_job():
     assert TestClient(app).get("/jobs/nope").status_code == 404
 
 
+def test_http_status_omits_complete_transcript():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.DONE, transcript={"segments": [{"text": "private"}]})
+    body = TestClient(app).get(f"/jobs/{job.id}").json()
+    assert body["state"] == "done"
+    assert "transcript" not in body
+
+
+@pytest.mark.parametrize("limit", [-1, 1001])
+def test_list_limits_are_rejected_by_both_adapters(limit):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("mcp")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+    from textflowkit.adapters.mcp_server import list_jobs
+
+    assert TestClient(app).get("/jobs", params={"limit": limit}).status_code == 422
+    assert "error" in list_jobs(limit=limit)
+
+
+def test_list_zero_limit_is_empty_on_both_adapters():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("mcp")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+    from textflowkit.adapters.mcp_server import list_jobs
+
+    assert TestClient(app).get("/jobs", params={"limit": 0}).json()["jobs"] == []
+    assert list_jobs(limit=0)["jobs"] == []
+
+
 def test_http_422_for_bad_format():
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient

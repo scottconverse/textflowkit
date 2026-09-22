@@ -16,7 +16,7 @@ from typing import Annotated, Any
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
 from textflowkit.core.executor import QueueFullError, get_default_executor
-from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
@@ -33,7 +33,13 @@ from textflowkit.core.submission import (
 from textflowkit.core.submission import (
     resume_job as core_resume_job,
 )
-from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
+from textflowkit.render import (
+    SUPPORTED_FORMATS,
+    TEXT_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 
 try:  # optional extra
     from fastapi import FastAPI, HTTPException, Query
@@ -129,6 +135,10 @@ def resume_job(job_id: str) -> dict[str, Any]:
 @app.get("/jobs")
 def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
     """List recent jobs, newest first."""
+    try:
+        validate_list_limit(limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     store = get_default_store()
     filter_state = None
     if state:
@@ -146,11 +156,11 @@ def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
-    """Job status. Includes the transcript only once the job is done."""
+    """Lean job status; use the paged transcript endpoint for content."""
     job = get_default_store().get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
-    return job.to_dict(include_transcript=job.state is JobState.DONE)
+    return job.to_dict()
 
 
 @app.post("/jobs/{job_id}/cancel")
@@ -303,18 +313,25 @@ def export(
         raise HTTPException(status_code=500, detail="job contains no transcript")
 
     fmt_list = formats or ["srt", "vtt", "txt", "json"]
+    normalized = [f.lower().lstrip(".") for f in fmt_list]
+    bad = [f for f in normalized if f not in SUPPORTED_FORMATS]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"unsupported format(s): {', '.join(bad)}")
+    if len(normalized) != len(set(normalized)):
+        raise HTTPException(status_code=422, detail="duplicate output format")
+    try:
+        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in normalized]
+    except (ValueError, ImportError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         out = ensure_output_dir(output_dir)
     except UnsafeOutputPathError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     written = []
-    for f in fmt_list:
-        norm = f.lower().lstrip(".")
-        if norm not in SUPPORTED_FORMATS:
-            raise HTTPException(status_code=422, detail=f"unsupported format '{f}'")
+    for norm, content in rendered:
         path = out / f"{job.id}.{norm}"
-        path.write_bytes(render_bytes(tr, norm, title=job.id))
+        atomic_write_bytes(path, content, replace=True)
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 

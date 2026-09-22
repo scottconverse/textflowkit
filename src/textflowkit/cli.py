@@ -17,7 +17,13 @@ from textflowkit.core.paths import default_input_root, output_root
 from textflowkit.core.pipeline import TranscribeResult
 from textflowkit.core.runner import transcript_for
 from textflowkit.core.submission import SubmissionRequest, submit_request
-from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.render import (
+    BINARY_FORMATS,
+    SUPPORTED_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 from textflowkit.sources.acquire import AcquisitionError
 from textflowkit.sources.detect import PLATFORMS
 
@@ -240,15 +246,22 @@ def _cmd_export(args: argparse.Namespace) -> int:
         print(f"error: could not read transcript: {exc}", file=sys.stderr)
         return 1
     try:
-        content = render(tr, args.format, title=path.stem)
-    except ValueError as exc:
+        fmt = args.format.lower().lstrip(".")
+        if fmt in BINARY_FORMATS and not args.output:
+            raise ValueError(f"--output is required for binary {fmt} export")
+        content = render_bytes(tr, fmt, title=path.stem)
+    except (ValueError, ImportError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
+        try:
+            atomic_write_bytes(Path(args.output), content, replace=True)
+        except OSError as exc:
+            print(f"error: could not write export: {exc}", file=sys.stderr)
+            return 1
         print(str(Path(args.output)))
     else:
-        sys.stdout.write(content)
+        sys.stdout.write(content.decode("utf-8"))
     return 0
 
 

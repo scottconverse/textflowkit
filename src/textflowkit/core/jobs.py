@@ -37,6 +37,13 @@ class JobState(str, Enum):
 
 
 TERMINAL_STATES = frozenset({JobState.DONE, JobState.ERROR, JobState.CANCELLED})
+MAX_LIST_LIMIT = 1000
+
+
+def validate_list_limit(limit: int) -> int:
+    if limit < 0 or limit > MAX_LIST_LIMIT:
+        raise ValueError(f"limit must be between 0 and {MAX_LIST_LIMIT}")
+    return limit
 
 # A job in one of these states expects a worker to be running it. Across a
 # restart there is no worker, so any such job is orphaned and must be reaped -
@@ -164,6 +171,8 @@ class MemoryJobStore(JobStore):
             return job
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
         with self._lock:
             jobs = [self._jobs[i] for i in reversed(self._order) if i in self._jobs]
         if state is not None:

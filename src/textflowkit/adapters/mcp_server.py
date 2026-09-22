@@ -25,7 +25,7 @@ from typing import Any
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
 from textflowkit.core.executor import QueueFullError, get_default_executor
-from textflowkit.core.jobs import Job, JobState, get_default_store
+from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeOutputPathError,
@@ -42,7 +42,13 @@ from textflowkit.core.submission import (
 from textflowkit.core.submission import (
     resume_job as core_resume_job,
 )
-from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
+from textflowkit.render import (
+    SUPPORTED_FORMATS,
+    TEXT_FORMATS,
+    atomic_write_bytes,
+    render,
+    render_bytes,
+)
 from textflowkit.sources.detect import PLATFORMS
 
 try:  # the MCP SDK is an optional extra
@@ -398,6 +404,12 @@ def export_transcript(
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
     if bad:
         return {"error": f"unsupported format(s): {', '.join(bad)}"}
+    if len(fmt_list) != len(set(fmt_list)):
+        return {"error": "duplicate output format"}
+    try:
+        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in fmt_list]
+    except (ValueError, ImportError) as exc:
+        return {"error": str(exc)}
 
     try:
         out = ensure_output_dir(output_dir)
@@ -405,9 +417,9 @@ def export_transcript(
         return {"error": str(exc)}
 
     written = []
-    for f in fmt_list:
+    for f, content in rendered:
         path = out / f"{job.id}.{f}"
-        path.write_bytes(render_bytes(tr, f, title=job.id))
+        atomic_write_bytes(path, content, replace=True)
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 
@@ -420,6 +432,10 @@ def list_jobs(limit: int = 20, state: str | None = None) -> dict[str, Any]:
         limit: Maximum number of jobs to return.
         state: Optional filter - pending, running, done, error, or cancelled.
     """
+    try:
+        validate_list_limit(limit)
+    except ValueError as exc:
+        return {"error": str(exc)}
     store = get_default_store()
     filter_state = None
     if state:
