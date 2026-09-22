@@ -73,6 +73,18 @@ cd textflowkit
 pip install -e .
 ```
 
+Or install the built wheel from the release page:
+
+```bash
+pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.0/textflowkit-0.1.0-py3-none-any.whl
+```
+
+Not published to PyPI; the repository and its releases are the distribution path.
+Release v0.1.0 artifacts (SHA-256):
+
+- `textflowkit-0.1.0-py3-none-any.whl` - `0918dfcb863948e5c575da734264a8f38704c0b2dcce269f3f3012fa6fe15cda`
+- `textflowkit-0.1.0.tar.gz` - `486af348d974f015512726d3e2a84c836610008fa0250faa2b6db46bfd9e262a`
+
 Optional extras:
 
 ```bash
