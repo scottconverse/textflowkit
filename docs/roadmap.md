@@ -45,7 +45,8 @@
 - [x] Fresh installed-wheel smoke of all three entry points on Windows, macOS, and Linux
 
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
-has a maintained live URL transcription gate. Production URL jobs additionally
+has an opt-in [live URL transcription release gate](release-checklist.md), not
+a deterministic pull-request job. Production URL jobs additionally
 require an operator-provided SSRF-filtering egress proxy. These are deliberate
 verification/deployment boundaries, not claims of complete platform coverage.
 
@@ -56,7 +57,6 @@ verification/deployment boundaries, not claims of complete platform coverage.
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
-
 
 
 

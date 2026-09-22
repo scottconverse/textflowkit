@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -148,6 +151,50 @@ def test_production_media_duration_limit(monkeypatch, tmp_path):
     audio.write_bytes(b"audio")
     with pytest.raises(ServiceConfigurationError, match="duration exceeds"):
         enforce_media_limits(media, audio)
+
+
+def test_http_and_mcp_jobs_reject_known_duration_before_decode(
+    production, monkeypatch,
+):
+    from pathlib import Path
+
+    from textflowkit.adapters import mcp_server
+    from textflowkit.core import pipeline
+    from textflowkit.sources.acquire import require_tool
+
+    root = Path(os.environ["TEXTFLOWKIT_INPUT_ROOT"])
+    media = root / "overlong.mp3"
+    ffmpeg = require_tool("ffmpeg")
+    subprocess.run([ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=2", "-c:a", "mp3", str(media)],
+                   capture_output=True, check=True, timeout=30)
+    monkeypatch.setenv("TEXTFLOWKIT_MAX_DURATION_SECONDS", "1")
+    extract_calls = []
+    actual_extract = pipeline.extract_audio
+
+    def counted_extract(*args, **kwargs):
+        extract_calls.append(1)
+        return actual_extract(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "extract_audio", counted_extract)
+    http = TestClient(http_server.app).post(
+        "/jobs", json={"source": str(media), "formats": ["json"]},
+        headers={"Authorization": "Bearer a-long-test-token-12345"},
+    )
+    assert http.status_code == 202
+    mcp = mcp_server.transcribe_media(str(media), formats="json")
+    assert "job_id" in mcp
+    store = get_default_store()
+    ids = [http.json()["id"], mcp["job_id"]]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        jobs = [store.get(job_id) for job_id in ids]
+        if all(job is not None and job.state is JobState.ERROR for job in jobs):
+            break
+        time.sleep(0.02)
+    assert all(store.get(job_id).state is JobState.ERROR for job_id in ids)
+    assert all("duration exceeds" in store.get(job_id).error for job_id in ids)
+    assert extract_calls == []
 
 
 def test_production_output_size_limit_precedes_write(monkeypatch, tmp_path):

@@ -16,6 +16,7 @@ ENV_MAX_DURATION_SECONDS = "TEXTFLOWKIT_MAX_DURATION_SECONDS"
 ENV_MAX_OUTPUT_BYTES = "TEXTFLOWKIT_MAX_OUTPUT_BYTES"
 ENV_MAX_MEDIA_BYTES = "TEXTFLOWKIT_MAX_MEDIA_BYTES"
 ENV_EGRESS_PROXY = "TEXTFLOWKIT_EGRESS_PROXY"
+ENV_FFMPEG_TIMEOUT_SECONDS = "TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS"
 
 
 class ServiceConfigurationError(ValueError):
@@ -81,6 +82,7 @@ def validate_production_config() -> None:
     positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600)
     positive_limit(ENV_MAX_OUTPUT_BYTES, 50 * 1024 * 1024)
     positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
+    positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
     positive_limit("TEXTFLOWKIT_MAX_PENDING_JOBS", 100)
 
 
@@ -91,26 +93,49 @@ def service_work_root() -> str | None:
     return str(Path(os.environ[ENV_WORK_ROOT]).expanduser().resolve())
 
 
-def enforce_media_limits(media: Path, audio: Path) -> None:
-    """Bound downloaded size and decoded duration before model inference."""
-    if not production_enabled():
-        return
+def _probe_duration(media: Path) -> float | None:
+    """Return known duration using a bounded probe; unknown is handled at decode."""
     from textflowkit.sources.acquire import require_tool
 
+    ffprobe = require_tool("ffprobe")
+    try:
+        proc = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(media)],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ServiceConfigurationError("ffprobe timed out before decode") from exc
+    if proc.returncode != 0:
+        return None
+    try:
+        duration = float(proc.stdout.strip())
+    except ValueError:
+        return None
+    return duration if math.isfinite(duration) and duration >= 0 else None
+
+
+def enforce_predecode_limits(media: Path) -> None:
+    """Reject known oversize/overlong media before launching full extraction."""
+    if not production_enabled():
+        return
+    maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
+    if media.stat().st_size > maximum:
+        raise ServiceConfigurationError("media exceeds the configured size limit")
+    duration = _probe_duration(media)
+    if duration is not None and duration > positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600):
+        raise ServiceConfigurationError("source duration exceeds the configured limit")
+
+
+def enforce_media_limits(media: Path, audio: Path) -> None:
+    """Defense in depth after bounded acquisition and decode."""
+    if not production_enabled():
+        return
     maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
     if media.stat().st_size > maximum or audio.stat().st_size > maximum:
         raise ServiceConfigurationError("media exceeds the configured size limit")
-    ffprobe = require_tool("ffprobe")
-    proc = subprocess.run(
-        [ffprobe, "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)],
-        capture_output=True, text=True, timeout=30, check=False,
-    )
-    try:
-        duration = float(proc.stdout.strip())
-    except ValueError as exc:
-        raise ServiceConfigurationError("cannot verify source duration with ffprobe") from exc
-    if proc.returncode != 0 or not math.isfinite(duration) or duration < 0:
+    duration = _probe_duration(audio)
+    if duration is None:
         raise ServiceConfigurationError("cannot verify source duration with ffprobe")
     if duration > positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600):
         raise ServiceConfigurationError("source duration exceeds the configured limit")

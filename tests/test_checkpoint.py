@@ -5,16 +5,20 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from textflowkit.core.checkpoint import (
     CheckpointRecord,
     find_resumable_checkpoint,
     load_checkpoint,
+    local_source_identity,
     matches,
     parse_checkpoint,
     write_checkpoint,
 )
-from textflowkit.core.jobs import MemoryJobStore
+from textflowkit.core.jobs import JobState, MemoryJobStore
 from textflowkit.core.sqlite_store import SqliteJobStore
+from textflowkit.core.submission import SubmissionRequest, submit_request
 
 
 def _record(source: str = "https://example.com/v", **overrides) -> CheckpointRecord:
@@ -185,6 +189,44 @@ def test_checkpoint_dict_is_json_serialisable_and_shape_is_stable():
         assert key in payload
 
 
+def test_v1_local_checkpoint_is_rejected_for_resume_but_v1_url_is_explicitly_reusable(tmp_path):
+    media = tmp_path / "old.wav"
+    media.write_bytes(b"old media")
+    store = MemoryJobStore()
+    local_request = SubmissionRequest(source=str(media), formats=["json"])
+    local = store.create(local_request.source, request=local_request.to_dict())
+    local_record = CheckpointRecord(
+        source=str(media), model="small", options=local_request.options(),
+        finished_stages=["transcribe"], transcript=_record().transcript,
+        version=1,
+    )
+    store.update(local.id, state=JobState.DONE, transcript=local_record.transcript,
+                 checkpoint=local_record.to_dict())
+    with pytest.raises(ValueError, match="legacy local checkpoint"):
+        submit_request(store, local_request, background=False, resume=True)
+
+    # A record without an explicit version predates v2 too. Do not silently
+    # interpret it as a fingerprinted record when it happens to have the same
+    # source and options.
+    missing_version = local_record.to_dict()
+    missing_version.pop("version")
+    store.update(local.id, checkpoint=missing_version)
+    with pytest.raises(ValueError, match="legacy local checkpoint"):
+        submit_request(store, local_request, background=False, resume=True)
+
+    url_request = SubmissionRequest(source="https://example.com/clip.mp3", formats=["json"])
+    url = store.create(url_request.source, request=url_request.to_dict())
+    url_record = CheckpointRecord(
+        source=url_request.source, model="small", options=url_request.options(),
+        finished_stages=["transcribe"], transcript=_record().transcript,
+        version=1,
+    )
+    store.update(url.id, state=JobState.DONE, transcript=url_record.transcript,
+                 checkpoint=url_record.to_dict())
+    reused = submit_request(store, url_request, background=False, resume=True)
+    assert reused.id == url.id
+
+
 # --- the two bugs found by actually running resume --------------------------
 # Both of these passed the first round of tests and still made --resume silently
 # re-transcribe everything. The tests exist so the next regression is caught.
@@ -205,7 +247,7 @@ def test_resume_does_not_require_scratch_media(tmp_path, monkeypatch):
     tr = Transcript(source=str(media), language="en",
                     segments=[Segment(0.0, 1.0, "hello")])
     checkpoint = {
-        "version": 1,
+        "version": 2,
         "source": str(media),
         "model": "tiny",
         "language": None,
@@ -219,6 +261,7 @@ def test_resume_does_not_require_scratch_media(tmp_path, monkeypatch):
         # deliberately a path that does not exist, like a deleted scratch dir
         "media_path": str(tmp_path / "gone" / "clip.wav"),
         "audio_path": str(tmp_path / "gone" / "clip.wav"),
+        "local_identity": local_source_identity(str(media), input_root=tmp_path),
     }
 
     # The engine must not be reached: a resume that transcribes is a failure.
@@ -273,6 +316,7 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
                      "translate_to": None, "translator_backend": "ollama"},
             finished_stages=["source", "fetch", "extract", "transcribe"],
             transcript=tr.to_dict(),
+            local_identity=local_source_identity(str(media), input_root=tmp_path),
         ).to_dict(),
     )
 
@@ -513,7 +557,7 @@ def test_diarization_resume_reacquires_audio_without_whisper(monkeypatch, tmp_pa
         media.write_bytes(b"media")
         return media
 
-    def extract(media, *, work_dir):
+    def extract(media, *, work_dir, check_cancel=None):
         calls.append("extract")
         audio = work_dir / "audio.wav"
         audio.write_bytes(b"audio")

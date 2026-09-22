@@ -60,8 +60,9 @@ means writing one source adapter, not another tool.
 YouTube · TikTok · Facebook · Instagram · Vimeo · Twitch · Bilibili · Rumble ·
 Kick · Zoom · Medal · Loom · Dropbox — plus **direct media URLs and local files**.
 
-All 13 are recognised through `yt-dlp`; only YouTube has a maintained live
-end-to-end smoke test. Local files have also been transcribed live. The other
+All 13 are recognised through `yt-dlp`; only YouTube has an opt-in, maintained
+[live end-to-end smoke](docs/release-checklist.md). It is run manually before a
+release, not on every pull request. Local files have also been transcribed live. The other
 12 are not release-verified end to end, and some sources require cookies or
 change their access rules frequently. See [docs/sources.md](docs/sources.md).
 
@@ -118,8 +119,12 @@ textflowkit transcribe "$URL" --resume
 **Resume** reuses completed work from an earlier run. It needs two things: the
 same source, model, language, and options as the original run, and a durable job
 store (`TEXTFLOWKIT_DB`) - a checkpoint cannot outlive a process that kept it in
-memory. The source file must still exist; a resumed run re-validates it rather
-than trusting a stale path.
+memory. For a local file, a completed-job resume checks the file still exists
+and matches its checkpointed normalized path, size, and SHA-256 content digest.
+Missing or changed files fail with an actionable error; v0.1.1-era local
+checkpoints without a fingerprint must be resubmitted without `--resume`.
+For URLs, resume deliberately reuses the saved transcript by URL/options; it
+does **not** assert that the remote bytes are still identical.
 
 ```bash
 
@@ -205,7 +210,6 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
 adapter.
-
 
 
 

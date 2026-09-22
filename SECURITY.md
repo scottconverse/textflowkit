@@ -11,12 +11,19 @@ you expected.
 
 ## Supported versions
 
-| Version | Supported |
+| Version | Security-fix policy |
 |---|---|
-| 0.1.x (current) | yes |
-| < 0.1 | no |
+| Latest published release tag (currently `v0.1.1`) | Receives fixes through the next patch release |
+| Earlier release tags, including earlier `0.1.x` tags | No backports |
+| Unreleased `main` commits | Development only; not a supported release |
 
-Pre-1.0: only the latest commit on `main` is supported.
+For pre-1.0 releases, security fixes land on `main` and are published as a new
+release tag rather than backported to older tags. A tag remains the supported
+published version when `main` advances; it is superseded when the next release
+is published. Fixes and publication are best-effort; no response or patch-time
+SLA is promised. See the [GitHub releases](https://github.com/scottconverse/textflowkit/releases)
+for the current published tag. “Supported” describes the maintenance policy,
+not a claim that a particular version is safe for production deployment.
 
 ## Threat model — what this project does and does not defend
 
