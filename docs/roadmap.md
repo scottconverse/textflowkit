@@ -29,7 +29,7 @@
 - [x] Job cancellation (`cancel_job`)
 - [x] Transcript paging, time-range reads, and search
 - [ ] Resumable / batched jobs
-- [ ] DOCX and PDF export
+- [x] DOCX and PDF export (`export` extra)
 
 ## Design constraints
 

@@ -88,9 +88,9 @@ def test_mcp_transcribe_rejects_bad_format():
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import transcribe_media
 
-    out = transcribe_media("x", formats="docx")
+    out = transcribe_media("x", formats="xyzzy")
     assert "error" in out
-    assert "docx" in out["error"]
+    assert "xyzzy" in out["error"]
 
 
 def test_mcp_status_unknown_job():
@@ -157,7 +157,7 @@ def test_http_422_for_bad_format():
 
     from textflowkit.adapters.http_server import app
 
-    r = TestClient(app).post("/jobs", json={"source": "x", "formats": ["docx"]})
+    r = TestClient(app).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
     assert r.status_code == 422
 
 
@@ -426,3 +426,27 @@ def test_http_search_empty_query_422():
     job = _seed_done_job(get_default_store(), 5)
     r = TestClient(app).get(f"/jobs/{job.id}/search", params={"q": ""})
     assert r.status_code == 422
+
+
+def test_http_export_honours_requested_formats(tmp_path, monkeypatch):
+    """Regression: a bare list[str] on a POST is a BODY field in FastAPI, so the
+    formats argument was silently ignored and defaults were always written."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+    from textflowkit.core.paths import ENV_OUTPUT_ROOT
+
+    monkeypatch.setenv(ENV_OUTPUT_ROOT, str(tmp_path))
+    job = _seed_done_job(get_default_store(), 3)
+
+    r = TestClient(app).post(
+        f"/jobs/{job.id}/export",
+        params={"formats": ["srt", "txt"], "output_dir": "out"},
+    )
+    assert r.status_code == 200
+    names = sorted(p.split("\\")[-1].split("/")[-1] for p in r.json()["written"])
+    assert len(names) == 2
+    assert any(n.endswith(".srt") for n in names)
+    assert any(n.endswith(".txt") for n in names)
+    assert not any(n.endswith(".json") for n in names), "defaults were used instead"

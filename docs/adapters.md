@@ -120,7 +120,7 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | GET | `/jobs/{id}` | job status |
 | GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=` | rendered transcript, optionally sliced |
 | GET | `/jobs/{id}/search?q=&limit=&context=` | search a transcript |
-| POST | `/jobs/{id}/export` | write files to disk |
+| POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
 ### Binding beyond loopback is refused
@@ -195,6 +195,34 @@ mid-call. Checkpoints sit at stage boundaries - before resolve, after resolve,
 after fetch, after extract, after transcribe - so a cancellation during a
 20-minute transcription takes effect when that call returns, not instantly. The
 API reports `cancelling` rather than claiming an instant stop it cannot deliver.
+
+## Export formats
+
+Two paths, because two kinds of output:
+
+| | Formats | Returned |
+|---|---|---|
+| **inline** (`get_transcript`, `GET /transcript`) | txt, srt, vtt, md, json | as text in the response |
+| **export** (`export_transcript`, `POST /export`) | all of the above **plus docx, pdf** | written to disk |
+
+Binary formats cannot be returned inline, and asking for one that way returns a
+clear message rather than failing deeper down.
+
+```bash
+pip install "textflowkit[export]"        # python-docx + reportlab
+curl -X POST "http://127.0.0.1:8767/jobs/$ID/export?formats=docx&formats=pdf"
+```
+
+```jsonc
+// MCP
+{"job_id": "...", "output_dir": "./out", "formats": "docx,pdf,srt"}
+```
+
+Both renderers emit the **finished** data model: speaker labels and translated
+text are included, with the source line kept alongside the translation so a
+reader can see both. `formats` on the HTTP export is an explicit query parameter
+- a bare `list[str]` on a POST is treated by FastAPI as a request *body* field,
+which silently ignored the argument.
 
 ## Translation and speaker labels
 

@@ -62,8 +62,10 @@ def test_json_format_supported():
 
 
 def test_unknown_format_raises():
+    # note: docx/pdf are supported now, but as BINARY formats - see
+    # test_docx_is_binary_not_text below.
     try:
-        render(sample(), "docx")
+        render(sample(), "xyzzy")
     except ValueError as exc:
         assert "unsupported format" in str(exc)
     else:
@@ -74,3 +76,24 @@ def test_supported_formats_cover_core_set():
     for fmt in ("txt", "srt", "vtt", "json", "md"):
         assert fmt in SUPPORTED_FORMATS
 
+
+
+def test_binary_formats_are_not_returned_as_text():
+    """render() is the text path; binary formats must redirect to render_bytes."""
+    for fmt in ("docx", "pdf"):
+        try:
+            render(sample(), fmt)
+        except ValueError as exc:
+            assert "binary" in str(exc)
+        else:
+            raise AssertionError(f"render() should refuse {fmt}")
+
+
+def test_supported_formats_include_export_formats():
+    from textflowkit.render import BINARY_FORMATS, TEXT_FORMATS
+
+    for fmt in ("txt", "srt", "vtt", "json", "md"):
+        assert fmt in TEXT_FORMATS
+    for fmt in ("docx", "pdf"):
+        assert fmt in BINARY_FORMATS
+        assert fmt in SUPPORTED_FORMATS

@@ -11,7 +11,7 @@ localhost, or put it behind your own gateway before exposing it.
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Annotated, Any
 
 from textflowkit import __version__
 from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
@@ -25,10 +25,10 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import submit, transcript_for
-from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
 
 try:  # optional extra
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Query
     from fastapi.responses import PlainTextResponse
     from pydantic import BaseModel, Field
 except ImportError as exc:  # pragma: no cover
@@ -189,11 +189,14 @@ def get_transcript(
     job, tr = _finished_transcript(job_id)
 
     fmt = format.lower().lstrip(".")
-    if fmt not in SUPPORTED_FORMATS:
+    if fmt not in TEXT_FORMATS:
         raise HTTPException(
             status_code=422,
-            detail={"error": f"unsupported format '{format}'",
-                    "available_formats": list(SUPPORTED_FORMATS)},
+            detail={
+                "error": f"'{format}' cannot be returned inline",
+                "available_formats": list(TEXT_FORMATS),
+                "hint": "binary formats (docx, pdf) are written to disk via /export",
+            },
         )
 
     try:
@@ -251,8 +254,20 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
 
 
 @app.post("/jobs/{job_id}/export")
-def export(job_id: str, formats: list[str] | None = None, output_dir: str = ".") -> dict[str, Any]:
-    """Write a completed transcript to disk."""
+def export(
+    job_id: str,
+    formats: Annotated[
+        list[str] | None,
+        Query(description="Repeat for each format, e.g. ?formats=docx&formats=pdf"),
+    ] = None,
+    output_dir: str = ".",
+) -> dict[str, Any]:
+    """Write a completed transcript to disk.
+
+    `formats` is declared as an explicit query parameter: a bare `list[str]` on a
+    POST is treated by FastAPI as a request *body* field, which meant the argument
+    was silently ignored and the defaults were always used.
+    """
     job = get_default_store().get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"no job with id '{job_id}'")
@@ -274,7 +289,7 @@ def export(job_id: str, formats: list[str] | None = None, output_dir: str = ".")
         if norm not in SUPPORTED_FORMATS:
             raise HTTPException(status_code=422, detail=f"unsupported format '{f}'")
         path = out / f"{job.id}.{norm}"
-        path.write_text(render(tr, norm, title=job.id), encoding="utf-8")
+        path.write_bytes(render_bytes(tr, norm, title=job.id))
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 

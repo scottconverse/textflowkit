@@ -34,7 +34,7 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import submit, transcript_for
-from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.render import SUPPORTED_FORMATS, TEXT_FORMATS, render, render_bytes
 from textflowkit.sources.detect import PLATFORMS
 
 try:  # the MCP SDK is an optional extra
@@ -222,8 +222,14 @@ def get_transcript(
         return {"error": "job completed but contains no transcript"}
 
     norm = fmt.lower().lstrip(".")
-    if norm not in SUPPORTED_FORMATS:
-        return {"error": f"unsupported format '{fmt}'", "available_formats": list(SUPPORTED_FORMATS)}
+    if norm not in TEXT_FORMATS:
+        # docx/pdf are export-only: they are binary and cannot be returned as
+        # inline text. Say so rather than failing deeper down.
+        return {
+            "error": f"'{fmt}' cannot be returned inline",
+            "available_formats": list(TEXT_FORMATS),
+            "hint": "binary formats (docx, pdf) are written to disk with export_transcript",
+        }
 
     try:
         page = page_segments(tr, offset=offset, limit=limit, start=start, end=end)
@@ -351,7 +357,7 @@ def export_transcript(
     written = []
     for f in fmt_list:
         path = out / f"{job.id}.{f}"
-        path.write_text(render(tr, f, title=job.id), encoding="utf-8")
+        path.write_bytes(render_bytes(tr, f, title=job.id))
         written.append(str(path))
     return {"job_id": job.id, "written": written}
 
