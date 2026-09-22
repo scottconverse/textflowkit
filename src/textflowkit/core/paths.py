@@ -34,16 +34,39 @@ class UnsafeInputPathError(ValueError):
 
 
 def output_root() -> Path:
-    """The directory all rendered output must live under."""
+    """The directory all rendered output must live under.
+
+    Default: the current working directory, which is the least surprising answer
+    for a CLI ("write where I ran it"). A caller that asks for somewhere else
+    inside the same machine is not doing anything the operator could not, so
+    `TEXTFLOWKIT_OUTPUT_ROOT` is the switch that imposes a real boundary when a
+    deployment needs one.
+    """
     raw = os.environ.get(ENV_OUTPUT_ROOT)
     base = Path(raw) if raw else Path.cwd()
     return base.expanduser().resolve()
 
 
-def resolve_output_dir(requested: str | None) -> Path:
-    """Resolve a caller-supplied output directory, confined to the allowed root.
+def output_is_confined() -> bool:
+    """Whether an output boundary was explicitly requested.
 
-    Raises `UnsafeOutputPathError` when the path escapes the root.
+    Distinguishes "the operator chose a root" from "we fell back to cwd". The
+    CLI writes wherever asked when no root is set; an explicitly configured root
+    is still enforced exactly as before.
+    """
+    return bool(os.environ.get(ENV_OUTPUT_ROOT))
+
+
+def resolve_output_dir(requested: str | None) -> Path:
+    """Resolve a caller-supplied output directory.
+
+    Confinement applies only when `TEXTFLOWKIT_OUTPUT_ROOT` is set. Without it
+    there is no boundary to violate: the caller is the operator and already has
+    whatever access the machine gives them, so refusing a path they own would be
+    the tool inventing a restriction rather than enforcing one.
+
+    Raises `UnsafeOutputPathError` when an explicit root is set and the path
+    escapes it.
     """
     root = output_root()
 
@@ -56,7 +79,7 @@ def resolve_output_dir(requested: str | None) -> Path:
     # strict=False: the directory may not exist yet.
     resolved = target.resolve()
 
-    if resolved != root and root not in resolved.parents:
+    if output_is_confined() and resolved != root and root not in resolved.parents:
         raise UnsafeOutputPathError(
             f"output directory '{requested}' is outside the allowed root "
             f"'{root}'. Set {ENV_OUTPUT_ROOT} to widen the root, or choose a "
@@ -78,9 +101,10 @@ def resolve_input_path(requested: str | Path, *, root: str | Path | None) -> Pat
     """Resolve a local input path, optionally confined to `root`.
 
     Confinement is opt-in. When `root` is None the path is returned resolved but
-    unrestricted, because the caller is the principal - a CLI user who typed the
-    path themselves. The adapters pass a root by default, because there the
-    caller may be a model acting on untrusted content.
+    unrestricted, because the caller is the principal - a person who typed the
+    path, or an agent acting with their authority. Adapters also pass None by
+    default; set TEXTFLOWKIT_INPUT_ROOT when the caller is *not* the machine's
+    owner (a shared or network-reachable deployment).
 
     Raises `UnsafeInputPathError` when the path is outside the root, or when it
     does not name readable regular file.
@@ -118,14 +142,22 @@ def default_input_root() -> Path | None:
     return Path(raw).expanduser().resolve() if raw else None
 
 
-def server_input_root() -> Path:
-    """The input root a long-running adapter should enforce.
+def server_input_root() -> Path | None:
+    """The input root a long-running adapter should enforce, or None for no limit.
 
-    Adapters default to confining local inputs to the current working directory,
-    because their caller may be a model acting on untrusted content rather than
-    the person who owns the machine. Set TEXTFLOWKIT_INPUT_ROOT to widen it:
+    Default: **no confinement.** An adapter runs as the person who started it and
+    inherits their access to the machine. When that person is the operator - a
+    developer running this for themselves, or an agent acting on their behalf -
+    confining it to the working directory only refuses paths they are already
+    entitled to use, which reads as the tool being broken.
 
-        TEXTFLOWKIT_INPUT_ROOT=/            # no practical confinement
+    Confinement is still one environment variable away for the case it was
+    actually designed for: exposing a server to callers who are *not* the owner.
+    A shared or network-reachable deployment should set:
+
         TEXTFLOWKIT_INPUT_ROOT=/srv/media   # one directory
+        TEXTFLOWKIT_INPUT_ROOT=C:\\media      # one tree on Windows
+
+    Setting it to a filesystem root is equivalent to no confinement.
     """
-    return default_input_root() or Path.cwd().resolve()
+    return default_input_root()

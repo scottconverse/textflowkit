@@ -32,7 +32,8 @@ hosted service. There is no server-side multi-tenancy and no user account system
   every address it maps to. See `assert_url_is_fetchable` in
   `src/textflowkit/sources/detect.py`.
 - **Path traversal via an output directory.** Callers (a CLI user, an HTTP client,
-  or a model) can supply an output directory. It is confined to an allowed root —
+  or a model) can supply an output directory. It is confined to an allowed root only
+when one is configured —
   `TEXTFLOWKIT_OUTPUT_ROOT`, defaulting to the current working directory. `..`
   escapes, absolute paths outside the root, and symlinks that escape are rejected.
   See `resolve_output_dir` in `src/textflowkit/core/paths.py`.

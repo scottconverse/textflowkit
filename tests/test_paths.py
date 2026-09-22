@@ -162,11 +162,38 @@ def test_default_input_root_reads_env(monkeypatch, tmp_path):
     assert default_input_root() == tmp_path.resolve()
 
 
-def test_server_input_root_defaults_to_cwd(monkeypatch, tmp_path):
-    """Adapters confine by default: the caller may be a model, not the owner."""
+def test_server_input_root_defaults_to_no_confinement(monkeypatch, tmp_path):
+    """Adapters do NOT confine by default.
+
+    An adapter runs as the person who started it and inherits their access. When
+    that person is the operator, confining it to the working directory only
+    refuses paths they are already entitled to use. Confinement is for a
+    deployment whose callers are not the owner, and there it is set explicitly.
+    """
     monkeypatch.delenv(ENV_INPUT_ROOT, raising=False)
     monkeypatch.chdir(tmp_path)
-    assert server_input_root() == tmp_path.resolve()
+    assert server_input_root() is None
+
+
+def test_output_only_confines_when_a_root_is_configured(monkeypatch, tmp_path):
+    """Without TEXTFLOWKIT_OUTPUT_ROOT, an arbitrary writable path is allowed."""
+    monkeypatch.delenv(ENV_OUTPUT_ROOT, raising=False)
+    monkeypatch.chdir(tmp_path)
+    elsewhere = tmp_path.parent / "somewhere-else"
+    elsewhere.mkdir(exist_ok=True)
+    # No configured root means no boundary to violate.
+    assert resolve_output_dir(str(elsewhere)) == elsewhere.resolve()
+
+
+def test_output_still_confines_when_a_root_is_configured(monkeypatch, tmp_path):
+    """An explicit root is enforced exactly as before."""
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    monkeypatch.setenv(ENV_OUTPUT_ROOT, str(root))
+    with pytest.raises(UnsafeOutputPathError):
+        resolve_output_dir(str(outside))
 
 
 def test_server_input_root_honours_env(monkeypatch, tmp_path):

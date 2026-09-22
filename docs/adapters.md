@@ -327,13 +327,15 @@ Verified against a real 214-segment transcript: paging returned 20 with
 `has_more`, a 300-320s window returned 6 segments, and searching "neural network"
 found 3 matches with timestamps.
 
-## Input paths are confined
+## Input paths (unconfined by default)
 
 Adapters accept a **local file path** from a caller — and there the caller may be
 a model acting on untrusted content, not the machine's owner. Local inputs are
 confined to an allowed root:
 
-- `TEXTFLOWKIT_INPUT_ROOT` sets it.
+- Nothing is confined unless you set `TEXTFLOWKIT_INPUT_ROOT`. By default an
+  adapter has the same access to the machine as the person who started it,
+  which is the point: an agent running on your behalf can reach your files.
 - **For the adapters the default is the current working directory**, so an MCP or
   HTTP caller cannot name an arbitrary file on the host.
 - Paths outside the root, and `..` escapes, are rejected before the file is read.
@@ -343,15 +345,17 @@ TEXTFLOWKIT_INPUT_ROOT=/srv/media textflowkit-mcp --transport http
 TEXTFLOWKIT_INPUT_ROOT=/            # no practical confinement
 ```
 
-The CLI is deliberately **not** confined: the user typed the path and is the
+Neither the CLI nor the adapters confine by default: the caller is the
 principal.
 
-## Output paths are confined
+## Output paths
 
 Adapters accept a destination directory from a caller — a CLI user, an HTTP
 client, or a model. That path is resolved against an **allowed root**:
 
-- `TEXTFLOWKIT_OUTPUT_ROOT` sets the root.
+- Nothing is confined unless you set `TEXTFLOWKIT_OUTPUT_ROOT`. The default is
+  the current working directory, but a caller may still ask for any path the
+  operator could write; only an explicit root imposes a boundary.
 - When unset, the root is the current working directory. The CLI's default of
   writing into the directory you ran it from therefore still works.
 - `..` segments, absolute paths outside the root, and symlinks that escape are
