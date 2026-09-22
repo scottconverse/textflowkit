@@ -144,7 +144,7 @@ def test_darwin_handle_path_uses_apple_constant_when_python_omits_it(tmp_path, m
 
     monkeypatch.setitem(sys.modules, "fcntl", types.SimpleNamespace(fcntl=get_path))
     assert _darwin_opened_file_path(7) == source.resolve()
-    assert calls == [(7, 50, 4096)]
+    assert calls == [(7, 50, 1024)]
 
 
 def test_confined_input_rejects_handle_that_points_outside(tmp_path, monkeypatch):

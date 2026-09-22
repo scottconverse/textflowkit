@@ -121,7 +121,7 @@ def _fetch_with_module(
     cookies_from_browser: str | None,
     check_cancel: Callable[[], None] | None = None,
 ) -> Path:
-    """Download using the yt_dlp Python API (used when no CLI binary is on PATH)."""
+    """Download using the yt_dlp Python API so URL checks cover its requests."""
     from yt_dlp import YoutubeDL
 
     outtmpl = str(work_dir / "%(id)s.%(ext)s")
@@ -241,8 +241,8 @@ def fetch_media(
 ) -> Path:
     """Return a local path to the media.
 
-    Local files are returned unchanged. URLs are downloaded with yt-dlp, using
-    the CLI when available and the Python API otherwise.
+    Local files are returned unchanged. URLs use yt-dlp's in-process API so
+    requested and selected media URLs can be checked before download.
     """
     if source.kind == "file":
         return Path(source.location)

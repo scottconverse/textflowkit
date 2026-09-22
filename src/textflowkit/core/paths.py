@@ -177,8 +177,10 @@ def opened_file_path(fd: int, fallback: Path) -> Path:
     if sys.platform == "darwin":
         try:
             return _darwin_opened_file_path(fd)
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            raise UnsafeInputPathError(
+                f"cannot verify opened input file path: {fallback}: {exc}"
+            ) from exc
     raise UnsafeInputPathError(f"cannot verify opened input file path: {fallback}")
 
 
@@ -186,10 +188,11 @@ def _darwin_opened_file_path(fd: int) -> Path:
     """Use Apple's F_GETPATH even when Python omits the symbolic constant."""
     import fcntl
 
-    # Apple bsd/sys/fcntl.h defines F_GETPATH as 50. Python's fcntl module
-    # does not expose it on every supported macOS/Python combination.
+    # Apple bsd/sys/fcntl.h defines F_GETPATH as 50. MAXPATHLEN is 1024;
+    # Python 3.10-3.13 fcntl() also caps the argument buffer at 1024 bytes.
+    # A larger buffer raises ValueError before the OS call.
     command = getattr(fcntl, "F_GETPATH", 50)
-    raw = fcntl.fcntl(fd, command, b"\0" * 4096)
+    raw = fcntl.fcntl(fd, command, b"\0" * 1024)
     path = os.fsdecode(raw.split(b"\0", 1)[0])
     if not path:
         raise ValueError("F_GETPATH returned an empty path")

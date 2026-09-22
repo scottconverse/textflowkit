@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -66,6 +67,29 @@ def test_production_rate_and_request_size_limits(production, monkeypatch):
     assert client.get("/health", headers=headers).status_code == 429
 
 
+def test_production_streaming_body_is_rejected_before_full_buffer(production, monkeypatch):
+    monkeypatch.setenv("TEXTFLOWKIT_MAX_REQUEST_BYTES", "16")
+    chunks_read = 0
+
+    async def receive():
+        nonlocal chunks_read
+        chunks_read += 1
+        return {"type": "http.request", "body": b"x" * 10, "more_body": True}
+
+    async def unexpected_call_next(request):
+        raise AssertionError("oversized request reached FastAPI")
+
+    request = http_server.Request(
+        {"type": "http", "method": "POST", "path": "/jobs",
+         "headers": [(b"authorization", b"Bearer a-long-test-token-12345")],
+         "client": ("127.0.0.1", 12345)},
+        receive,
+    )
+    response = asyncio.run(http_server.production_guard(request, unexpected_call_next))
+    assert response.status_code == 413
+    assert chunks_read == 2
+
+
 def test_production_transcript_defaults_to_bounded_page(production):
     store = get_default_store()
     transcript = Transcript(source="x", segments=[Segment(i, i + 1, "word") for i in range(150)])
@@ -79,6 +103,23 @@ def test_production_transcript_defaults_to_bounded_page(production):
     assert client.get(
         f"/jobs/{job.id}/transcript", params={"limit": 501}, headers=headers
     ).status_code == 422
+
+
+def test_production_inline_transcript_obeys_output_cap(production, monkeypatch):
+    monkeypatch.setenv("TEXTFLOWKIT_MAX_OUTPUT_BYTES", "100")
+    store = get_default_store()
+    transcript = Transcript(source="x", segments=[Segment(0, 1, "long text " * 100)])
+    job = store.create("x")
+    store.update(job.id, state=JobState.DONE, transcript=transcript.to_dict())
+    headers = {"Authorization": "Bearer a-long-test-token-12345"}
+    client = TestClient(http_server.app)
+    assert client.get(f"/jobs/{job.id}/transcript", headers=headers).status_code == 413
+    assert client.get(
+        f"/jobs/{job.id}/transcript", params={"format": "txt"}, headers=headers
+    ).status_code == 413
+    assert client.get(
+        f"/jobs/{job.id}/search", params={"q": "long"}, headers=headers
+    ).status_code == 413
 
 
 def test_developer_mode_needs_no_token(monkeypatch):

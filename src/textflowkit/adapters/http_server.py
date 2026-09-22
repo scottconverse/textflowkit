@@ -4,13 +4,15 @@ A small JSON API over the same core and job store the MCP adapter uses. This is
 the door for software products and for the eventual website: it is deliberately
 job-based so a long video never blocks a request.
 
-Not started by default. There is no authentication here by design - bind it to
-localhost, or put it behind your own gateway before exposing it.
+Not started by default. Developer mode is unauthenticated and loopback-only by
+default. The opt-in JSON HTTP production profile requires Bearer authentication
+and a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
 """
 
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import sys
 import threading
@@ -34,6 +36,7 @@ from textflowkit.core.service import (
     ENV_MAX_REQUEST_BYTES,
     ENV_RATE_PER_MINUTE,
     ServiceConfigurationError,
+    enforce_output_limit,
     positive_limit,
     production_enabled,
     service_work_root,
@@ -91,8 +94,15 @@ async def production_guard(request: Request, call_next):
     length = request.headers.get("content-length")
     if length is not None and (not length.isdecimal() or int(length) > max_bytes):
         return JSONResponse({"error": "request body too large"}, status_code=413)
-    if len(await request.body()) > max_bytes:
-        return JSONResponse({"error": "request body too large"}, status_code=413)
+    # Do not call request.body() first: absent Content-Length, it buffers an
+    # arbitrarily large chunked body before the check can run. Cache only after
+    # incrementally enforcing the limit so call_next can replay it to FastAPI.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > max_bytes:
+            return JSONResponse({"error": "request body too large"}, status_code=413)
+        body.extend(chunk)
+    request._body = bytes(body)
 
     rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
     peer = request.client.host if request.client else "unknown"
@@ -312,12 +322,22 @@ def get_transcript(
     )
 
     if fmt == "json":
-        return {
+        response = {
             "job_id": job.id,
             **page.as_dict(),
             "transcript": sliced.to_dict(),
         }
-    return PlainTextResponse(render(sliced, fmt))
+        try:
+            enforce_output_limit(len(json.dumps(response, ensure_ascii=False).encode("utf-8")))
+        except ServiceConfigurationError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        return response
+    content = render(sliced, fmt)
+    try:
+        enforce_output_limit(len(content.encode("utf-8")))
+    except ServiceConfigurationError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return PlainTextResponse(content)
 
 
 @app.get("/jobs/{job_id}/search")
@@ -334,7 +354,7 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return {
+    response = {
         "job_id": job.id,
         "query": q,
         "match_count": len(matches),
@@ -350,6 +370,11 @@ def search(job_id: str, q: str, limit: int = 20, context: int = 1,
             for m in matches
         ],
     }
+    try:
+        enforce_output_limit(len(json.dumps(response, ensure_ascii=False).encode("utf-8")))
+    except ServiceConfigurationError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return response
 
 
 @app.post("/jobs/{job_id}/export")

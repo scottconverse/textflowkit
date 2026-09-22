@@ -1,7 +1,9 @@
 # Sources
 
-textflowkit recognises the following platforms. Coverage ultimately depends on
-`yt-dlp`; platforms change access rules without notice.
+textflowkit recognises the following 13 platforms through `yt-dlp`. The
+maintained live end-to-end smoke test covers **YouTube**; the other 12 are
+recognised, not independently verified on every release. Platform access rules
+can change without notice and some sources require cookies.
 
 | Platform | Domains |
 |---|---|
@@ -45,9 +47,9 @@ schedule.
   ceiling would block the fix.
 - **Update yt-dlp first** when a site stops working. It is almost always the
   cause, and it is a one-line upgrade rather than a change here.
-- **Keep the in-process fallback.** yt-dlp is used as a module when the CLI is
-  unavailable or cancellation is wanted, so a missing console script is not a
-  hard failure.
+- **Use the in-process API.** URL acquisition goes through the yt-dlp Python
+  module so textflowkit can inspect request and selected-media URLs. A separate
+  yt-dlp console script is not required.
 - **Run `textflowkit doctor`** before diagnosing anything else. It reports the
   yt-dlp version and how it is being invoked, the detected JavaScript runtime,
   ffmpeg, the optional extras, the compute device, and the configured roots.
@@ -66,8 +68,13 @@ does better.
 
 ## URL safety (SSRF guard)
 
-textflowkit **only fetches publicly reachable URLs.** Caller-supplied URLs are
-checked before any network access:
+textflowkit rejects known local/private targets, and checks the initial URL,
+yt-dlp request URLs, and selected media/fragment URLs. This is an application
+guard, **not a complete SSRF boundary**: DNS can change between validation and
+connection, and a redirect is checked after the underlying request returns.
+For production URL jobs, use a trusted SSRF-filtering egress proxy that enforces
+the destination at connection time. Without one, production URL jobs refuse to
+run. The application guard includes:
 
 - **Blocked hostnames:** `localhost`, `localhost.localdomain`, `ip6-localhost`,
   `metadata`, `metadata.google.internal`, and anything ending in `.localhost`.
@@ -79,8 +86,9 @@ checked before any network access:
   public name pointing at a private address is also rejected. Bracketed IPv6
   literals are parsed correctly.
 
-Unresolvable hostnames are **not** rejected here; the downloader reports them, and
-they are not an SSRF path because they cannot be connected to.
+An initially unresolvable hostname is left for the downloader to report. Do
+not treat that as proof of safety: resolution may change on a later lookup,
+which is another reason production requires the egress proxy.
 
 This is a safety guard, not a content policy. It exists because an MCP tool or an
 HTTP endpoint can be driven by a model or a remote client, and a fetcher aimed at

@@ -2,7 +2,7 @@
 
 textflowkit has one core and several thin doors. Nothing is duplicated between
 them: the CLI, the MCP server, and the HTTP API all call
-`textflowkit.core.runner.submit` and share one job model.
+`textflowkit.core.submission` and share one job model.
 
 ```
                     ┌──────────────────────┐
@@ -18,7 +18,9 @@ them: the CLI, the MCP server, and the HTTP API all call
 `textflowkit transcribe --resume` reuses completed work, and
 `textflowkit batch` runs many sources in one invocation.
 
-Both need a **durable job store**: set `TEXTFLOWKIT_DB` to a SQLite file path.
+Resuming across process restarts needs a **durable job store**: set
+`TEXTFLOWKIT_DB` to a SQLite file path. Batch can run ephemerally, but
+`batch --resume` cannot recover past work without it.
 Without it the store lives in the process, so no checkpoint can outlive the run
 and `--resume` cannot find anything to reuse. The CLI says so on stderr rather
 than silently re-transcribing - if you see that warning, set `TEXTFLOWKIT_DB`.
@@ -29,17 +31,17 @@ them; a mismatch starts clean rather than mixing two runs into one transcript.
 
 ## Harness transport support
 
-**Evidence tier: `browsed` / live-connection.** Each harness's own MCP client was
-pointed at this server and reported a connection, on 2026-09-21. This is stronger
-than reading config files, and it is still **not** an end-to-end transcription run
-driven by each harness — no harness was asked to complete a real transcription
-task through the tools.
+**Evidence tier: historical live-connection.** DSH, Claude Code, and OpenCode's
+own MCP clients connected on 2026-09-21; Codex desktop later made a successful
+`list_jobs` call after its unrelated model-catalog repair. These checks are
+stronger than reading config files, but are **not** end-to-end transcription
+runs driven by each harness. Versions and behavior can change.
 
 | Harness | Version | Transport used | How it was verified |
 |---|---|---|---|
-| **DSH** | 0.1.5-rc.2 | stdio | Profile composed with an `insert` patch and `failOnStartupError: true`; DSH's own MCP client spawned the server as a child, completed the handshake, discovered **all 8 tools**, and a real `list_sources` call returned data |
+| **DSH** | 0.1.5-rc.2 | stdio | Profile composed with an `insert` patch and `failOnStartupError: true`; DSH's own MCP client spawned the server as a child, completed the handshake, discovered all **then-current 8 tools**, and a real `list_sources` call returned data. Resume/batch tools were added later and are not covered by this historical harness check. |
 | **Claude Code** | 2.1.269 | stdio | `claude mcp add` + `claude mcp list` → `√ Connected` |
-| **Codex CLI** | 0.147.0 | stdio | Entry present in `~/.codex/config.toml`. **Not live-verified on 2026-09-21**: the CLI aborts on an unrelated malformed model-catalog file, so no handshake was observed this run. The earlier note above reflects a previous run and is not current evidence. |
+| **Codex desktop** | later check | stdio | After an unrelated model-catalog compatibility repair, a live textflowkit `list_jobs` call succeeded. The 2026-09-21 Codex CLI 0.147.0 attempt had failed before connection; that older failure is not a current textflowkit result. |
 | **OpenCode** | 1.18.18 | Streamable HTTP | `opencode mcp add --url` + `opencode mcp list` → `✓ textflowkit connected`; `opencode mcp debug` → `HTTP response: 200 OK` |
 
 Two transport notes learned from doing this:
