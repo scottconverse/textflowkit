@@ -43,14 +43,17 @@ user accounts or multi-tenancy.
   not pin DNS at the socket connection.** Production URL input therefore
   requires an operator-provided SSRF-filtering egress proxy; without one URL
   jobs fail closed. Do not treat a generic unrestricted proxy as sufficient.
-- **Path traversal via an output directory.** Callers (a CLI user, an HTTP client,
-  or a model) can supply an output directory. It is confined to an allowed root
-  (`TEXTFLOWKIT_OUTPUT_ROOT`, defaulting to the current working directory). `..`
-  escapes, absolute paths outside the root, and symlinks that escape are rejected.
-  See `resolve_output_dir` in `src/textflowkit/core/paths.py`.
-  Confined local input is copied from a path-verified open handle into isolated
-  scratch before ffmpeg. Output paths are rechecked at file publication. Keep
-  the configured roots non-writable by untrusted local users to prevent races.
+- **Explicitly configured path confinement.** By default, local inputs and
+  explicit output destinations have the access of the account running the tool;
+  the current working directory is only the default output destination, **not**
+  a security boundary. Set `TEXTFLOWKIT_INPUT_ROOT` and
+  `TEXTFLOWKIT_OUTPUT_ROOT` to confine less-trusted callers. With those roots
+  set, paths outside them (including `..` and symlink escapes) are rejected.
+  See `resolve_output_dir` and `resolve_input_path` in
+  `src/textflowkit/core/paths.py`. Confined local input is copied from a
+  path-verified open handle into isolated scratch before ffmpeg. Output paths
+  are rechecked at file publication. Keep configured roots non-writable by
+  untrusted local users to prevent races.
 
 ### Not defended (by design — read before deploying)
 
