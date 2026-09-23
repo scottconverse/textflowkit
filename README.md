@@ -2,7 +2,7 @@
 
 Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.**
 
-[Project landing page](https://scottconverse.github.io/textflowkit/) ·
+[Project landing page](https://www.textflowkit.org/) ·
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases)
 
 Paste a URL or point at a file; get timestamped transcripts and subtitle files back.
