@@ -408,12 +408,30 @@ def extract_audio(
         if max_media is not None and out.stat().st_size > max_media:
             raise AcquisitionError("decoded output exceeds the configured size limit")
     except BaseException:
+        if os.name == "nt":
+            # Windows package-manager shims can launch the actual ffmpeg as a
+            # child. Killing only the shim leaves that child holding staged
+            # media open and decoding after cancellation.
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True, timeout=10, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         if proc.poll() is None:
             proc.kill()
         proc.wait(timeout=5)
         output_thread.join(timeout=5)
         error_thread.join(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.stderr is not None:
+            proc.stderr.close()
         out.unlink(missing_ok=True)
         raise
+    if proc.stdout is not None:
+        proc.stdout.close()
+    if proc.stderr is not None:
+        proc.stderr.close()
     return out
-

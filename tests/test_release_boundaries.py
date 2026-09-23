@@ -319,6 +319,7 @@ def _sleeping_decoder(monkeypatch):
     from textflowkit.sources import acquire
 
     real_popen = subprocess.Popen
+    real_run = subprocess.run
     children = []
 
     def launch(_cmd, **kwargs):
@@ -327,6 +328,8 @@ def _sleeping_decoder(monkeypatch):
         return child
 
     def old_run(_cmd, **kwargs):
+        if _cmd[0] == "taskkill":
+            return real_run(_cmd, **kwargs)
         # The v0.1.1 implementation used subprocess.run with no timeout. Give
         # the isolated baseline the same harmless three-second child, so its
         # regression fails for behavior rather than a missing mock attribute.
@@ -338,6 +341,7 @@ def _sleeping_decoder(monkeypatch):
 
     monkeypatch.setattr(acquire, "subprocess", types.SimpleNamespace(
         Popen=launch, run=old_run, PIPE=subprocess.PIPE,
+        TimeoutExpired=subprocess.TimeoutExpired,
     ))
     return children
 
