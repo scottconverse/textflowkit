@@ -38,8 +38,10 @@ neither result verifies the other 12 recognized sites.
    the failure and investigate. Do **not** replace a failed live run with a
    green mocked URL test, an old receipt, or the blocked GitHub-hosted attempt.
    A new public fixture URL requires review and an updated script/checklist.
-5. Only if the **current** live receipt, deterministic matrix, and release
-   asset hashes agree with the candidate commit may release notes claim a
+5. After merging, re-run the local check on the **merged, clean `main` commit**;
+   a pre-merge branch receipt does not identify the release commit. Only if the
+   current live receipt, deterministic merged-main matrix, and release asset
+   hashes agree with that commit may release notes claim a
    live YouTube check. State its date/commit/receipt and distinguish this one
    URL from the other 12 recognized platforms. Do not describe GitHub-hosted
    YouTube automation as a passing gate.

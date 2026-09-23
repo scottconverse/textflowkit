@@ -49,8 +49,9 @@ runs driven by each harness. Versions and behavior can change.
 
 Two transport notes learned from doing this:
 
-- **OpenCode's `mcp add` accepts only `--url`** — no command flag. OpenCode must
-  use the HTTP transport (`textflowkit-mcp --transport http`), not stdio.
+- **OpenCode's tested `mcp add` path accepts only `--url`** — no command flag.
+  The verified connection therefore used HTTP (`textflowkit-mcp --transport
+  http`); this is not a claim that every OpenCode configuration forbids stdio.
 - **Claude Code's `mcp add` cannot pass a bare `-m module` argument** in this
   version. Use the `textflowkit-mcp` console script instead — that form is
   verified connected above.
@@ -73,6 +74,7 @@ version the server actually reports rather than a remembered value).
 
 `insert:` is required — a patch entry that is not wrapped in `insert` is treated as
 targeting an existing entry and fails with `patch: entry "<id>" not found`.
+
 ## MCP (for AI harnesses)
 
 ```bash
@@ -81,35 +83,29 @@ textflowkit-mcp                      # stdio (default)
 textflowkit-mcp --transport http --host 127.0.0.1 --port 8766
 ```
 
-Tools: `list_sources`, `transcribe_media`, `get_job_status`, `get_transcript`,
-`export_transcript`, `list_jobs`, `cancel_job`, `search_transcript`.
+Tools: `list_sources`, `transcribe_media`, `submit_batch_media`, `resume_job`,
+`get_job_status`, `get_transcript`, `export_transcript`, `list_jobs`,
+`cancel_job`, `search_transcript`.
 
-Read-only tools carry `readOnlyHint: true`; the two that touch the network or
-disk carry `openWorldHint: true`.
+Read-only tools carry `readOnlyHint: true`. Submission and export tools carry
+`openWorldHint: true`; resume and cancellation are marked as mutating.
 
 ### Harness configuration
 
-DSH (`cordis.yml`), HTTP:
+DSH (`cordis.yml` patch), HTTP example (**not live-connection verified**):
 
 ```yaml
-- id: mcp-textflowkit
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: textflowkit
-    transport: streamable-http
-    url: http://127.0.0.1:8766/mcp
+- insert:
+    - id: mcp-textflowkit
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: textflowkit
+        transport: streamable-http
+        url: http://127.0.0.1:8766/mcp
 ```
 
-DSH, stdio:
-
-```yaml
-- id: mcp-textflowkit
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: textflowkit
-    transport: stdio
-    command: textflowkit-mcp
-```
+For verified DSH stdio configuration, use the `insert:` patch above and point
+`command` at the installed `textflowkit-mcp` executable.
 
 Claude Code:
 
@@ -324,8 +320,9 @@ overlapping turn is left **unlabelled rather than guessed at**, and exact ties g
 to the earlier turn so the result is deterministic.
 
 **Honest limit:** the live pyannote path is not covered by CI. No CI runner has
-the gated model, so the assignment logic is tested with a stub and the real model
-path is unverified.
+the gated model, so assignment logic is tested with a stub. A Windows ROCm
+development-machine run was verified separately; it does not establish that
+every user's gated-model access or GPU setup will work.
 
 ## Reading a long transcript
 

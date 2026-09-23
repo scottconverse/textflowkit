@@ -23,9 +23,10 @@ ruff check .        # must pass with zero findings
 python -m pytest    # full suite
 ```
 
-Both run on every push and pull request via
+Both run on pull requests and pushes to `main` via
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). If you can run those two
-commands clean, CI should pass.
+commands clean, the lint and test stages should pass; the installed-wheel smoke
+and runner setup are separate CI checks.
 
 The live YouTube check is **not** a deterministic PR test. Maintainers run it
 on a Windows machine before release using [the release checklist](docs/release-checklist.md)

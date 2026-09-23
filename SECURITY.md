@@ -13,7 +13,7 @@ you expected.
 
 | Version | Security-fix policy |
 |---|---|
-| Latest published release tag (currently `v0.1.1`) | Receives fixes through the next patch release |
+| Latest published release tag (currently `v0.1.2`) | Receives fixes through the next patch release |
 | Earlier release tags, including earlier `0.1.x` tags | No backports |
 | Unreleased `main` commits | Development only; not a supported release |
 
@@ -44,9 +44,8 @@ user accounts or multi-tenancy.
   requires an operator-provided SSRF-filtering egress proxy; without one URL
   jobs fail closed. Do not treat a generic unrestricted proxy as sufficient.
 - **Path traversal via an output directory.** Callers (a CLI user, an HTTP client,
-  or a model) can supply an output directory. It is confined to an allowed root only
-when one is configured —
-  `TEXTFLOWKIT_OUTPUT_ROOT`, defaulting to the current working directory. `..`
+  or a model) can supply an output directory. It is confined to an allowed root
+  (`TEXTFLOWKIT_OUTPUT_ROOT`, defaulting to the current working directory). `..`
   escapes, absolute paths outside the root, and symlinks that escape are rejected.
   See `resolve_output_dir` in `src/textflowkit/core/paths.py`.
   Confined local input is copied from a path-verified open handle into isolated

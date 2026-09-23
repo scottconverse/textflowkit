@@ -44,6 +44,13 @@
 - [x] Opt-in authenticated JSON HTTP production profile with roots and limits
 - [x] Fresh installed-wheel smoke of all three entry points on Windows, macOS, and Linux
 
+## v0.1.2 — release evidence
+
+- [x] Replace the blocked GitHub-hosted YouTube workflow with a documented,
+  receipt-producing Windows maintainer check for the exact clean candidate commit
+- [x] Keep the deterministic cross-platform GitHub CI as the automated gate
+- [x] Align the release-facing documentation and package version
+
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not
 a deterministic pull-request job. The release gate runs locally on Windows,
@@ -58,5 +65,4 @@ verification/deployment boundaries, not claims of complete platform coverage.
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
-
 
