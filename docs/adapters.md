@@ -25,9 +25,12 @@ Without it the store lives in the process, so no checkpoint can outlive the run
 and `--resume` cannot find anything to reuse. The CLI says so on stderr rather
 than silently re-transcribing - if you see that warning, set `TEXTFLOWKIT_DB`.
 
-Resume also requires the **source to still exist** and the same source, model,
-language, and options as the original run. A resumed run re-validates all of
-them; a mismatch starts clean rather than mixing two runs into one transcript.
+For local files, resume requires the source to still exist and match the saved
+path, size, and SHA-256 digest as well as model/language/options. A changed or
+missing local file produces an error; resubmit without resume to transcribe the
+new content. Legacy local checkpoints without a digest are rejected for reuse.
+URL resume reuses the saved transcript for the same URL/options but makes no
+claim that the remote media bytes have remained unchanged.
 
 ## Harness transport support
 
@@ -164,7 +167,13 @@ Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
 `TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit
 input/output/work roots, and an on-disk SQLite job store are configured. It
 enforces a bounded request body, per-process rate limit, pending queue, media
-size, source duration, rendered-output size, and transcript page size. Each job
+size, source duration, rendered-output size, and transcript page size. Known
+oversize downloads are refused before transfer; download progress is capped
+during transfer. A bounded ffprobe rejects known overlong sources before full
+decode; ffmpeg decode has a wall-clock timeout, cancellation, and decoded-byte
+and duration caps even when metadata is missing. Configure
+`TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` (default 600) if the default is too short
+for your host. Each job
 gets its own scratch directory under `TEXTFLOWKIT_WORK_ROOT`.
 
 ```bash
@@ -227,14 +236,14 @@ because these are genuinely different situations:
 | Job state | Behaviour |
 |---|---|
 | `pending` (queued, not started) | Cancelled immediately. The worker skips it; it never runs. |
-| `running` | `cancel_requested` is set and the job stops at its **next stage boundary**. Until then it stays `running` with `progress: "cancelling"`. |
+| `running` | `cancel_requested` is set. Download progress and ffmpeg decode check it during work; model inference and postprocessors stop at their **next stage boundary**. Until then it stays `running` with `progress: "cancelling"`. |
 | terminal | Refused, with the current state and a reason. |
 
 **The honest limit:** a job inside a single long model call cannot be interrupted
-mid-call. Checkpoints sit at stage boundaries - before resolve, after resolve,
-after fetch, after extract, after transcribe - so a cancellation during a
-20-minute transcription takes effect when that call returns, not instantly. The
-API reports `cancelling` rather than claiming an instant stop it cannot deliver.
+mid-call. Download hooks and the ffmpeg process respond during acquisition and
+decode, but cancellation during a 20-minute Whisper call takes effect when that
+call returns. The API reports `cancelling` rather than claiming an instant stop
+it cannot deliver.
 
 ## Export formats
 
@@ -409,8 +418,6 @@ job id immediately means:
 - a future website can queue work without interface changes
 - cancellation and retries have somewhere to live
 
-The job store is in-memory and bounded (`max_jobs=200`, terminal jobs evicted
-first). Swap `JobStore` for a durable backend without touching callers.
-
-
-
+By default the job store is in-memory and bounded (`max_jobs=200`, terminal
+jobs evicted first). Set `TEXTFLOWKIT_DB` to use the durable SQLite store for
+restart-safe jobs and checkpoints. The SQLite store assumes one owning process.

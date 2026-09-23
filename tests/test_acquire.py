@@ -205,6 +205,56 @@ def test_production_url_fetch_needs_ssrf_filtering_proxy(monkeypatch, tmp_path):
         )
 
 
+@pytest.mark.parametrize("size_source", ["content_length", "reported"])
+def test_production_rejects_known_download_size_before_transfer(
+    monkeypatch, tmp_path, size_source,
+):
+    import sys
+    import types
+
+    from textflowkit.sources import acquire
+
+    monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "production")
+    monkeypatch.setenv("TEXTFLOWKIT_EGRESS_PROXY", "http://proxy.example:8080")
+    monkeypatch.setenv("TEXTFLOWKIT_MAX_MEDIA_BYTES", "100")
+    monkeypatch.setattr(acquire, "_validate_fetch_url", lambda url: None)
+    transferred = []
+
+    class Response:
+        url = "https://example.com/media"
+
+        def __init__(self):
+            self.headers = {"Content-Length": "200"}
+
+        def close(self):
+            pass
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.urlopen = lambda req: Response()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            if size_source == "content_length":
+                self.urlopen(url)
+            return {"id": "v", "url": "https://example.com/media",
+                    "filesize": 200 if size_source == "reported" else None}
+
+        def process_info(self, info):
+            transferred.append(True)
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=FakeYDL))
+    with pytest.raises(acquire.AcquisitionError, match="size limit|configured limit"):
+        acquire._fetch_with_module("https://example.com/media", work_dir=tmp_path,
+                                   cookies_from_browser=None)
+    assert not transferred
+
+
 # --- cancellation during download -----------------------------------------
 
 def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_path):

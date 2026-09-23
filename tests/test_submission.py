@@ -43,9 +43,12 @@ def test_submission_saves_the_same_request_it_runs(monkeypatch):
 
 def test_resume_after_sqlite_restart_reuses_transcript(monkeypatch, tmp_path):
     from textflowkit.core import runner, submission
+    from textflowkit.core.checkpoint import local_source_identity
 
     path = tmp_path / "jobs.db"
-    request = SubmissionRequest(source="media.wav", model="tiny", formats=["json"])
+    media = tmp_path / "media.wav"
+    media.write_bytes(b"source bytes")
+    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
     first = SqliteJobStore(path)
     job = first.create(request.source, request=request.to_dict())
     transcript = _result(request.source).transcript
@@ -53,6 +56,7 @@ def test_resume_after_sqlite_restart_reuses_transcript(monkeypatch, tmp_path):
         source=request.source, model=request.model, options=request.options(),
         finished_stages=["source", "fetch", "extract", "transcribe"],
         transcript=transcript.to_dict(),
+        local_identity=local_source_identity(str(media)),
     )
     first.update(job.id, state=JobState.RUNNING, checkpoint=checkpoint.to_dict())
     first.close()

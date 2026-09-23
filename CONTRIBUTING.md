@@ -27,6 +27,10 @@ Both run on every push and pull request via
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). If you can run those two
 commands clean, CI should pass.
 
+The live YouTube check is **not** a deterministic PR test. Maintainers run it
+manually before release using [the release checklist](docs/release-checklist.md)
+or the `Live YouTube transcription smoke` workflow, then keep its JSON receipt.
+
 The test job runs a **3 OS x 4 Python matrix**: `ubuntu-latest`,
 `windows-latest`, and `macos-latest`, each against Python 3.10, 3.11, 3.12, and
 3.13 (12 jobs, plus lint).

@@ -9,13 +9,16 @@ from urllib.parse import urlparse
 
 from textflowkit.core.checkpoint import (
     find_resumable_checkpoint,
+    is_local_source,
     load_checkpoint,
     matches,
     prepare_resume,
     reusable_done_result,
+    validate_local_resume,
 )
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
+from textflowkit.core.paths import default_input_root
 from textflowkit.core.runner import run_job
 from textflowkit.render import SUPPORTED_FORMATS
 
@@ -40,6 +43,12 @@ class SubmissionRequest:
     def __post_init__(self) -> None:
         if not self.source:
             raise ValueError("source is required")
+        # Adapter path helpers return Path objects, but a durable request must
+        # be JSON-serializable before it is inserted into SQLite.
+        if isinstance(self.input_root, Path):
+            self.input_root = str(self.input_root)
+        if isinstance(self.work_dir, Path):
+            self.work_dir = str(self.work_dir)
         self.formats = [str(fmt).lower().lstrip(".") for fmt in self.formats]
         bad = [fmt for fmt in self.formats if fmt not in SUPPORTED_FORMATS]
         if bad:
@@ -113,6 +122,16 @@ def submit_request(
     found = _matching_checkpoint(store, request, resume_job_id) if resume or resume_job_id else None
     if found is not None:
         prior, checkpoint = found
+        if is_local_source(request.source):
+            if checkpoint is None:
+                if prior.state is JobState.DONE:
+                    raise ValueError("local job has no reusable checkpoint; resubmit without resume")
+            else:
+                validate_local_resume(
+                    checkpoint, request.source,
+                    input_root=request.input_root if request.input_root is not None
+                    else default_input_root(),
+                )
         if prior.state is JobState.DONE:
             if request.output_dir is None:
                 return prior

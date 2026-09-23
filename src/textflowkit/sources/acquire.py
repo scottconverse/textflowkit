@@ -6,6 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
+import wave
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,11 +16,14 @@ from textflowkit.core.cancel import CancelledError
 from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
 from textflowkit.core.service import (
     ENV_EGRESS_PROXY,
+    ENV_FFMPEG_TIMEOUT_SECONDS,
+    ENV_MAX_DURATION_SECONDS,
     ENV_MAX_MEDIA_BYTES,
     positive_limit,
     production_enabled,
 )
 from textflowkit.sources.detect import SourceRef, UnsafeUrlError, assert_url_is_fetchable
+from textflowkit.sources.scratch import ScratchPaths
 
 
 class AcquisitionError(RuntimeError):
@@ -30,7 +36,7 @@ def stage_confined_local_media(
     """Copy a handle-verified local input into isolated scratch before ffmpeg."""
     base = Path(input_root).expanduser().resolve()
     path = Path(source)
-    out = work_dir / f"input{path.suffix.lower()}"
+    out = ScratchPaths(Path(work_dir)).staged_local(path.suffix)
     maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production_enabled() else None
     with path.open("rb") as opened:
         actual = opened_file_path(opened.fileno(), path)
@@ -39,6 +45,7 @@ def stage_confined_local_media(
                 f"opened input file '{actual}' is outside the allowed root '{base}'"
             )
         written = 0
+        out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("xb") as destination:
             while chunk := opened.read(1024 * 1024):
                 written += len(chunk)
@@ -124,8 +131,24 @@ def _fetch_with_module(
     """Download using the yt_dlp Python API so URL checks cover its requests."""
     from yt_dlp import YoutubeDL
 
-    outtmpl = str(work_dir / "%(id)s.%(ext)s")
+    layout = ScratchPaths(work_dir)
+    layout.media_dir.mkdir(parents=True, exist_ok=True)
+    outtmpl = layout.download_template
     hooks: list[Path] = []
+    maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production_enabled() else None
+
+    def _check_download_size(status: dict) -> None:
+        if maximum is None:
+            return
+        for key in ("downloaded_bytes", "total_bytes", "total_bytes_estimate"):
+            value = status.get(key)
+            if isinstance(value, (int, float)) and value > maximum:
+                raise AcquisitionError("download exceeds the configured size limit")
+        # Aggregate fragments and temporary files as well as the final output;
+        # a per-fragment counter alone would reset below the cap each time.
+        total = sum(p.stat().st_size for p in layout.media_dir.rglob("*") if p.is_file())
+        if total > maximum:
+            raise AcquisitionError("download exceeds the configured size limit")
 
     def _hook(status: dict) -> None:
         # yt-dlp calls this frequently during a download. Raising here aborts
@@ -133,6 +156,7 @@ def _fetch_with_module(
         # slowest common case instead of waiting for the whole fetch to finish.
         if check_cancel is not None:
             check_cancel()
+        _check_download_size(status)
         if status.get("status") == "finished":
             path = status.get("filename") or status.get("_filename")
             if path:
@@ -149,6 +173,8 @@ def _fetch_with_module(
         "restrictfilenames": True,
         "progress_hooks": [_hook],
     }
+    if maximum is not None:
+        opts["max_filesize"] = maximum
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = (cookies_from_browser,)
     if production_enabled():
@@ -170,6 +196,19 @@ def _fetch_with_module(
                 requested = request if isinstance(request, str) else request.url
                 _validate_fetch_url(requested)
                 response = original_open(request)
+                if maximum is not None:
+                    headers = getattr(response, "headers", None)
+                    length = headers.get("Content-Length") if headers is not None else None
+                    if length is not None:
+                        try:
+                            too_large = int(length) > maximum
+                        except (TypeError, ValueError):
+                            too_large = False
+                        if too_large:
+                            close = getattr(response, "close", None)
+                            if callable(close):
+                                close()
+                            raise AcquisitionError("download Content-Length exceeds the configured size limit")
                 final = getattr(response, "url", None)
                 if final:
                     _validate_fetch_url(final)
@@ -178,20 +217,26 @@ def _fetch_with_module(
             ydl.urlopen = checked_open
             _validate_fetch_url(url)
             info = ydl.extract_info(url, download=False)
-            _validate_download_info(info)
+            _validate_download_info(info, maximum=maximum)
             ydl.process_info(info)
     except CancelledError:
         raise  # an orderly stop, not a fetch failure
+    except AcquisitionError:
+        raise
     except Exception as exc:
         raise AcquisitionError(f"yt-dlp failed: {exc}") from exc
 
     if hooks and hooks[-1].exists():
+        if maximum is not None and hooks[-1].stat().st_size > maximum:
+            raise AcquisitionError("download exceeds the configured size limit")
         return hooks[-1]
 
     requested = info.get("requested_downloads") or []
     for item in requested:
         candidate = Path(item.get("filepath", ""))
         if candidate.exists():
+            if maximum is not None and candidate.stat().st_size > maximum:
+                raise AcquisitionError("download exceeds the configured size limit")
             return candidate
 
     vid = info.get("id")
@@ -215,13 +260,17 @@ def _validate_fetch_url(url: str) -> None:
         raise AcquisitionError(f"unsafe download destination: {exc}") from exc
 
 
-def _validate_download_info(info: dict | None) -> None:
+def _validate_download_info(info: dict | None, *, maximum: int | None = None) -> None:
     """Recheck final media/fragment URLs selected after yt-dlp extraction."""
     if not isinstance(info, dict) or info.get("_type", "video") != "video":
         raise AcquisitionError("yt-dlp did not resolve a single video")
     selected = [info]
     selected.extend(item for item in info.get("requested_formats") or [] if isinstance(item, dict))
     for item in selected:
+        if maximum is not None:
+            size = item.get("filesize") or item.get("filesize_approx")
+            if isinstance(size, (int, float)) and size > maximum:
+                raise AcquisitionError("reported download size exceeds the configured limit")
         for key in ("url", "manifest_url", "fragment_base_url"):
             value = item.get(key)
             if isinstance(value, str) and value.startswith(("http://", "https://")):
@@ -260,8 +309,14 @@ def fetch_media(
         check_cancel=check_cancel,
     )
 
-def extract_audio(media_path: str | Path, *, work_dir: str | Path, sample_rate: int = 16000) -> Path:
-    """Extract mono PCM WAV via ffmpeg - what Whisper wants."""
+def extract_audio(
+    media_path: str | Path,
+    *,
+    work_dir: str | Path,
+    sample_rate: int = 16000,
+    check_cancel: Callable[[], None] | None = None,
+) -> Path:
+    """Decode through a bounded pipe, never an unbounded ffmpeg output file."""
     ffmpeg = require_tool("ffmpeg")
     media = Path(media_path)
     if not media.exists():
@@ -269,22 +324,114 @@ def extract_audio(media_path: str | Path, *, work_dir: str | Path, sample_rate: 
 
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
-    out = work / (media.stem + ".wav")
+    out = ScratchPaths(work).decoded_audio
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if media.resolve() == out.resolve():
+        raise AcquisitionError("decoded audio must not overwrite source media")
 
+    production = production_enabled()
+    timeout = positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
+    max_media = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production else None
+    max_duration = positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600) if production else None
+    max_pcm = max_media - 44 if max_media is not None else None
+    duration_pcm = max_duration * sample_rate * 2 if max_duration is not None else None
     cmd = [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
         "-i", str(media),
         "-vn", "-ac", "1", "-ar", str(sample_rate),
         "-c:a", "pcm_s16le",
-        str(out),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if proc.returncode != 0 or not out.exists():
-        tail = (proc.stderr or "").strip().splitlines()
-        detail = " | ".join(tail[-4:]) if tail else "unknown error"
-        raise AcquisitionError(f"ffmpeg failed: {detail}")
+    if max_duration is not None:
+        # The extra second lets the pipe reader distinguish an overlong input
+        # from one that ends exactly at the allowed duration. It never lands on
+        # disk beyond the byte cap below.
+        cmd.extend(["-t", str(max_duration + 1)])
+    cmd.extend(["-f", "s16le", "pipe:1"])
+    if check_cancel is not None:
+        check_cancel()
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        raise AcquisitionError(f"ffmpeg could not start: {exc}") from exc
+
+    failures: list[str] = []
+    stderr_tail = bytearray()
+
+    def _read_stdout() -> None:
+        written = 0
+        try:
+            assert proc.stdout is not None
+            with wave.open(str(out), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(sample_rate)
+                while chunk := proc.stdout.read(64 * 1024):
+                    if duration_pcm is not None and written + len(chunk) > duration_pcm:
+                        failures.append("source duration exceeds the configured limit")
+                        return
+                    if max_pcm is not None and written + len(chunk) > max_pcm:
+                        failures.append("decoded output exceeds the configured size limit")
+                        return
+                    wav.writeframesraw(chunk)
+                    written += len(chunk)
+        except (OSError, wave.Error) as exc:
+            failures.append(f"ffmpeg output failed: {exc}")
+
+    def _read_stderr() -> None:
+        assert proc.stderr is not None
+        while chunk := proc.stderr.read(4096):
+            stderr_tail.extend(chunk)
+            if len(stderr_tail) > 8192:
+                del stderr_tail[:-8192]
+
+    output_thread = threading.Thread(target=_read_stdout, daemon=True)
+    error_thread = threading.Thread(target=_read_stderr, daemon=True)
+    output_thread.start()
+    error_thread.start()
+    deadline = time.monotonic() + timeout
+    try:
+        while proc.poll() is None or output_thread.is_alive():
+            if check_cancel is not None:
+                check_cancel()
+            if failures:
+                raise AcquisitionError(failures[0])
+            if time.monotonic() >= deadline:
+                raise AcquisitionError("ffmpeg timed out during decode")
+            time.sleep(0.05)
+        output_thread.join(timeout=5)
+        error_thread.join(timeout=5)
+        if failures:
+            raise AcquisitionError(failures[0])
+        if proc.returncode != 0 or not out.exists():
+            detail = stderr_tail.decode("utf-8", errors="replace").strip()
+            raise AcquisitionError(f"ffmpeg failed: {detail[-1000:] or 'unknown error'}")
+        if max_media is not None and out.stat().st_size > max_media:
+            raise AcquisitionError("decoded output exceeds the configured size limit")
+    except BaseException:
+        if os.name == "nt":
+            # Windows package-manager shims can launch the actual ffmpeg as a
+            # child. Killing only the shim leaves that child holding staged
+            # media open and decoding after cancellation.
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True, timeout=10, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+        output_thread.join(timeout=5)
+        error_thread.join(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.stderr is not None:
+            proc.stderr.close()
+        out.unlink(missing_ok=True)
+        raise
+    if proc.stdout is not None:
+        proc.stdout.close()
+    if proc.stderr is not None:
+        proc.stderr.close()
     return out
-
-
-
-

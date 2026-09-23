@@ -15,16 +15,19 @@ Two rules matter for correctness:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
+from textflowkit.core.paths import opened_file_path, resolve_input_path
 from textflowkit.render import ensure_outputs
 
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 RESUMABLE_STATES = frozenset(
     {JobState.PENDING, JobState.RUNNING, JobState.ERROR, JobState.CANCELLED, JobState.DONE}
 )
@@ -48,6 +51,7 @@ class CheckpointRecord:
     transcript: dict[str, Any] | None = None
     media_path: str | None = None
     audio_path: str | None = None
+    local_identity: dict[str, Any] | None = None
     version: int = CHECKPOINT_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,14 +67,16 @@ class CheckpointRecord:
             "transcript": self.transcript,
             "media_path": self.media_path,
             "audio_path": self.audio_path,
+            "local_identity": self.local_identity,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CheckpointRecord:
         if not isinstance(data, dict):
             raise CheckpointError("checkpoint is not an object")
-        version = data.get("version", CHECKPOINT_VERSION)
-        if version != CHECKPOINT_VERSION:
+        # Records written before versioning was explicit are legacy v1, not v2.
+        version = data.get("version", 1)
+        if version not in {1, CHECKPOINT_VERSION}:
             raise CheckpointError(f"unsupported checkpoint version: {version!r}")
         source = data.get("source")
         model = data.get("model")
@@ -97,6 +103,9 @@ class CheckpointRecord:
         Transcript.from_dict(transcript)
         if "transcribe" not in stages:
             raise CheckpointError("checkpoint has not finished transcription")
+        identity = data.get("local_identity") if version == CHECKPOINT_VERSION else None
+        if identity is not None and not _valid_local_identity(identity):
+            raise CheckpointError("checkpoint local source identity is invalid")
         return cls(
             version=version,
             source=source,
@@ -109,11 +118,76 @@ class CheckpointRecord:
             transcript=transcript,
             media_path=_optional_str(data.get("media_path")),
             audio_path=_optional_str(data.get("audio_path")),
+            local_identity=identity,
         )
 
 
 def _optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _valid_local_identity(identity: Any) -> bool:
+    return (
+        isinstance(identity, dict)
+        and isinstance(identity.get("path"), str)
+        and bool(identity["path"])
+        and isinstance(identity.get("size"), int)
+        and identity["size"] >= 0
+        and isinstance(identity.get("sha256"), str)
+        and len(identity["sha256"]) == 64
+        and all(c in "0123456789abcdef" for c in identity["sha256"])
+    )
+
+
+def is_local_source(source: str) -> bool:
+    return not source.startswith(("http://", "https://"))
+
+
+def local_source_identity(
+    source: str,
+    *,
+    input_root: str | Path | None = None,
+    content_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Fingerprint bytes and a normalized source path, with a stable open handle.
+
+    ``content_path`` is the handle-verified staged copy when input confinement is
+    active; the logical identity still names the original source. A changed
+    source is rechecked after transcription before a checkpoint is published.
+    """
+    logical = resolve_input_path(source, root=input_root)
+    path = Path(content_path) if content_path is not None else logical
+    digest = hashlib.sha256()
+    with path.open("rb") as opened:
+        actual = opened_file_path(opened.fileno(), path)
+        if content_path is None and actual != logical:
+            raise ValueError("local source changed while it was opened")
+        before = os.fstat(opened.fileno())
+        while chunk := opened.read(1024 * 1024):
+            digest.update(chunk)
+        after = os.fstat(opened.fileno())
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError("local source changed while it was fingerprinted")
+    return {"path": str(logical), "size": after.st_size, "sha256": digest.hexdigest()}
+
+
+def validate_local_resume(
+    record: CheckpointRecord,
+    source: str,
+    *,
+    input_root: str | Path | None = None,
+) -> None:
+    """Fail closed for missing, changed, or pre-v2 local-source checkpoints."""
+    if not is_local_source(source):
+        return  # URL bytes can change; URL resume is a separate explicit policy.
+    if record.version < CHECKPOINT_VERSION or record.local_identity is None:
+        raise ValueError("legacy local checkpoint has no fingerprint; resubmit without resume")
+    try:
+        current = local_source_identity(source, input_root=input_root)
+    except (FileNotFoundError, OSError) as exc:
+        raise ValueError("local source is missing or unreadable; resubmit without resume") from exc
+    if current != record.local_identity:
+        raise ValueError("local source changed since checkpoint; resubmit without resume")
 
 
 def load_checkpoint(job: Job | None) -> CheckpointRecord | None:

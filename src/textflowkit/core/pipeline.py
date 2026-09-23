@@ -11,13 +11,19 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.checkpoint import CheckpointRecord, parse_checkpoint
+from textflowkit.core.checkpoint import (
+    CheckpointRecord,
+    local_source_identity,
+    parse_checkpoint,
+    validate_local_resume,
+)
 from textflowkit.core.diarize import DiarizationError, assign_speakers, get_diarizer
 from textflowkit.core.engine import get_engine
 from textflowkit.core.model import Transcript
@@ -26,7 +32,7 @@ from textflowkit.core.paths import (
     default_input_root,
     resolve_input_path,
 )
-from textflowkit.core.service import enforce_media_limits
+from textflowkit.core.service import enforce_media_limits, enforce_predecode_limits
 from textflowkit.core.translate import (
     TranslationError,
     get_translator,
@@ -45,6 +51,24 @@ from textflowkit.sources.detect import resolve_source
 
 class PipelineError(RuntimeError):
     """Raised when any stage of the pipeline fails."""
+
+
+def _cleanup_scratch(path: Path) -> None:
+    """Remove a completed attempt, tolerating brief Windows decoder file locks.
+
+    A failed cleanup must not be silently ignored: the scratch tree may contain
+    downloaded media, so report a persistent failure to the caller.
+    """
+    for attempt in range(10):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            if attempt == 9:
+                raise PipelineError(f"scratch cleanup failed: {exc}") from exc
+            time.sleep(0.1)
 
 
 @dataclass(slots=True)
@@ -107,11 +131,10 @@ def transcribe(
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
 
-    `check_cancel` is an optional callback invoked at stage boundaries. It is
-    expected to raise in order to abort the run. Cancellation is therefore
-    cooperative: the stage boundaries are the checkpoints, so a job cannot be
-    interrupted part-way through a single `fetch_media` or `engine.transcribe`
-    call. That limit is deliberate and documented rather than hidden.
+    `check_cancel` is an optional callback invoked at stage boundaries and
+    during yt-dlp progress and ffmpeg decode. It is expected to raise to abort
+    the run. Model inference and optional postprocessors still only stop at
+    their next stage boundary.
 
     `resume_checkpoint` carries a validated snapshot from an earlier run.
     Completed transcript work is reused; acquisition and engine work are skipped.
@@ -122,6 +145,7 @@ def transcribe(
     media: Path | None = None
     audio: Path | None = None
     transcript: Transcript | None = None
+    local_identity: dict[str, Any] | None = resumed.local_identity if resumed else None
 
     def _checkpoint(stage: str | None = None) -> CheckpointRecord | None:
         if check_cancel is not None:
@@ -147,6 +171,7 @@ def transcribe(
             transcript=transcript.to_dict() if isinstance(transcript, Transcript) else None,
             media_path=_recordable(media),
             audio_path=_recordable(audio),
+            local_identity=local_identity,
         )
         on_checkpoint(snapshot.to_dict())
         return snapshot
@@ -196,6 +221,12 @@ def transcribe(
 
     _checkpoint("source")
 
+    if resumed is not None and ref.kind == "file":
+        try:
+            validate_local_resume(resumed, resolved_source, input_root=root)
+        except ValueError as exc:
+            raise PipelineError(str(exc)) from exc
+
     if work_dir is not None:
         Path(work_dir).mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix="textflowkit-", dir=work_dir))
@@ -229,8 +260,13 @@ def transcribe(
                         cookies_from_browser=cookies_from_browser,
                         check_cancel=check_cancel,
                     )
+                if ref.kind == "file":
+                    local_identity = local_source_identity(
+                        resolved_source, input_root=root, content_path=media,
+                    )
                 _checkpoint("fetch")
-                audio = extract_audio(media, work_dir=scratch)
+                enforce_predecode_limits(media)
+                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
 
@@ -239,6 +275,13 @@ def transcribe(
                     transcript = eng.transcribe(audio, language=language)
                 except Exception as exc:  # engine failures are user-facing
                     raise PipelineError(f"transcription failed: {exc}") from exc
+                if ref.kind == "file":
+                    try:
+                        current = local_source_identity(resolved_source, input_root=root)
+                    except (FileNotFoundError, OSError, ValueError) as exc:
+                        raise PipelineError("local source changed during transcription") from exc
+                    if current != local_identity:
+                        raise PipelineError("local source changed during transcription")
                 _checkpoint("transcribe")
             elif diarize and audio is None:
                 # A finished transcript is the expensive checkpoint. Reacquire
@@ -256,7 +299,8 @@ def transcribe(
                             check_cancel=check_cancel,
                         )
                     _checkpoint("fetch")
-                audio = extract_audio(media, work_dir=scratch)
+                enforce_predecode_limits(media)
+                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
         except (AcquisitionError, UnsafeInputPathError) as exc:
@@ -317,8 +361,8 @@ def transcribe(
         assert transcript is not None
         result = TranscribeResult(transcript=transcript, outputs=outputs)
     except BaseException:
-        shutil.rmtree(scratch, ignore_errors=True)
+        _cleanup_scratch(scratch)
         raise
     if not keep_media:
-        shutil.rmtree(scratch)
+        _cleanup_scratch(scratch)
     return result
