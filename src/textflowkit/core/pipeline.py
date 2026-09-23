@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -50,6 +51,24 @@ from textflowkit.sources.detect import resolve_source
 
 class PipelineError(RuntimeError):
     """Raised when any stage of the pipeline fails."""
+
+
+def _cleanup_scratch(path: Path) -> None:
+    """Remove a completed attempt, tolerating brief Windows decoder file locks.
+
+    A failed cleanup must not be silently ignored: the scratch tree may contain
+    downloaded media, so report a persistent failure to the caller.
+    """
+    for attempt in range(10):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            if attempt == 9:
+                raise PipelineError(f"scratch cleanup failed: {exc}") from exc
+            time.sleep(0.1)
 
 
 @dataclass(slots=True)
@@ -342,8 +361,8 @@ def transcribe(
         assert transcript is not None
         result = TranscribeResult(transcript=transcript, outputs=outputs)
     except BaseException:
-        shutil.rmtree(scratch, ignore_errors=True)
+        _cleanup_scratch(scratch)
         raise
     if not keep_media:
-        shutil.rmtree(scratch)
+        _cleanup_scratch(scratch)
     return result

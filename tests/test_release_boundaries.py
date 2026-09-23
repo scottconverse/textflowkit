@@ -294,6 +294,27 @@ def test_expanding_decode_stops_at_output_cap_and_cleans(cli_boundary, monkeypat
     assert scratch and all(not path.exists() for path in scratch)
 
 
+def test_scratch_cleanup_retries_transient_windows_lock(tmp_path, monkeypatch):
+    from textflowkit.core import pipeline
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "decoded.wav").write_bytes(b"fixture")
+    real_rmtree = pipeline.shutil.rmtree
+    attempts = []
+
+    def transient_lock(path, *args, **kwargs):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise PermissionError("simulated transient decoder lock")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline.shutil, "rmtree", transient_lock)
+    pipeline._cleanup_scratch(scratch)
+    assert len(attempts) == 3
+    assert not scratch.exists()
+
+
 def _sleeping_decoder(monkeypatch):
     from textflowkit.sources import acquire
 
