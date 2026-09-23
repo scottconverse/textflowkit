@@ -369,15 +369,16 @@ found 3 matches with timestamps.
 ## Input paths (unconfined by default)
 
 Adapters accept a **local file path** from a caller — and there the caller may be
-a model acting on untrusted content, not the machine's owner. Local inputs are
-confined to an allowed root:
+a model acting on untrusted content, not the machine's owner. By default, local
+inputs are **not confined**: the process may read any file its Windows or POSIX
+account can read. Set an input root when callers are less trusted than that
+account:
 
 - Nothing is confined unless you set `TEXTFLOWKIT_INPUT_ROOT`. By default an
   adapter has the same access to the machine as the person who started it,
   which is the point: an agent running on your behalf can reach your files.
-- **For the adapters the default is the current working directory**, so an MCP or
-  HTTP caller cannot name an arbitrary file on the host.
-- Paths outside the root, and `..` escapes, are rejected before the file is read.
+- Once `TEXTFLOWKIT_INPUT_ROOT` is set, paths outside that root, including
+  `..` and symlink escapes, are rejected before the file is read.
 
 ```bash
 TEXTFLOWKIT_INPUT_ROOT=/srv/media textflowkit-mcp --transport http
@@ -390,15 +391,18 @@ principal.
 ## Output paths
 
 Adapters accept a destination directory from a caller — a CLI user, an HTTP
-client, or a model. That path is resolved against an **allowed root**:
+client, or a model. By default, an explicit destination may be anywhere the
+process account can write. An **allowed root** applies only when configured:
 
 - Nothing is confined unless you set `TEXTFLOWKIT_OUTPUT_ROOT`. The default is
   the current working directory, but a caller may still ask for any path the
   operator could write; only an explicit root imposes a boundary.
-- When unset, the root is the current working directory. The CLI's default of
-  writing into the directory you ran it from therefore still works.
-- `..` segments, absolute paths outside the root, and symlinks that escape are
-  rejected with an actionable error (`422` on HTTP; an `error` field on MCP).
+- When unset, the current working directory is the *default destination*, not a
+  boundary. The CLI's default of writing where it was run still works, but an
+  explicit absolute path elsewhere is allowed.
+- When `TEXTFLOWKIT_OUTPUT_ROOT` is set, `..` segments, absolute paths outside
+  the root, and symlinks that escape are rejected with an actionable error
+  (`422` on HTTP; an `error` field on MCP).
 
 ```bash
 # confine every write from a server to one directory

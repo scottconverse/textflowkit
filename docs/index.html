@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1420">
+  <meta name="description" content="TextFlowKit is an open-source, self-hosted transcription toolkit for developers. One core, a CLI, an MCP server, and an HTTP API.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TextFlowKit — media in, useful text out">
+  <meta property="og:description" content="An open-source transcription toolkit with one core and three ways in: CLI, MCP, and HTTP.">
+  <meta property="og:url" content="https://scottconverse.github.io/textflowkit/">
+  <link rel="canonical" href="https://scottconverse.github.io/textflowkit/">
+  <title>TextFlowKit — media in, useful text out</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1420;
+      --bg-soft: #111d2b;
+      --panel: #152334;
+      --line: #324457;
+      --text: #edf5f4;
+      --muted: #abc0c2;
+      --mint: #92f2ce;
+      --amber: #ffd58a;
+      --coral: #ffad97;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse 58rem 38rem at 100% 0%, #194238 0%, transparent 65%),
+        radial-gradient(ellipse 52rem 32rem at -12% 20%, #263950 0%, transparent 70%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    a:hover { color: var(--mint); }
+    a:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; border-radius: 3px; }
+    .skip-link {
+      position: absolute;
+      top: -4rem;
+      left: 1rem;
+      z-index: 10;
+      padding: .65rem 1rem;
+      background: var(--mint);
+      color: var(--bg);
+    }
+    .skip-link:focus { top: 1rem; }
+    .wrap { width: min(1160px, calc(100% - 3rem)); margin-inline: auto; }
+    header { border-bottom: 1px solid #ffffff20; }
+    .nav { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+    .brand { display: inline-flex; align-items: center; gap: .72rem; font-weight: 800; font-size: 1.2rem; letter-spacing: -.04em; text-decoration: none; }
+    .brand-mark { display: grid; place-items: center; width: 36px; height: 36px; color: var(--bg); background: var(--mint); border-radius: 10px; font-family: var(--mono); font-size: 1rem; letter-spacing: -.1em; }
+    nav { display: flex; align-items: center; gap: 1.7rem; }
+    nav a { font-size: .9rem; font-weight: 600; color: var(--muted); text-decoration: none; }
+    nav .nav-github { color: var(--mint); }
+
+    .hero { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: clamp(2rem, 5vw, 5rem); padding-block: clamp(5rem, 10vw, 9rem) 7rem; }
+    .hero > *, .install-grid > * { min-width: 0; }
+    .eyebrow { display: inline-flex; align-items: center; gap: .65rem; color: var(--mint); font-family: var(--mono); font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; display: inline-block; width: 8px; height: 8px; background: currentColor; border-radius: 50%; box-shadow: 0 0 0 5px #92f2ce21; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 12ch; margin-block: 1.2rem 1.35rem; font-size: clamp(3.45rem, 6.9vw, 6.4rem); line-height: .98; letter-spacing: -.075em; }
+    h1 em { color: var(--mint); font-style: normal; }
+    .lead { max-width: 56ch; color: #c8d8d7; font-size: clamp(1.06rem, 1.65vw, 1.25rem); }
+    .actions { display: flex; flex-wrap: wrap; gap: .85rem; margin-block: 2rem 1.3rem; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 47px; padding: .7rem 1.2rem; border: 1px solid var(--line); border-radius: 7px; font-weight: 700; font-size: .92rem; text-decoration: none; transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+    .button:hover { transform: translateY(-2px); }
+    .button.primary { background: var(--mint); border-color: var(--mint); color: #09201b; }
+    .button.primary:hover { background: #c0ffe7; }
+    .button.secondary:hover { border-color: var(--mint); background: #ffffff0e; }
+    .micro { color: var(--muted); font-family: var(--mono); font-size: .78rem; }
+    .terminal { overflow: hidden; border: 1px solid #476073; border-radius: 13px; background: #08121c; box-shadow: 0 30px 80px #0006, 0 0 0 8px #ffffff08; }
+    .terminal-top { display: flex; align-items: center; gap: .45rem; padding: .85rem 1rem; border-bottom: 1px solid #ffffff16; background: #142334; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #647482; }
+    .dot:first-child { background: var(--coral); }
+    .dot:nth-child(2) { background: var(--amber); }
+    .dot:nth-child(3) { background: var(--mint); }
+    .terminal-label { margin-left: auto; color: #a5bdc4; font-family: var(--mono); font-size: .72rem; }
+    .terminal pre { overflow-x: auto; margin: 0; padding: 1.6rem; color: #dfeced; font: .82rem/1.8 var(--mono); }
+    .terminal .prompt { color: var(--mint); }
+    .terminal .comment { color: #95aeb7; }
+    .terminal .result { color: var(--amber); }
+    .terminal-foot { display: flex; flex-wrap: wrap; gap: .55rem; padding: .8rem 1rem; border-top: 1px solid #ffffff16; color: var(--muted); font-family: var(--mono); font-size: .7rem; }
+    .terminal-foot span { padding: .15rem .45rem; border: 1px solid #ffffff22; border-radius: 4px; }
+
+    .rail { border-block: 1px solid #ffffff22; background: #0d1a27b5; }
+    .rail-inner { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; padding-block: 1.45rem; }
+    .rail-item { padding-left: 1rem; border-left: 2px solid #92f2ce77; }
+    .rail strong { display: block; font-size: 1rem; }
+    .rail span { color: var(--muted); font-size: .8rem; }
+
+    section { padding-block: 6rem; }
+    .section-head { max-width: 730px; margin-bottom: 2.3rem; }
+    .kicker { color: var(--mint); font: 700 .78rem var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+    h2 { margin-block: .6rem 1rem; font-size: clamp(2.25rem, 4vw, 3.6rem); line-height: 1.08; letter-spacing: -.055em; }
+    .section-head p { color: var(--muted); font-size: 1.08rem; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    .card { min-height: 265px; padding: 1.6rem; border: 1px solid var(--line); border-radius: 11px; background: linear-gradient(145deg, #1c3041, var(--panel)); }
+    .card-tag { display: inline-block; margin-bottom: 3.1rem; padding: .25rem .5rem; border: 1px solid #92f2ce66; border-radius: 4px; color: var(--mint); font: 700 .73rem var(--mono); }
+    .card h3 { margin-bottom: .55rem; font-size: 1.6rem; letter-spacing: -.04em; }
+    .card p { color: var(--muted); font-size: .94rem; }
+    .card a { display: inline-block; margin-top: .45rem; color: var(--mint); font-weight: 700; font-size: .89rem; text-decoration: none; }
+    .card a:hover { text-decoration: underline; }
+
+    .flow { border-block: 1px solid #ffffff22; background: #0b1622cc; }
+    .flow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+    .flow-step { position: relative; }
+    .flow-step:not(:last-child)::after { content: "→"; position: absolute; right: -.95rem; top: .15rem; color: var(--mint); }
+    .flow-step b { color: var(--mint); font: 700 .83rem var(--mono); }
+    .flow-step h3 { margin-block: .6rem .45rem; font-size: 1.2rem; }
+    .flow-step p { color: var(--muted); font-size: .88rem; }
+
+    .install-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 3rem; }
+    .install-grid p, .install-grid li { color: var(--muted); }
+    .install-grid ul { padding-left: 1.3rem; }
+    .install-grid li + li { margin-top: .5rem; }
+    .codebox { overflow-x: auto; margin: 0; padding: 1.5rem; border: 1px solid var(--line); border-radius: 10px; background: #07121d; color: #e7f5f1; font: .83rem/1.9 var(--mono); }
+    .codebox .prompt { color: var(--mint); }
+    .note { margin-top: 1.15rem; padding-left: 1rem; border-left: 2px solid var(--amber); color: var(--muted); font-size: .9rem; }
+    .note a { color: var(--amber); }
+
+    .truth { padding-block: 3.1rem; border-top: 1px solid #ffffff22; }
+    .truth-inner { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; }
+    .truth h2 { margin: 0; font-size: 1.65rem; letter-spacing: -.03em; }
+    .truth p { max-width: 70ch; margin: 0; color: var(--muted); font-size: .92rem; }
+    .truth strong { color: var(--text); }
+    footer { padding-block: 2.5rem 3rem; border-top: 1px solid #ffffff22; }
+    .footer-inner { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; }
+    footer p { color: var(--muted); font-size: .82rem; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 1.3rem; }
+    .footer-links a { color: var(--muted); font-size: .84rem; text-decoration: none; }
+
+    @media (max-width: 800px) {
+      .hero, .install-grid { grid-template-columns: 1fr; }
+      .hero { padding-block: 5rem; }
+      .hero h1 { max-width: 14ch; }
+      .terminal { max-width: 650px; }
+      .rail-inner, .flow-grid { grid-template-columns: repeat(2, 1fr); }
+      .flow-step::after { display: none; }
+      .cards { grid-template-columns: 1fr; }
+      .card { min-height: 0; }
+      .card-tag { margin-bottom: 1.6rem; }
+      .truth-inner { display: block; }
+      .truth h2 { margin-bottom: .8rem; }
+    }
+    @media (max-width: 540px) {
+      .wrap { width: min(100% - 2rem, 1160px); }
+      .nav { min-height: 70px; }
+      nav { gap: .85rem; }
+      nav a:not(.nav-github) { display: none; }
+      h1 { font-size: clamp(3.25rem, 14vw, 4.5rem); }
+      .rail-inner { gap: 1.25rem; }
+      .rail-item { padding-left: .7rem; }
+      section { padding-block: 4rem; }
+      .terminal pre, .codebox { font-size: .73rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .button { transition: none; }
+      .button:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="./" aria-label="TextFlowKit home"><span class="brand-mark" aria-hidden="true">t/</span>textflowkit</a>
+      <nav aria-label="Primary navigation">
+        <a href="#interfaces">Interfaces</a>
+        <a href="#install">Get started</a>
+        <a class="nav-github" href="https://github.com/scottconverse/textflowkit">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap hero">
+      <div>
+        <span class="eyebrow">Open source · Apache 2.0</span>
+        <h1>Media in.<br><em>Useful text</em> out.</h1>
+        <p class="lead">Transcribe video and audio into timestamped, searchable text. One shared core for your command line, AI harness, and application.</p>
+        <div class="actions">
+          <a class="button primary" href="#install">Get started <span aria-hidden="true">&nbsp;→</span></a>
+          <a class="button secondary" href="https://github.com/scottconverse/textflowkit/releases/latest">Latest release <span aria-hidden="true">&nbsp;↗</span></a>
+        </div>
+        <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
+      </div>
+      <div class="terminal" aria-label="Example transcription command and output">
+        <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
+        <pre><span class="comment"># A URL or a file. Your machine does the work.</span>
+<span class="prompt">$</span> textflowkit transcribe talk.mp4 \
+    --formats json,srt,txt
+
+<span class="result">✓</span> transcript.json
+<span class="result">✓</span> transcript.srt
+<span class="result">✓</span> transcript.txt
+
+<span class="comment"># Or run it under an AI harness</span>
+<span class="prompt">$</span> textflowkit-mcp</pre>
+        <div class="terminal-foot"><span>CLI</span><span>MCP stdio + HTTP</span><span>JSON API</span></div>
+      </div>
+    </div>
+
+    <div class="rail" aria-label="Project facts">
+      <div class="wrap rail-inner">
+        <div class="rail-item"><strong>One core</strong><span>Shared transcript and job model</span></div>
+        <div class="rail-item"><strong>Three doors</strong><span>CLI · MCP · HTTP API</span></div>
+        <div class="rail-item"><strong>13 sources</strong><span>Recognized through yt-dlp</span></div>
+        <div class="rail-item"><strong>Apache 2.0</strong><span>Free to use and build on</span></div>
+      </div>
+    </div>
+
+    <section class="wrap" id="interfaces" aria-labelledby="interfaces-title">
+      <div class="section-head">
+        <span class="kicker">Built to plug in</span>
+        <h2 id="interfaces-title">A transcription engine, not another silo.</h2>
+        <p>Use the interface your product already speaks. The pipeline and transcript format stay the same underneath.</p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <span class="card-tag">01 / SCRIPT</span>
+          <h3>Command line</h3>
+          <p>Transcribe a local file or URL, run batches, resume saved work, and export subtitles or documents.</p>
+          <a href="https://github.com/scottconverse/textflowkit#usage">Explore CLI →</a>
+        </article>
+        <article class="card">
+          <span class="card-tag">02 / AGENT</span>
+          <h3>MCP server</h3>
+          <p>Connect AI harnesses over stdio or Streamable HTTP. Submit jobs, poll status, search, and page through results.</p>
+          <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">Explore MCP →</a>
+        </article>
+        <article class="card">
+          <span class="card-tag">03 / PRODUCT</span>
+          <h3>HTTP API</h3>
+          <p>Give software a job-based JSON interface. Keep long transcriptions off the request-response clock.</p>
+          <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#http-for-software-products-and-web-frontends">Explore API →</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="flow" aria-labelledby="flow-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="kicker">How it works</span>
+          <h2 id="flow-title">From source to something you can use.</h2>
+        </div>
+        <div class="flow-grid">
+          <div class="flow-step"><b>01</b><h3>Point it at media</h3><p>Use a local file, a direct media URL, or a recognized platform link.</p></div>
+          <div class="flow-step"><b>02</b><h3>Extract audio</h3><p>yt-dlp acquires supported URLs; ffmpeg prepares audio for transcription.</p></div>
+          <div class="flow-step"><b>03</b><h3>Transcribe</h3><p>Whisper produces timed segments. Translation and speaker labels are optional.</p></div>
+          <div class="flow-step"><b>04</b><h3>Use the result</h3><p>Read, search, page, or export JSON, TXT, Markdown, SRT, or VTT. DOCX and PDF use an optional extra.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap install-grid" id="install" aria-labelledby="install-title">
+      <div>
+        <span class="kicker">Start building</span>
+        <h2 id="install-title">Bring your own media. Keep your workflow.</h2>
+        <p>Python 3.10+ and ffmpeg are the starting point. The repository is the home for install notes, integration examples, and releases.</p>
+        <ul>
+          <li>Run locally on Windows without WSL, or on macOS and Linux.</li>
+          <li>Use durable SQLite jobs and bounded concurrency when you need them.</li>
+          <li>Find the right setup for AMD ROCm in the install guide before installing dependencies.</li>
+        </ul>
+        <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">Read install guide ↗</a>
+      </div>
+      <div>
+        <pre class="codebox"><span class="prompt">$</span> git clone https://github.com/scottconverse/textflowkit
+<span class="prompt">$</span> cd textflowkit
+<span class="prompt">$</span> python -m pip install -e ".[mcp,http]"
+<span class="prompt">$</span> textflowkit doctor</pre>
+        <p class="note">For a GPU-specific or Windows-native ROCm setup, follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">install guide</a> instead of using this generic CPU-oriented quickstart.</p>
+      </div>
+    </section>
+
+    <aside class="truth" aria-labelledby="truth-title">
+      <div class="wrap truth-inner">
+        <h2 id="truth-title">A clear line between support and proof.</h2>
+        <p><strong>YouTube has a maintained live Windows release check.</strong> The other 12 named platforms are recognized through yt-dlp, not independently verified on every release. This page is a landing page for a self-hosted developer tool, <strong>not a hosted upload or transcription service</strong>. See the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/release-checklist.md">release checklist</a> and <a href="https://github.com/scottconverse/textflowkit/blob/main/SECURITY.md">security policy</a>.</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div><a class="brand" href="./"><span class="brand-mark" aria-hidden="true">t/</span>textflowkit</a><p>Open-source transcription infrastructure for developers.<br>Apache-2.0 · As-is, without warranty.</p></div>
+      <div class="footer-links" aria-label="Project links">
+        <a href="https://github.com/scottconverse/textflowkit">Repository</a>
+        <a href="https://github.com/scottconverse/textflowkit/releases/latest">Releases</a>
+        <a href="https://github.com/scottconverse/textflowkit/issues">Issues</a>
+        <a href="https://github.com/scottconverse/textflowkit/blob/main/LICENSE">License</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
