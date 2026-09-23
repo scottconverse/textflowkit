@@ -13,7 +13,7 @@ you expected.
 
 | Version | Security-fix policy |
 |---|---|
-| Latest published release tag (currently `v0.1.2`) | Receives fixes through the next patch release |
+| Latest published release tag (currently `v0.1.3`) | Receives fixes through the next patch release |
 | Earlier release tags, including earlier `0.1.x` tags | No backports |
 | Unreleased `main` commits | Development only; not a supported release |
 
