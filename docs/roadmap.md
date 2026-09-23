@@ -51,6 +51,12 @@
 - [x] Keep the deterministic cross-platform GitHub CI as the automated gate
 - [x] Align the release-facing documentation and package version
 
+## v0.1.3 — developer landing and maintenance
+
+- [x] Publish a static GitHub Pages landing page from `main` `/docs`
+- [x] Correct the default input/output path-confinement documentation
+- [x] Update pinned CI checkout and Python setup actions and verify the combined matrix
+
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not
 a deterministic pull-request job. The release gate runs locally on Windows,
@@ -65,4 +71,3 @@ verification/deployment boundaries, not claims of complete platform coverage.
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
-

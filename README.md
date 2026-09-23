@@ -83,7 +83,7 @@ pip install -e .
 Or install the built wheel from the release page:
 
 ```bash
-pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.2/textflowkit-0.1.2-py3-none-any.whl
+pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.3/textflowkit-0.1.3-py3-none-any.whl
 ```
 
 Not published to PyPI; the repository and its releases are the distribution path.
@@ -200,7 +200,7 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.2 release.** Core, CLI, MCP, and HTTP have automated
+**v0.1.3 release.** Core, CLI, MCP, and HTTP have automated
 coverage; Windows-native ROCm and a dated local Windows YouTube run were verified.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
 live transcription is not verified.
@@ -216,4 +216,3 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
 adapter.
-
