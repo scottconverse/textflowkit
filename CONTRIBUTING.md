@@ -28,8 +28,10 @@ Both run on every push and pull request via
 commands clean, CI should pass.
 
 The live YouTube check is **not** a deterministic PR test. Maintainers run it
-manually before release using [the release checklist](docs/release-checklist.md)
-or the `Live YouTube transcription smoke` workflow, then keep its JSON receipt.
+on a Windows machine before release using [the release checklist](docs/release-checklist.md)
+and keep its JSON receipt. GitHub-hosted runners received YouTube's bot challenge,
+so a red hosted-network attempt must not be represented as a product regression
+or turned into a green release claim.
 
 The test job runs a **3 OS x 4 Python matrix**: `ubuntu-latest`,
 `windows-latest`, and `macos-latest`, each against Python 3.10, 3.11, 3.12, and
@@ -80,4 +82,3 @@ Read [LEGAL.md](LEGAL.md) before adding a source adapter.
 ## Security
 
 Do not open a public issue for a vulnerability. See [SECURITY.md](SECURITY.md).
-

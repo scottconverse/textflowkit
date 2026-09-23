@@ -2,7 +2,8 @@
 
 textflowkit recognises the following 13 platforms through `yt-dlp`. The
 opt-in [live end-to-end smoke](release-checklist.md) covers **YouTube** when run
-before a release; it is not part of deterministic pull-request CI. The other 12 are
+on a Windows maintainer machine before a release; it is not part of deterministic
+pull-request CI. The other 12 are
 recognised, not independently verified on every release. Platform access rules
 can change without notice and some sources require cookies.
 

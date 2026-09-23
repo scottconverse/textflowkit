@@ -1,34 +1,48 @@
 # Release verification checklist
 
-This checklist separates deterministic CI from a live network/site/model check.
-It does not make the other 12 recognized sites end-to-end verified.
+Deterministic GitHub CI and live YouTube evidence are **different gates**. The
+live check runs on a Windows maintainer machine, not a GitHub-hosted runner.
+The [hosted attempt on 2026-09-23](https://github.com/scottconverse/textflowkit/actions/runs/35805762808)
+failed when YouTube required bot confirmation. A local Windows run passed, but
+neither result verifies the other 12 recognized sites.
 
-1. Run `ruff check .` and `python -m pytest` on the candidate commit. Confirm
-   the Windows/Linux/macOS Python matrix and installed-wheel smoke pass in CI.
-2. On a machine with Python, ffmpeg, yt-dlp dependencies, and network access,
-   run the opt-in public-video smoke from the candidate checkout:
+1. Start from a **committed, clean candidate checkout** on Windows. Use a Python
+   environment with textflowkit, `yt-dlp`, Whisper, and ffmpeg/ffprobe installed;
+   see [install notes](install.md). The script refuses uncommitted changes so
+   its receipt identifies the code that ran. It uses Whisper `tiny` on CPU; no
+   ROCm GPU setup is required. The script does not supply browser cookies;
+   YouTube may still challenge any particular network or run.
+2. Run `ruff check .` and `python -m pytest` on the candidate commit. Confirm
+   the Windows/Linux/macOS Python matrix and installed-wheel smoke pass in the
+   deterministic [CI workflow](../.github/workflows/ci.yml).
+3. From the repository root in PowerShell, write a live receipt **outside** the
+   checkout. With the documented `.venv` setup:
 
-   ```bash
-   python scripts/smoke_live_youtube.py --receipt live-youtube-receipt.json
+   ```powershell
+   $receipt = Join-Path $env:USERPROFILE ("Documents\textflowkit-youtube-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
+   .\.venv\Scripts\python.exe scripts\smoke_live_youtube.py --receipt $receipt
+   if ($LASTEXITCODE -ne 0) { throw "Live YouTube check failed; do not claim a pass" }
+   Get-Content -LiteralPath $receipt
    ```
 
-   The default URL is a public YouTube clip. The script runs the real CLI with
-   Whisper `tiny` on CPU, requires one parseable JSON transcript, at least one
-   nonempty timestamped segment, and `platform=youtube`. It exits nonzero for
-   download, timeout, transcription, render, or structure failure. Its default
-   timeout is 300 seconds; `--url`, `--model`, `--device`, and `--timeout` may be
-   overridden deliberately and recorded with the receipt.
-3. Alternatively dispatch the `Live YouTube transcription smoke` GitHub Actions
-   workflow manually on the candidate ref. Download and retain its JSON receipt.
-4. If the site blocks automation, the video changes, or the model output drifts,
-   record the failure and investigate. Do not turn a failed live gate into a
-   green claim by pointing to deterministic mocked URL tests. A maintainer may
-   choose a new public fixture URL and update this checklist/script in review.
-5. Only after the live smoke, deterministic matrix, and release asset hashes
-   agree with the candidate commit should release notes say that YouTube has a
-   maintained live URL gate. State the date/ref/receipt and distinguish this
-   one URL from the 12 other recognized sites.
+   The script runs the candidate checkout's source through the real CLI, URL
+   acquisition, ffmpeg, Whisper, and JSON rendering. It requires
+   `platform=youtube` and at least one nonempty
+   timestamped segment. The receipt records UTC time, candidate Git commit,
+   Windows/Python runtime, URL, model/device, segment count, and transcript
+   SHA-256. Its default timeout is 300 seconds; `--url`, `--model`, `--device`,
+   and `--timeout` may be overridden deliberately and are reflected in the
+   receipt. No success receipt is written on failure.
+4. Keep the receipt with the release evidence, not in the public repository.
+   If YouTube blocks access, the video changes, or transcription drifts, record
+   the failure and investigate. Do **not** replace a failed live run with a
+   green mocked URL test, an old receipt, or the blocked GitHub-hosted attempt.
+   A new public fixture URL requires review and an updated script/checklist.
+5. Only if the **current** live receipt, deterministic matrix, and release
+   asset hashes agree with the candidate commit may release notes claim a
+   live YouTube check. State its date/commit/receipt and distinguish this one
+   URL from the other 12 recognized platforms. Do not describe GitHub-hosted
+   YouTube automation as a passing gate.
 
-The script writes media/transcripts to an isolated temporary directory and
-deletes it. Save its small JSON receipt outside the repository or as a CI
-artifact; do not commit downloaded media or transcripts.
+The script deletes its temporary media and transcript after producing the
+receipt. It does not upload cookies, media, or transcripts to GitHub.
