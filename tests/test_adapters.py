@@ -689,4 +689,3 @@ def test_default_store_agrees_with_the_current_environment():
             f"process-wide store is {store.path!r} from an earlier test's "
             f"{ENV_DB}; the file that set it did not reset the default store"
         )
-
