@@ -197,11 +197,16 @@ def test_dropped_continuation_gets_full_per_item_text_not_a_truncation(monkeypat
 
     The batch below numbers both items but leaves `días` unnumbered, so a
     parser that ignores stray lines reports `buenos` as the whole translation
-    of "good morning". The per-item fallback returns the full multiline text.
+    of "good morning". The per-item fallback answers with its own *multiline*
+    translation - the newline is inside the model's answer, not a join of two
+    answers - and that exact string must come back and be cached. Asserting the
+    newline itself is the point: a fallback that returned `"buenos días"` would
+    pass a looser check while proving nothing about `_translate_one`, which
+    returns the model output stripped but with interior newlines intact.
     """
     t = OllamaTranslator()
     singles: list[str] = []
-    single = {"good morning": "buenos días", "two": "dos"}
+    single = {"good morning": "buenos\ndías", "two": "dos"}
 
     def fake_generate(prompt):
         if "numbered line" in prompt:
@@ -213,9 +218,14 @@ def test_dropped_continuation_gets_full_per_item_text_not_a_truncation(monkeypat
     monkeypatch.setattr(t, "_generate", fake_generate)
     out = t.translate(["good morning", "two"], "es")
 
-    assert out == ["buenos días", "dos"]        # full multiline text survived
+    assert out == ["buenos\ndías", "dos"]       # the interior newline survived
     assert singles == ["good morning", "two"]   # the fallback actually ran
-    assert set(t._cache.values()) == {"buenos días", "dos"}   # nothing truncated cached
+    # Exact cache contents: the truncated ("good morning", "es") -> "buenos"
+    # entry must not exist alongside them.
+    assert t._cache == {
+        ("good morning", "es"): "buenos\ndías",
+        ("two", "es"): "dos",
+    }
 
 
 def test_repeated_text_is_translated_once_per_batch(monkeypatch):
