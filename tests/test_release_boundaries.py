@@ -198,6 +198,75 @@ def test_http_and_mcp_resume_share_local_identity_validation(
     assert engine.calls == 1
 
 
+def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
+    """A8: resume re-checks the *current* input root, not the saved one.
+
+    A job requested while a wider root was configured serializes that root into
+    its durable request. After an operator tightens TEXTFLOWKIT_INPUT_ROOT, MCP
+    resume must refuse the out-of-boundary source instead of reinstating the
+    saved root; HTTP already does. A source inside the new root still resumes.
+    """
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters import http_server, mcp_server
+    from textflowkit.core import submission
+    from textflowkit.core.jobs import JobState
+
+    root, output, store, engine = cli_boundary
+    wide = root / "wide"
+    narrow = root / "narrow"
+    wide.mkdir()
+    narrow.mkdir()
+    outside = wide / "old.wav"
+    inside = narrow / "new.wav"
+    _wav(outside)
+    _wav(inside)
+
+    def request_for(media, media_root):
+        return submission.SubmissionRequest(
+            source=str(media), formats=["json"], output_dir=str(output),
+            model="tiny", device="cpu", input_root=str(media_root),
+        )
+
+    # Saved while the wider root was configured, then interrupted and reaped.
+    saved = submission.submit_request(store, request_for(outside, wide), background=False)
+    assert store.get(saved.id).request["input_root"] == str(wide)
+    store.update(saved.id, state=JobState.RUNNING, progress="transcribing")
+    assert store.reap_incomplete(reason="simulated restart") == 1
+    assert store.get(saved.id).state is JobState.ERROR
+    assert engine.calls == 1
+    rendered = sorted(p.name for p in output.glob("*.json"))
+    assert len(rendered) == 1
+
+    monkeypatch.setattr(http_server, "get_default_store", lambda: store)
+    monkeypatch.setattr(mcp_server, "get_default_store", lambda: store)
+    # The operator tightens the boundary: `wide/old.wav` is now outside it.
+    monkeypatch.setenv("TEXTFLOWKIT_INPUT_ROOT", str(narrow))
+
+    mcp_result = mcp_server.resume_job(saved.id)
+    # Nothing may be re-run or re-published against the stale wider root.
+    assert engine.calls == 1
+    assert store.get(saved.id).state is JobState.ERROR
+    assert sorted(p.name for p in output.glob("*.json")) == rendered
+    assert "error" in mcp_result, mcp_result
+    assert "outside the allowed input root" in mcp_result["error"]
+
+    http = TestClient(http_server.app, base_url="http://127.0.0.1").post(
+        f"/jobs/{saved.id}/resume"
+    )
+    assert http.status_code == 409
+    assert "outside the allowed input root" in http.json()["detail"]
+
+    # A source inside the tightened root still resumes on both surfaces.
+    allowed = submission.submit_request(store, request_for(inside, narrow), background=False)
+    assert engine.calls == 2
+    assert mcp_server.resume_job(allowed.id)["state"] == "done"
+    assert TestClient(http_server.app, base_url="http://127.0.0.1").post(
+        f"/jobs/{allowed.id}/resume"
+    ).status_code == 202
+    assert engine.calls == 2
+
+
 def test_local_diarization_resume_reacquires_wav_without_collision(
     cli_boundary, monkeypatch, capsys,
 ):
