@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.5
+# TextFlowKit user manual — v0.1.6
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -12,7 +12,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.5'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.6'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -199,9 +199,9 @@ same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 
 ## 7. Release and help
 
-- [v0.1.5 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.5)
-- [Core package on PyPI](https://pypi.org/project/textflowkit/0.1.5/) and
-  [optional font package](https://pypi.org/project/textflowkit-fonts/0.1.5/)
+- [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
+- [Core package on PyPI](https://pypi.org/project/textflowkit/) and
+  [optional font package](https://pypi.org/project/textflowkit-fonts/)
 - [Release verification procedure](release-checklist.md),
   [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 

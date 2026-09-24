@@ -7,7 +7,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases) ·
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 
-**Current release: [v0.1.5](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.5).**
+**Current release: [v0.1.6](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -278,15 +278,21 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.5 release.** Core, CLI, MCP, and HTTP have automated
-coverage. The release added a speech-bearing self-test, full-media duration,
-retained word timings, optional PDF fonts, and tokenless PyPI publishing.
-Windows-native ROCm and a local Windows YouTube run on the release commit were verified.
+**v0.1.6 release.** Core, CLI, MCP, and HTTP have automated
+coverage. This release is the post-v0.1.5 review repair set: security hardening
+for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
+output-file publication, job and checkpoint storage corrections, an opt-in
+faster-whisper engine, a container example, and fail-closed release guards for
+tagged versions, README claims, and exact-commit CI.
+The v0.1.5 release added a speech-bearing self-test, full-media duration,
+retained word timings, optional PDF fonts, and tokenless PyPI publishing, and its
+live evidence is the only live evidence recorded on this page.
+Windows-native ROCm and a local Windows YouTube run on the v0.1.5 release commit were verified.
 That run's receipt records the clip, timestamps, and hashes; the checklist's
 recognized-speech assertion was added after it, so treat it as shape evidence for
 that commit rather than proof of what was said.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
-live transcription is not verified.
+live transcription is not verified. No v0.1.6 tag, upload, or live run is verified here.
 This does not imply that all 13 platforms or every harness workflow has been
 tested end to end. See the [user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 and [roadmap](https://github.com/scottconverse/textflowkit/blob/main/docs/roadmap.md).
