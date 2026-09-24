@@ -1,0 +1,106 @@
+name: Publish PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'scottconverse/textflowkit' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install packaging
+      - name: Verify release tag and package versions
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+          from packaging.version import Version
+
+          tag = os.environ['RELEASE_TAG']
+          if not tag.startswith('v'):
+              raise SystemExit('Release tag must start with v')
+          version = str(Version(tag[1:]))
+          if tag != 'v' + version:
+              raise SystemExit('Release tag is not a normalized final version')
+          if Version(version).is_prerelease or Version(version).is_devrelease:
+              raise SystemExit('PyPI release must be a final version')
+          for file in (Path('pyproject.toml'), Path('packages/textflowkit-fonts/pyproject.toml')):
+              declared = tomllib.loads(file.read_text(encoding='utf-8'))['project']['version']
+              if declared != version:
+                  raise SystemExit(f'{file}: {declared} != {version}')
+          PY
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo 'Release tag is not merged into main' >&2
+            exit 1
+          }
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build packaging
+          python -m build --sdist --wheel --outdir dist/main .
+          python -m build --sdist --wheel --outdir dist/fonts packages/textflowkit-fonts
+          python -m pip install twine
+          python -m twine check dist/main/* dist/fonts/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-github-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - name: Attach the exact distributions to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/main/* dist/fonts/* --repo "$GITHUB_REPOSITORY"
+
+  publish-fonts:
+    needs: publish-github-assets
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/fonts/
+
+  publish-main:
+    needs: publish-fonts
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/main/

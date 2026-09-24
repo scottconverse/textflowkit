@@ -133,7 +133,9 @@ textflowkit selftest --skip-transcribe   # compute device only, no model downloa
 ```
 
 It runs a real matmul on the selected device and then a real Whisper pass over a
-generated probe clip, printing PASS/FAIL for each and naming the torch build. A
+bundled synthetic speech clip. It fails if Whisper returns no nonempty, timed
+speech segment. A PASS proves text generation, not transcription accuracy.
+It prints PASS/FAIL for each stage and names the torch build. A
 ROCm install reports `torch <ver>+rocm*` and the device name; a stock CPU wheel
 reports plain `torch <ver>`.
 
@@ -235,4 +237,3 @@ how many segments were labelled. If the backend or token is missing, the run
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
 CPU transcription is dramatically slower; prefer a smaller `--model`.
-

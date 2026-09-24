@@ -144,6 +144,17 @@ def test_pdf_embeds_fonts_and_preserves_multilingual_text():
                for font in ("NotoSans", "NotoSansArabic", "NotoSansSC"))
 
 
+def test_pdf_missing_font_extra_reports_install_command(monkeypatch):
+    from textflowkit.render import pdf
+
+    def missing(_):
+        raise ModuleNotFoundError("No module named 'textflowkit_fonts'")
+
+    monkeypatch.setattr(pdf, "files", missing)
+    with pytest.raises(ImportError, match=r"textflowkit\[export\]"):
+        pdf.render_pdf(rich_transcript())
+
+
 # --- integration with the render layer ------------------------------------
 
 def test_render_refuses_binary_with_a_useful_message():

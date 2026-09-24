@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import io
 import threading
-from pathlib import Path
+from importlib.resources import files
 from xml.sax.saxutils import escape
 
 from textflowkit.core.model import Transcript
@@ -34,14 +34,18 @@ def _hms(seconds: float) -> str:
 
 
 _FONT_LOCK = threading.Lock()
-_FONT_DIR = Path(__file__).parent / "fonts"
-
-
 def _ensure_fonts() -> None:
+    try:
+        font_dir = files("textflowkit_fonts").joinpath("fonts")
+    except ModuleNotFoundError as exc:
+        raise ImportError(
+            "Unicode PDF export requires the font extra. "
+            "Install with: pip install 'textflowkit[export]'"
+        ) from exc
     with _FONT_LOCK:
         for name in ("NotoSans", "NotoSansArabic", "NotoSansSC"):
             if name not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont(name, str(_FONT_DIR / f"{name}.ttf")))
+                pdfmetrics.registerFont(TTFont(name, str(font_dir.joinpath(f"{name}.ttf"))))
             pdfmetrics.registerFontFamily(
                 name, normal=name, bold=name, italic=name, boldItalic=name
             )

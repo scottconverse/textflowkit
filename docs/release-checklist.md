@@ -51,13 +51,25 @@ receipt. It does not upload cookies, media, or transcripts to GitHub.
 
 ## PyPI publication
 
-If this release is also published to PyPI, upload the **same** verified wheel
-and source archive as the GitHub release. Check package metadata before upload,
-then compare both PyPI SHA-256 digests with the GitHub release assets. Finally,
-install that exact version from the public PyPI index in a clean environment
-and smoke the CLI entry point. An install with `--no-deps` proves distribution
-and entry-point wiring only; it does not prove a full transcription run.
+Publishing a non-prerelease GitHub release triggers
+[`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It builds both
+`textflowkit` and its optional `textflowkit-fonts` companion package from the
+release tag, verifies the tag matches both package versions, attaches the exact
+four build artifacts to the GitHub release, and uploads the fonts first using
+PyPI Trusted Publishing (GitHub OIDC), then the main package. Start with a
+GitHub release **without manually attached distribution files**; the workflow
+refuses to overwrite existing release assets.
+No upload token is passed to CI. Both PyPI projects must have trusted publishers
+for owner `scottconverse`, repository `textflowkit`, workflow
+`publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
+should require maintainer approval before an upload job can proceed.
+
+Before publishing, confirm merged-main CI and the local YouTube receipt. After
+publication, compare PyPI SHA-256 digests against the GitHub release assets
+for **both** packages, and clean-install the exact version with
+`textflowkit[export,mcp,http]`. Run `doctor`, `selftest`, and an actual PDF export.
+An install with `--no-deps` only proves distribution wiring, not transcription.
 
 Never place an API token in this repository, a CI log, or a shell command line.
 An upload is a separate public release action; passing CI alone does not
-authorize it.
+authorize it. Do not call a release complete if either package upload failed.

@@ -73,6 +73,10 @@ transcription service.
 - [x] Prepare v0.1.4 with a PyPI-first package description and install guide
 - [x] Make PyPI the default developer install path while keeping GitHub
   releases and the native-Windows ROCm dependency instructions
+- [ ] Ship v0.1.5 review follow-ups: speech-bearing self-test, full media
+  duration, retained word timings, Python API documentation, richer PyPI
+  project links, a small core wheel with optional offline fonts, and a
+  tokenless Trusted Publishing release workflow for both packages
 
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not

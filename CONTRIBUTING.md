@@ -13,7 +13,8 @@ cd textflowkit
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # POSIX:   source .venv/bin/activate
-pip install -e ".[dev,mcp,http]"
+pip install ./packages/textflowkit-fonts  # local optional PDF font companion
+pip install -e ".[dev,mcp,http,export]"
 ```
 
 ## Test and lint — the commands CI runs
@@ -60,6 +61,8 @@ mark it so it can be skipped in CI.
 - Add a test for a bug fix. If you cannot, say why in the PR description.
 - Run `ruff check .` and `python -m pytest` before opening the PR.
 - Do not commit media files, transcripts, or scratch output. `work/` is gitignored.
+  The bundled `src/textflowkit/assets/selftest-speech.wav` is an intentional,
+  small synthetic speech fixture; do not replace it with private recordings.
 
 ## Evidence language
 

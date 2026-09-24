@@ -13,6 +13,22 @@ from typing import Any
 
 
 @dataclass(slots=True)
+class WordTiming:
+    """One recognized word and its interval in the source audio."""
+
+    start: float
+    end: float
+    text: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WordTiming:
+        return cls(start=float(data["start"]), end=float(data["end"]), text=str(data["text"]))
+
+
+@dataclass(slots=True)
 class Segment:
     """One timestamped span of speech."""
 
@@ -22,6 +38,7 @@ class Segment:
     speaker: str | None = None
     translated_text: str | None = None
     hidden: bool = False
+    words: list[WordTiming] = field(default_factory=list)
 
     def display_text(self) -> str:
         """Text to render: translated if present, else source."""
@@ -39,6 +56,7 @@ class Segment:
             speaker=data.get("speaker"),
             translated_text=data.get("translated_text"),
             hidden=bool(data.get("hidden", False)),
+            words=[WordTiming.from_dict(w) for w in (data.get("words") or [])],
         )
 
 

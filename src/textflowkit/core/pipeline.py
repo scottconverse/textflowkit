@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import time
 import uuid
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -275,6 +276,15 @@ def transcribe(
                     transcript = eng.transcribe(audio, language=language)
                 except Exception as exc:  # engine failures are user-facing
                     raise PipelineError(f"transcription failed: {exc}") from exc
+                # extract_audio always writes PCM WAV. Its frame count includes
+                # trailing silence and is more precise than the last speech cue.
+                try:
+                    with wave.open(str(audio), "rb") as wav:
+                        if wav.getframerate() > 0:
+                            transcript.duration = wav.getnframes() / wav.getframerate()
+                except (OSError, EOFError, wave.Error):
+                    # Preserve an engine-supplied duration for test/custom engines.
+                    pass
                 if ref.kind == "file":
                     try:
                         current = local_source_identity(resolved_source, input_root=root)
