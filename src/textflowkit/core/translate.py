@@ -13,7 +13,9 @@ Two engineering choices worth stating:
 - **Batching with a fallback.** One request per segment is correct but slow (a
   214-segment transcript would be 214 round trips). Requests are batched, and if
   a batch comes back unparseable or the wrong length, that batch is retried one
-  segment at a time. Correctness does not depend on the model obeying a format.
+  segment at a time. Correctness does not depend on the model obeying a format:
+  an unnumbered line, a repeated number, or a number that was never requested is
+  content the model produced, so the batch is refused rather than trimmed.
 - **A cache.** Whisper repeats phrases; identical source text is translated once.
 
 A backend that is unreachable or misconfigured raises. It never returns the
@@ -168,13 +170,27 @@ class OllamaTranslator:
         raw = self._generate(prompt)
 
         parsed: dict[int, str] = {}
+        rows = 0
         for line in raw.splitlines():
+            if not line.strip():
+                continue
             match = _NUMBERED.match(line)
-            if match:
-                parsed[int(match.group(1))] = match.group(2).strip()
+            if match is None:
+                # A nonblank line the model did not number is content, not
+                # noise. Skipping it would return a truncated translation as
+                # though it were the whole one, so refuse the batch instead and
+                # let the caller's per-item fallback recover the text.
+                raise TranslationError(
+                    f"batch response contained an unnumbered line: {line.strip()[:80]!r}"
+                )
+            rows += 1
+            parsed[int(match.group(1))] = match.group(2).strip()
 
+        # Every requested number exactly once. A repeated number means one
+        # item's translation was overwritten; an out-of-range number means a
+        # line was produced and then dropped. Both lose content silently.
         expected = list(range(1, len(texts) + 1))
-        if any(i not in parsed for i in expected):
+        if rows != len(expected) or set(parsed) != set(expected):
             raise TranslationError("batch response did not match the requested items")
         return [parsed[i] for i in expected]
 
