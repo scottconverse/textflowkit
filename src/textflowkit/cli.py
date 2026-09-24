@@ -11,7 +11,7 @@ from pathlib import Path
 
 from textflowkit import __version__
 from textflowkit.core.batch import run_batch
-from textflowkit.core.engine import get_engine
+from textflowkit.core.engine import ENGINE_CHOICES, ensure_engine_available, get_engine
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
@@ -46,6 +46,15 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
     t.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     t.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    t.add_argument(
+        "--engine",
+        default="whisper",
+        help=(
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
+            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
+            "CPU/Mac engine and needs its optional extra"
+        ),
+    )
     t.add_argument(
         "--diarize",
         action="store_true",
@@ -83,6 +92,15 @@ def _build_parser() -> argparse.ArgumentParser:
     b.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
     b.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     b.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    b.add_argument(
+        "--engine",
+        default="whisper",
+        help=(
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
+            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
+            "CPU/Mac engine and needs its optional extra"
+        ),
+    )
     b.add_argument("--diarize", action="store_true", help="label speakers (same requirements as transcribe)")
     b.add_argument("--translate-to", default=None, metavar="LANG", help="translate transcript into LANG")
     b.add_argument("--cookies-from-browser", default=None,
@@ -151,8 +169,28 @@ def _store_is_durable() -> bool:
     return bool(os.environ.get("TEXTFLOWKIT_DB"))
 
 
+def _preflight_engine(name: str) -> str | None:
+    """Reject an unusable ``--engine`` before any work is submitted.
+
+    The engine name and, for an optional engine, whether its package is even
+    importable are both knowable from the arguments alone. Discovering either
+    later means discovering it after the media was acquired, the audio decoded
+    and a job record written - the same reason ``--stdout-format`` is settled
+    here. Returns an error message, or ``None`` when the engine is usable.
+    """
+    try:
+        ensure_engine_available(name)
+    except (ValueError, RuntimeError) as exc:
+        return str(exc)
+    return None
+
+
 def _cmd_transcribe(args: argparse.Namespace) -> int:
     formats = _formats(args.formats)
+    error = _preflight_engine(args.engine)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if args.stdout:
         try:
             args.stdout_format = _stdout_format(args.stdout_format)
@@ -173,7 +211,8 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
     try:
         request = SubmissionRequest(
             source=args.source, language=args.language, formats=formats,
-            output_dir=output_dir, model=args.model, device=args.device,
+            output_dir=output_dir, model=args.model, engine=args.engine,
+            device=args.device,
             cookies_from_browser=args.cookies_from_browser,
             diarize=args.diarize, translate_to=args.translate_to,
         )
@@ -234,6 +273,12 @@ def _finish_transcribe(
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
+    # One engine for the whole batch, so a bad name fails before the first item
+    # is submitted rather than once per source.
+    error = _preflight_engine(args.engine)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if args.resume and not _store_is_durable():
         print(
             "warning: batch --resume cannot survive a process restart without "
@@ -249,6 +294,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         formats=_formats(args.formats),
         output_dir=args.output_dir or ".",
         model=args.model,
+        engine=args.engine,
         device=args.device,
         cookies_from_browser=args.cookies_from_browser,
         diarize=args.diarize,
@@ -349,6 +395,7 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
         ("mcp", "mcp"),
         ("fastapi", "fastapi"),
         ("pyannote", "pyannote.audio"),
+        ("faster-whisper", "faster_whisper"),
         ("python-docx", "docx"),
         ("reportlab", "reportlab"),
     ):
