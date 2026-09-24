@@ -151,6 +151,46 @@ def test_done_resume_refuses_a_directory_at_the_recorded_name(done_job):
     assert list(store.get(job_id).outputs) == recorded
 
 
+def test_cli_resume_refuses_a_modified_output_with_one_clean_error(
+    tmp_path, monkeypatch, fake_pipeline, capsys
+):
+    """The user-visible surface: a failed resume and an untouched file.
+
+    A bare `FileExistsError` escaping the submission path would traceback here,
+    so this also pins the refusal to the clean one-line error a resume is
+    supposed to produce.
+    """
+    from textflowkit import cli
+    from textflowkit.core.sqlite_store import SqliteJobStore
+
+    out_dir, engine = fake_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    store = SqliteJobStore(tmp_path / "jobs.db")
+    monkeypatch.setenv("TEXTFLOWKIT_DB", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(cli, "get_default_store", lambda: store)
+    args = [
+        "transcribe", str(source), "--formats", "txt", "--output-dir", str(out_dir),
+        "--model", "tiny", "--device", "cpu", "--quiet",
+    ]
+    try:
+        assert cli.main(args) == 0, capsys.readouterr().err
+        (job,) = store.list(limit=10)
+        output = Path(job.outputs[0])
+        output.write_bytes(FOREIGN)
+        capsys.readouterr()
+
+        assert cli.main([*args, "--resume"]) == 1
+        stderr = capsys.readouterr().err
+
+        assert "error:" in stderr and "no longer matches" in stderr, stderr
+        assert output.read_bytes() == FOREIGN
+        assert store.get(job.id).state is JobState.DONE
+        assert engine.calls == 1
+    finally:
+        store.close()
+
+
 def test_done_resume_does_not_adopt_a_wrong_name_recorded_output(
     tmp_path, fake_pipeline
 ):
