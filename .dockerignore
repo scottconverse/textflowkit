@@ -43,7 +43,9 @@ outputs
 *.local.toml
 
 # Host-side media for the Compose example, if the operator placed it in-tree.
-data
+# Anchored: only the repository-root `data/` the Compose file mounts, not any
+# fixture directory a package might legitimately ship.
+/data
 
 # OS and editor debris.
 .DS_Store
