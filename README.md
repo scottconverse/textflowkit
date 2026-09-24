@@ -159,7 +159,7 @@ to preserve it.
 
 The same version's wheel and source archive are also on the
 [GitHub release page](https://github.com/scottconverse/textflowkit/releases/latest).
-Starting with the next release, every release published by this project's release
+Starting with v0.1.6, every release published by this project's release
 workflow carries a `SHA256SUMS` asset listing the SHA-256 hash of each wheel and
 source archive it contains, so you can check a download with
 `sha256sum -c SHA256SUMS`. Releases published before that change, v0.1.5
@@ -285,14 +285,25 @@ output-file publication, job and checkpoint storage corrections, an opt-in
 faster-whisper engine, a container example, and fail-closed release guards for
 tagged versions, README claims, and exact-commit CI.
 The v0.1.5 release added a speech-bearing self-test, full-media duration,
-retained word timings, optional PDF fonts, and tokenless PyPI publishing, and its
-live evidence is the only live evidence recorded on this page.
-Windows-native ROCm and a local Windows YouTube run on the v0.1.5 release commit were verified.
-That run's receipt records the clip, timestamps, and hashes; the checklist's
-recognized-speech assertion was added after it, so treat it as shape evidence for
-that commit rather than proof of what was said.
+retained word timings, optional PDF fonts, and tokenless PyPI publishing.
+Windows-native ROCm and a local Windows YouTube run on the v0.1.5 release commit
+were verified. That run's receipt records the clip, timestamps, and hashes; the
+checklist's recognized-speech assertion was added after it, so treat it as shape
+evidence for that commit rather than proof of what was said.
+The v0.1.6 release is public: the
+[v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
+and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
+[fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
+live. Merged-main CI passed 16/16 on the tagged commit; the published wheel and
+sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
+Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI
+passed `doctor`, `selftest`, and a tiny CPU transcription to JSON and PDF. A
+local native-Windows YouTube run on the same commit returned 3 timestamped
+segments and a whole-word `elephants` match; its receipt is stored outside this
+repository. One clip is not proof of the other 12 recognized platforms or of
+general accuracy.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
-live transcription is not verified. No v0.1.6 tag, upload, or live run is verified here.
+live transcription is not verified.
 This does not imply that all 13 platforms or every harness workflow has been
 tested end to end. See the [user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 and [roadmap](https://github.com/scottconverse/textflowkit/blob/main/docs/roadmap.md).
