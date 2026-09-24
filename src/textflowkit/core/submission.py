@@ -20,6 +20,7 @@ from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.paths import default_input_root
 from textflowkit.core.runner import run_job
+from textflowkit.core.service import reject_browser_cookie_requests
 from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements
 
 
@@ -43,6 +44,10 @@ class SubmissionRequest:
     def __post_init__(self) -> None:
         if not self.source:
             raise ValueError("source is required")
+        # Every surface (CLI, MCP, HTTP single/batch, and resume rebuilding a
+        # saved request) passes through here, so this is the one place a
+        # production refusal covers all of them before any store write or queue.
+        reject_browser_cookie_requests(self.cookies_from_browser)
         # Adapter path helpers return Path objects, but a durable request must
         # be JSON-serializable before it is inserted into SQLite.
         if isinstance(self.input_root, Path):

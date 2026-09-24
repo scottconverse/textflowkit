@@ -32,6 +32,25 @@ def production_enabled() -> bool:
     return value == "production"
 
 
+def reject_browser_cookie_requests(cookies_from_browser: str | None) -> None:
+    """Refuse browser-cookie requests while the production profile is active.
+
+    The production profile serves callers who are not the Windows account owner,
+    and the server cannot tell an owner-run CLI or stdio MCP session from a remote
+    HTTP caller. So the fail-closed rule is applied to every submission that
+    reaches the shared contract, including resume of a request saved earlier with
+    the option. Developer mode on the owner's own machine is unaffected.
+    """
+    if not cookies_from_browser:
+        return
+    if production_enabled():
+        raise ServiceConfigurationError(
+            "cookies_from_browser is rejected in the production profile: the server must "
+            "not read the account owner's browser cookies for a remote caller. Use the "
+            "developer profile on the owner's machine."
+        )
+
+
 def positive_limit(name: str, default: int) -> int:
     raw = os.environ.get(name)
     try:
