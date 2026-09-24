@@ -119,12 +119,23 @@ def _archive_members(archive: Path) -> set[str]:
 
 
 def _tracked_files() -> set[str]:
+    """This checkout's tracked files, or a skip when it is not the repository root.
+
+    An unpacked sdist or a checkout nested in another repository has no usable
+    `ls-files` answer for this root, and a comparison against the wrong list
+    would fail for a reason that has nothing to do with the packaging config.
+    """
+    top = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    if top.returncode != 0 or Path(top.stdout.strip()).resolve() != ROOT:
+        pytest.skip(f"not the root of a git checkout: {top.stdout.strip() or top.stderr.strip()}")
     result = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z"],
         capture_output=True, text=True, timeout=120, check=False,
     )
-    if result.returncode != 0:
-        pytest.skip(f"cannot enumerate the tracked checkout: {result.stderr.strip()}")
+    assert result.returncode == 0, result.stderr
     return {path for path in result.stdout.split("\0") if path}
 
 
