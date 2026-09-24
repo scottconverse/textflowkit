@@ -46,6 +46,7 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
+from textflowkit.core.service import service_work_root
 from textflowkit.core.submission import (
     SubmissionRequest,
     submit_batch,
@@ -277,6 +278,7 @@ def transcribe_media(
             device=device,
             cookies_from_browser=cookies_from_browser,
             input_root=server_input_root(),
+            work_dir=service_work_root(),
             diarize=diarize,
             translate_to=translate_to,
             engine=engine,
@@ -335,7 +337,8 @@ def submit_batch_media(
             source=source, language=language, formats=fmt_list,
             output_dir=output_dir, model=model, device=device,
             diarize=diarize, translate_to=translate_to,
-            input_root=server_input_root(), engine=engine,
+            input_root=server_input_root(), work_dir=service_work_root(),
+            engine=engine,
         ) for source in sources]
         # Fresh batches preflight the engine once, inside submit_batch, before
         # queueing anything; a resume batch decides reuse per item instead.
@@ -349,15 +352,18 @@ def submit_batch_media(
 def resume_job(job_id: str) -> dict[str, Any]:
     """Resume an interrupted job using its saved request and transcript checkpoint.
 
-    The *current* input root is applied, exactly as on the HTTP surface: a source
-    that falls outside a root the operator has since tightened is refused rather
-    than resumed using the wider root saved with the original request.
+    The *current* input root and service work root are applied, exactly as on the
+    HTTP surface: a source that falls outside a root the operator has since
+    tightened is refused rather than resumed using the wider root saved with the
+    original request, and any scratch tree is created under the configured work
+    root rather than a root saved before the operator last changed it.
     """
     try:
         current_root = server_input_root()
         job = core_resume_job(
             get_default_store(), job_id,
             input_root=str(current_root) if current_root else None,
+            work_dir=service_work_root(),
         )
     except QueueFullError as exc:
         return {"error": str(exc), "retryable": True}
