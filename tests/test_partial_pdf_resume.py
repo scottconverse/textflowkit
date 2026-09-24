@@ -71,6 +71,7 @@ def fake_pipeline(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
     return output_dir, engine
 
+
 # Shapes `_normalize_pdf_metadata` must refuse, sampled from the two variant
 # families U34 owns. The comparator is the same one this route now calls, and
 # every shape in both families is pinned there; a representative subset is
@@ -238,10 +239,8 @@ def test_partial_pdf_resume_refuses_uncomparable_render_metadata(
         tmp_path, fake_pipeline, monkeypatch
     )
     published = pdf_path.read_bytes()
-    tampered = {
-        **_pdf_variants(published),
-        **_pdf_render_time_variants(published),
-    }[variant]
+    variants = {**_pdf_variants(published), **_pdf_render_time_variants(published)}
+    tampered = variants[variant]
     pdf_path.write_bytes(tampered)
 
     _refused(store, job_id, pdf_path, tampered, txt_path, engine)
