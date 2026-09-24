@@ -22,7 +22,7 @@ from pathlib import Path
 
 from textflowkit.core.model import Transcript
 from textflowkit.core.service import enforce_output_limit
-from textflowkit.render import _rename_noreplace
+from textflowkit.render import _rename_excl, _rename_noreplace
 from textflowkit.render.markdown import render_markdown
 from textflowkit.render.srt import render_srt
 from textflowkit.render.txt import render_txt
@@ -58,6 +58,14 @@ _RENAME_REFUSES_EXISTING = os.name == "nt"
 # `EINVAL` - so the syscall wrapper probes for the libc symbol and fails closed
 # on either, rather than this flag promising something the host cannot do.
 _IS_LINUX = sys.platform.startswith("linux")
+
+# Whether that primitive is Darwin's `renamex_np(..., RENAME_EXCL)`, which moves
+# the staged inode atomically and refuses an existing destination with `EEXIST`.
+# The capability is per *volume* there (`VOL_CAP_INT_RENAME_EXCL`, surfaced as
+# `volumeSupportsExclusiveRenaming`), so this flag says which call to try, not
+# that it will work: the wrapper answers `ExclusiveRenameUnsupported` on a
+# volume without it and the export then fails closed.
+_IS_MACOS = sys.platform == "darwin"
 
 
 def validate_export_requirements(formats: list[str]) -> None:
@@ -169,8 +177,9 @@ def atomic_write_bytes(
     Publication is no-clobber whenever `replace` is false: a hard link normally,
     then a platform's second no-replace primitive after a link failure, since a
     filesystem without hard links (FAT32, exFAT, some network shares) may still
-    have one - Windows' `os.rename`, and Linux's `renameat2(RENAME_NOREPLACE)`.
-    A platform that has neither keeps the link's error and publishes nothing.
+    have one - Windows' `os.rename`, Linux's `renameat2(RENAME_NOREPLACE)`, and
+    macOS's `renamex_np(RENAME_EXCL)`. A platform that has neither, or a host
+    whose native call cannot run, keeps the link's error and publishes nothing.
     None of these paths writes bytes to the destination name directly, so a
     partial file is never visible there.
     """
@@ -222,9 +231,10 @@ def atomic_write_bytes(
                 # which moves the staged inode and refuses an existing
                 # destination with EEXIST - kernel-enforced like the link, and
                 # unlike POSIX rename(2), which would replace whatever is there.
-                # Both keep the destination name either fully published or
-                # untouched. The staging file is created in `path.parent`, so
-                # the move stays on the destination's volume.
+                # macOS offers `renamex_np(RENAME_EXCL)`, the same rule on
+                # Darwin. All three keep the destination name either fully
+                # published or untouched. The staging file is created in
+                # `path.parent`, so the move stays on the destination's volume.
                 if _RENAME_REFUSES_EXISTING:
                     os.rename(temp, path)
                 elif _IS_LINUX:
@@ -233,8 +243,13 @@ def atomic_write_bytes(
                     # the flag): the export fails closed with the link failure
                     # still in the traceback, never through a plain rename.
                     _rename_noreplace.rename_noreplace(temp, path)
+                elif _IS_MACOS:
+                    # Raises ExclusiveRenameUnsupported on a macOS volume
+                    # without exclusive renaming (no libc symbol, no
+                    # `VOL_CAP_INT_RENAME_EXCL`): same fail-closed rule.
+                    _rename_excl.rename_excl(temp, path)
                 else:
-                    # No second primitive here (macOS, say): fail closed with
+                    # No second primitive on this platform: fail closed with
                     # the link's own error rather than degrading to a write
                     # that could expose or overwrite a destination.
                     raise
