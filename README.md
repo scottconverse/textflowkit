@@ -5,6 +5,10 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [Project landing page](https://www.textflowkit.org/) ·
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases)
 
+The [static site deployment](docs/site-deployment.md) is hosted on Cloudflare
+Pages. GitHub remains the source and CI host; the website does not run the
+transcription engine.
+
 Paste a URL or point at a file; get timestamped transcripts and subtitle files back.
 Built as a reusable primitive for developers — designed to sit under multiple
 products, AI harnesses, and agents.

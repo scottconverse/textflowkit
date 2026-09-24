@@ -57,6 +57,16 @@
 - [x] Correct the default input/output path-confinement documentation
 - [x] Update pinned CI checkout and Python setup actions and verify the combined matrix
 
+## Website hosting
+
+- [x] Move the static landing page to Cloudflare Pages Free, connected to the
+  GitHub `main` branch with `docs/` as the site root
+- [x] Serve `www.textflowkit.org` over HTTPS and redirect the apex domain to it
+
+See [site deployment](site-deployment.md) for the hosting configuration. This
+static page is documentation and a product landing page, not a hosted
+transcription service.
+
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not
 a deterministic pull-request job. The release gate runs locally on Windows,
