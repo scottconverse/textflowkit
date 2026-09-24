@@ -19,16 +19,31 @@ products, AI harnesses, and agents.
 
 ---
 
-> ## ⚠️ NO WARRANTY — AS IS
->
-> **This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND**, express or
-> implied, including but not limited to the warranties of MERCHANTABILITY, FITNESS
-> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE) (Apache-2.0,
-> §7–8) for the full disclaimer and limitation of liability.
->
-> **You are responsible for what you transcribe.** textflowkit can fetch media from
-> third-party platforms. Copyright, terms-of-service, and privacy obligations for any
-> media you choose to process are **yours alone**. See [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md).
+## Quickstart
+
+Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
+
+Windows (PowerShell or CMD):
+
+```powershell
+python -m pip install textflowkit
+textflowkit doctor
+textflowkit transcribe .\meeting.mp4 --formats srt,txt --output-dir .\out
+```
+
+macOS or Linux:
+
+```bash
+python -m pip install textflowkit
+textflowkit doctor
+textflowkit transcribe ./meeting.mp4 --formats srt,txt --output-dir ./out
+```
+
+`doctor` prints the Python, ffmpeg, yt-dlp, JavaScript-runtime, and
+optional-extra versions this install will use. The `transcribe` example writes
+the SRT and TXT files into `out\` and prints the path of each one; give it a
+supported URL instead of a path to fetch remote media. See **Install** below for
+the extras, and **Usage** for language, translation, speaker labels, and resume.
 
 ---
 
@@ -265,6 +280,19 @@ live transcription is not verified.
 This does not imply that all 13 platforms or every harness workflow has been
 tested end to end. See the [user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 and [roadmap](https://github.com/scottconverse/textflowkit/blob/main/docs/roadmap.md).
+
+---
+
+> ## ⚠️ NO WARRANTY — AS IS
+>
+> **This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND**, express or
+> implied, including but not limited to the warranties of MERCHANTABILITY, FITNESS
+> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE) (Apache-2.0,
+> §7–8) for the full disclaimer and limitation of liability.
+>
+> **You are responsible for what you transcribe.** textflowkit can fetch media from
+> third-party platforms. Copyright, terms-of-service, and privacy obligations for any
+> media you choose to process are **yours alone**. See [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md).
 
 ## License
 
