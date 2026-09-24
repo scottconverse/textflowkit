@@ -15,8 +15,15 @@ textflowkit.adapters.http_server:app --host 0.0.0.0`), and it cannot see the
 `Host` a browser was pointed at. `developer_request_refusal()` closes both: a
 loopback-only `Host` allowlist stops a DNS name that resolves to loopback
 (rebinding), and the peer address stops a remote client on a widened bind.
-Forwarded headers are deliberately not consulted - they are attacker-controlled
-unless a trusted proxy is known.
+Forwarded headers are deliberately not consulted there - they are
+attacker-controlled unless a trusted proxy is known, and developer mode never
+knows one.
+
+`resolve_client_identity()` is the one place that may read them, and only for
+the production rate limit. It reads `X-Forwarded-For` only when the TCP peer is
+an address named in `TEXTFLOWKIT_TRUSTED_PROXY_IPS`, and then counts the
+rightmost hop that is not itself a trusted proxy. With that setting unset it
+behaves as before: the peer address and nothing else.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ import os
 from urllib.parse import urlsplit
 
 ENV_ALLOW_REMOTE = "TEXTFLOWKIT_ALLOW_REMOTE"
+ENV_TRUSTED_PROXY_IPS = "TEXTFLOWKIT_TRUSTED_PROXY_IPS"
 
 _LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", "::1"})
 
@@ -194,3 +202,91 @@ def developer_request_refusal(
             "in front of it"
         )
     return None
+
+
+# --- production client identity -------------------------------------------
+
+class TrustedProxyConfigError(ValueError):
+    """ENV_TRUSTED_PROXY_IPS cannot be used as written."""
+
+
+def _as_address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse one address literal, or None if it is not one.
+
+    An IPv4-mapped IPv6 form is unwrapped to the IPv4 address it names: a
+    dual-stack socket reports an IPv4 peer as `::ffff:127.0.0.1`, and a proxy
+    built on one may forward the same form, so `10.0.0.1` and `::ffff:10.0.0.1`
+    have to compare equal and count as one client.
+    """
+    candidate = value.strip().strip("[]")
+    if not candidate:
+        return None
+    try:
+        addr = ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
+
+
+def trusted_proxy_networks() -> tuple[
+    ipaddress.IPv4Network | ipaddress.IPv6Network, ...
+]:
+    """Networks named by ENV_TRUSTED_PROXY_IPS; empty when it is unset.
+
+    Comma-separated IP literals and CIDR networks, IPv4 or IPv6; a bare address
+    becomes a /32 or /128. Anything else - a hostname, a blank entry, `*`, a bad
+    prefix - is refused rather than skipped. Skipping would leave an operator who
+    thinks a proxy is trusted silently without one, which is an identity hole
+    that no request ever reports.
+    """
+    raw = os.environ.get(ENV_TRUSTED_PROXY_IPS, "")
+    if not raw.strip():
+        return ()
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for item in raw.split(","):
+        entry = item.strip()
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            raise TrustedProxyConfigError(
+                f"{ENV_TRUSTED_PROXY_IPS} entry '{entry}' is not an IP address or "
+                "CIDR network"
+            ) from None
+    return tuple(networks)
+
+
+def resolve_client_identity(peer: str | None, forwarded_for: str | None) -> str:
+    """The address a production rate limit counts this request against.
+
+    With no trusted proxy configured this is exactly the TCP peer and
+    `forwarded_for` is ignored entirely. With one configured, the forwarded
+    chain is read only when the peer is itself a trusted proxy, and the identity
+    is the *rightmost* hop that is not a trusted proxy - each proxy appends the
+    address it saw, so everything to the left of that entry was typed by the
+    caller and cannot be trusted.
+
+    Anything unparseable stops the walk and falls back to the peer. That is the
+    fail-closed direction: a caller cannot invent a bucket key, a chain that
+    cannot be read is charged to the proxy rather than to a client, and a
+    forwarded value never survives as an identity unless it is a real address.
+
+    This is production-only policy. Developer mode never calls it, and must not:
+    there the peer itself is the security decision, in
+    `developer_request_refusal()`.
+    """
+    proxies = trusted_proxy_networks()
+    peer_address = _as_address(peer or "")
+    fallback = (peer or "").strip() or "unknown"
+    if not proxies or peer_address is None:
+        return fallback
+    if not any(peer_address in network for network in proxies):
+        return fallback
+    for hop in reversed((forwarded_for or "").split(",")):
+        hop_address = _as_address(hop)
+        if hop_address is None:
+            break
+        if not any(hop_address in network for network in proxies):
+            return str(hop_address)
+    return fallback

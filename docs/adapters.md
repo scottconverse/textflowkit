@@ -216,6 +216,61 @@ some YouTube formats. Local-file jobs do not require network egress. Streamable-
 MCP is a separate surface and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
 
+### Client identity behind a proxy
+
+The production rate limit is per client. Behind a reverse proxy every request
+arrives from the proxy's address, so without configuration one bucket serves
+every caller. Name the proxy, and each forwarded client gets its own bucket:
+
+```bash
+export TEXTFLOWKIT_TRUSTED_PROXY_IPS=127.0.0.1            # one proxy
+export TEXTFLOWKIT_TRUSTED_PROXY_IPS=10.0.0.0/8,2001:db8::1  # a network, IPv4 or IPv6
+```
+
+Comma-separated IP literals and CIDR networks. A value that is not an address or
+network - a hostname, a blank entry, `*` - makes the service refuse requests with
+`503` rather than be ignored, because an operator who believes a proxy is trusted
+when it is not would never see the mistake.
+
+Two rules keep this from becoming a spoofing hole:
+
+- **Only a configured proxy is believed.** If the TCP peer is not in the list,
+  every `X-Forwarded-For` value is ignored and the peer itself is the identity.
+  A direct client cannot name itself.
+- **The rightmost untrusted hop wins.** A proxy appends the address it saw to the
+  *right* of the header; everything left of that was typed by the caller. So
+  `X-Forwarded-For: 1.2.3.4, 198.51.100.7` from a trusted proxy counts against
+  `198.51.100.7` no matter what `1.2.3.4` claims. Several `X-Forwarded-For`
+  header lines are joined before the walk, so a proxy that appends its own line
+  rather than extending the caller's value is handled the same way.
+  Unparseable text is never adopted as an identity; it falls back to the proxy's
+  own address.
+
+This rule assumes the trusted proxy *adds* the address it saw rather than
+forwarding whatever the caller sent (nginx's `$proxy_add_x_forwarded_for`, for
+instance). A proxy that passes a client-supplied `X-Forwarded-For` through
+unchanged hands that client the choice of its own identity, and no header
+inspection can detect the difference.
+
+With `TEXTFLOWKIT_TRUSTED_PROXY_IPS` unset, behaviour is unchanged: the peer
+address and nothing else.
+
+**Started through `textflowkit-http`, this is the whole story.** The CLI disables
+uvicorn's own proxy-header middleware, which trusts `127.0.0.1`/`::1` implicitly
+and takes the *leftmost* forwarded entry - the caller's to forge - and would
+otherwise rewrite the peer before this app could apply the list above. If you
+start the ASGI app directly instead, the same switch is yours:
+
+```bash
+uvicorn textflowkit.adapters.http_server:app --no-proxy-headers
+```
+
+Leaving uvicorn's default middleware on (`--proxy-headers`) gives uvicorn's
+weaker rule precedence over this setting. Under it, anything able to reach the
+port from `127.0.0.1` or `::1` can choose its own rate-limit identity, so only do
+that behind a proxy that overwrites rather than appends `X-Forwarded-For`, and
+keep `FORWARDED_ALLOW_IPS` narrow.
+
 ## Durable job state
 
 By default jobs live in memory and are lost when the process exits. Set

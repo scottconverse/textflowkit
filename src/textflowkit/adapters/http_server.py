@@ -27,6 +27,7 @@ from textflowkit.core.bind import (
     UnsafeBindError,
     check_bind_safety,
     developer_request_refusal,
+    resolve_client_identity,
 )
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
@@ -189,7 +190,16 @@ async def production_guard(request: Request, call_next):
     request._body = bytes(body)
 
     rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
-    peer = request.client.host if request.client else "unknown"
+    # Behind a proxy every request shares the proxy's address. The identity is
+    # the peer unless that peer is a trusted proxy this operator named, and even
+    # then only a real address from the forwarded chain is used.
+    # Every X-Forwarded-For line is joined, not just the first: a proxy may append
+    # its own header rather than extend the caller's value, and reading only the
+    # first would let a caller-supplied line stand in for the real client.
+    peer = resolve_client_identity(
+        request.client.host if request.client else None,
+        ", ".join(request.headers.getlist("x-forwarded-for")),
+    )
     refusal = _rate_refusal(peer, time.monotonic(), rate)
     if refusal is not None:
         return JSONResponse({"error": refusal}, status_code=429)
@@ -534,7 +544,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    uvicorn.run(app, host=args.host, port=args.port)
+    # uvicorn's own proxy-header middleware trusts 127.0.0.1 and ::1 by default
+    # and takes the *leftmost* forwarded entry, which is the caller's to type. It
+    # would rewrite the peer before this app could apply its own trust set, so it
+    # is off: the app decides identity from the raw peer and
+    # TEXTFLOWKIT_TRUSTED_PROXY_IPS. Set --proxy-headers yourself only when you
+    # start the ASGI app directly and accept that middleware's weaker rule.
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
     return 0
 
 

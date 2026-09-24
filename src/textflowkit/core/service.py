@@ -107,6 +107,15 @@ def validate_production_config() -> None:
     positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
     positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, DEFAULT_FFMPEG_TIMEOUT_SECONDS)
     positive_limit("TEXTFLOWKIT_MAX_PENDING_JOBS", 100)
+    # Optional, but never silently ignored: an operator who mistypes a proxy
+    # address and believes it is trusted would be left counting every client
+    # behind that proxy as one. Fail closed instead.
+    from textflowkit.core.bind import TrustedProxyConfigError, trusted_proxy_networks
+
+    try:
+        trusted_proxy_networks()
+    except TrustedProxyConfigError as exc:
+        raise ServiceConfigurationError(str(exc)) from exc
 
 
 def service_work_root() -> str | None:
