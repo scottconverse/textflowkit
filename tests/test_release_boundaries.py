@@ -459,6 +459,30 @@ def test_ffmpeg_timeout_kills_child_and_cleans(cli_boundary, monkeypatch, capsys
     assert scratch and all(not path.exists() for path in scratch)
 
 
+def test_ffmpeg_timeout_error_names_setting_in_default_profile(cli_boundary, monkeypatch, capsys):
+    """The decode timeout also fires for a local CLI job in the default profile.
+
+    An operator who hits it needs the setting name and the duration in effect,
+    not just "timed out", because the fix is to raise that one variable.
+    """
+    root, output, _store, engine = cli_boundary
+    media = root / "clip.wav"
+    _wav(media)
+    monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "developer")
+    monkeypatch.setenv("TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS", "1")
+    children = _sleeping_decoder(monkeypatch)
+    rc = cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
+                   str(output), "--quiet"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "timed out" in err
+    assert "TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS" in err
+    assert "after 1s" in err
+    assert "default 600" in err
+    assert engine.calls == 0
+    assert children and all(child.poll() is not None for child in children)
+
+
 def test_cancellation_kills_decoder_child_and_cleans(cli_boundary, monkeypatch):
     from textflowkit.core import pipeline
     from textflowkit.core.cancel import CancelledError
