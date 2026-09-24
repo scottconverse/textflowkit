@@ -36,7 +36,10 @@
 - [x] DOCX and PDF export (`export` extra)
 - [x] Executor survives unexpected failures, with a bounded pending queue
 - [x] Collision-resistant output names, atomic writes, and scratch cleanup
-- [x] Core resume and batch shared by CLI, MCP, and HTTP
+- [x] Shared submission and resume core for CLI, MCP, and HTTP - every path submits
+  through `core.submission.submit_request` and resumes through the same core; the
+  CLI's `batch` adds its own synchronous per-item report loop, while MCP/HTTP
+  `submit_batch` only returns job handles
 - [x] Explicit translation model; separate Whisper/pyannote device reporting
 - [x] Cached model objects and ROCm/CUDA selection for diarization
 - [x] CLI binary exports and Unicode-capable PDF fonts
