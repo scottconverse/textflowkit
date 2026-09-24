@@ -11,6 +11,11 @@ jobs:
   build:
     if: github.repository == 'scottconverse/textflowkit'
     runs-on: ubuntu-latest
+    # Actions read is needed to verify that this exact commit passed main CI.
+    # It is granted to this job only: no upload job can read run results.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +51,10 @@ jobs:
             echo 'Release tag is not merged into main' >&2
             exit 1
           }
+      - name: Require successful CI for this exact commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/verify_release_ci.py
       - name: Build distributions
         run: |
           python -m pip install --upgrade build packaging

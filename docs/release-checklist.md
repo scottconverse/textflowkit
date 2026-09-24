@@ -56,7 +56,15 @@ version tag (for example `v0.1.6` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the
-tag, both package versions, and ancestry on `main`, builds the four artifacts,
+tag, both package versions, and ancestry on `main`; it then requires a
+completed, successful `push` run of
+[`ci.yml`](../.github/workflows/ci.yml) on `main` whose `head_sha` is the
+exact tagged commit, using
+[`scripts/verify_release_ci.py`](../scripts/verify_release_ci.py) with the
+workflow's `GITHUB_TOKEN` and `actions: read`. A pull-request run, a run for a
+different commit, a run still in progress, or a failed run all stop the build
+before any distribution is built or uploaded, and an API error or an
+unreadable response stops it too. Only then does it build the four artifacts,
 publishes `textflowkit-fonts` first and `textflowkit` second using PyPI Trusted
 Publishing, then creates a **draft** GitHub release with those exact artifacts.
 Only after the assets are attached does it make that release public.
@@ -64,6 +72,21 @@ No upload token is passed to CI. Both PyPI projects must have trusted publishers
 for owner `scottconverse`, repository `textflowkit`, workflow
 `publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
 should require maintainer approval before an upload job can proceed.
+
+The automated gate is evidence about the exact tagged commit, and about
+`ci.yml` only. It is not evidence about anything else:
+
+- It says nothing about the live YouTube receipt. That remains the separate
+  manual Windows gate in steps 1-5; a green hosted run never satisfies it, and
+  steps 1-5 never substitute for the CI gate.
+- It proves the tagged commit was a green `main` push, not that the tag is the
+  current tip of `main`; the workflow still checks ancestry only. Tag the
+  verified merged-main commit named by the live receipt.
+- A GitHub-hosted run cannot test the other 12 recognized sites, so this gate
+  does not extend any platform claim.
+- If it stops a release, fix the cause and rerun the workflow; if the tag
+  itself is wrong, delete and re-push it on the verified commit rather than
+  moving an existing tag.
 
 This is not a transaction across two PyPI projects and GitHub. If fonts upload
 succeeds but core fails, **there is no public GitHub release**, but fonts are
