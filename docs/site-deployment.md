@@ -32,5 +32,22 @@ Check the Pages deployment status and verify the public site over HTTPS after
 each website change. GitHub CI remains the deterministic code/test gate;
 Cloudflare Pages is only the static website host.
 
+## Unknown paths and the 404 page
+
+Pages returns a top-level `404.html` for a missing file. Without that file it
+assumes single-page-application routing and matches every unmatched path to
+`/`, so an unknown URL would serve the landing page with HTTP 200. The
+`docs/404.html` file is the response for unknown paths. It is a static page,
+like the landing page: it runs no scripts and makes no request to the
+transcription pipeline.
+
+**Pending until the next deployment.** The deployed site still returns 200 for
+unknown paths until `docs/404.html` reaches production. After the change is
+merged and deployed, request a random unknown path (for example
+`https://www.textflowkit.org/__missing_route__`) and confirm both that the
+status is **404** and that the returned content is a not-found page distinct
+from the home page. Record the observed status and the page title. A local file
+server is not Cloudflare Pages, so this check can only run after deployment.
+
 The former GitHub Pages `docs/CNAME` file is intentionally absent. Do not
 recreate it: domain routing now lives in Cloudflare, not GitHub Pages.
