@@ -30,16 +30,47 @@ from textflowkit.render import BINARY_FORMATS, SUPPORTED_FORMATS, TEXT_FORMATS
 
 TOOLS = mcp._tool_manager._tools
 
+# CPython 3.13 started stripping the source indentation out of a compiled
+# docstring; 3.10-3.12 keep it. The MCP SDK publishes `fn.__doc__` verbatim -
+# `Tool.from_function` does `description or fn.__doc__ or ""`, with no dedent of
+# its own - so the description a pre-3.13 interpreter serves from `tools/list`
+# carries the function body's own four spaces on top of the `Args:` layout:
+# eight before a parameter name, not four. These fixtures are that shape, and
+# exist so the indent assumption can be exercised without a second interpreter.
+PRE_313_TRANSCRIBE_DESCRIPTION = (
+    "\n"
+    "    Start transcribing a media URL or local file. Returns immediately with a job id.\n"
+    "\n"
+    "    Args:\n"
+    "        source: A media URL or a path to a local file.\n"
+    "        formats: Comma-separated outputs to write when output_dir is set.\n"
+    "            Available: txt, srt, vtt, md, json, docx, pdf. The binary formats\n"
+    "            (docx, pdf) are written to disk and require the export extra.\n"
+    "        output_dir: Directory to write rendered files into.\n"
+    "    "
+)
 
-def arg_help(tool: str, arg: str) -> str:
-    """The whitespace-normalized `Args:` entry for `arg` in a tool's description."""
-    _, separator, args_section = TOOLS[tool].description.partition("Args:")
-    assert separator, f"{tool} has no Args section"
+UNINDENTED_ARGS_DESCRIPTION = (
+    "Args:\n"
+    "source: A media URL or a path to a local file.\n"
+    "formats: Comma-separated outputs. Available: txt, docx.\n"
+)
+
+
+def arg_help_in(description: str, arg: str, label: str = "description") -> str:
+    """The whitespace-normalized `Args:` entry for `arg` in `description`."""
+    _, separator, args_section = description.partition("Args:")
+    assert separator, f"{label} has no Args section"
     for entry in re.split(r"\n(?=    \S+?:)", args_section):
         name, _, body = entry.strip().partition(":")
         if name == arg:
             return " ".join(body.split())
-    raise AssertionError(f"{tool} has no Args entry for {arg!r}")
+    raise AssertionError(f"{label} has no Args entry for {arg!r}")
+
+
+def arg_help(tool: str, arg: str) -> str:
+    """The same, read off the description the tool object actually publishes."""
+    return arg_help_in(TOOLS[tool].description, arg, label=tool)
 
 
 def formats_named(text: str) -> set[str]:
@@ -51,6 +82,27 @@ def test_arg_help_reads_the_published_descriptions():
     """Guard: if the docstring layout changes, fail here rather than pass vacuously."""
     assert arg_help("transcribe_media", "formats").startswith("Comma-separated")
     assert arg_help("get_transcript", "fmt").startswith("How to render")
+
+
+def test_arg_help_reads_a_pre_313_style_description():
+    """The shape CI's 3.10-3.12 interpreters publish must parse like 3.13's."""
+    help_text = arg_help_in(PRE_313_TRANSCRIBE_DESCRIPTION, "formats")
+    assert help_text.startswith("Comma-separated")
+    # the wrapped continuation lines belong to the entry above them
+    assert formats_named(help_text) == set(SUPPORTED_FORMATS)
+
+
+def test_arg_help_reads_an_unindented_args_section():
+    """Indentation at all is a layout choice, not part of the description."""
+    assert arg_help_in(UNINDENTED_ARGS_DESCRIPTION, "formats") == (
+        "Comma-separated outputs. Available: txt, docx."
+    )
+
+
+def test_arg_help_ignores_a_colon_bearing_continuation_line():
+    """`Available: ...` inside an entry's body is prose, not an argument name."""
+    with pytest.raises(AssertionError):
+        arg_help_in(PRE_313_TRANSCRIBE_DESCRIPTION, "Available")
 
 
 @pytest.mark.parametrize("tool", ["transcribe_media", "export_transcript"])
