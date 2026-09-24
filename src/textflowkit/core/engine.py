@@ -33,8 +33,6 @@ _ENGINE_ALIASES = {
     "faster-whisper": "faster-whisper",
 }
 
-FASTER_WHISPER_EXTRA = "faster-whisper"
-
 FASTER_WHISPER_MISSING = (
     "faster-whisper is not installed. It is an optional extra: install it with "
     "'pip install \"textflowkit[faster-whisper]\"', or directly with "
