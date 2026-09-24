@@ -104,16 +104,32 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The manifest step runs this repository's own script, so the tagged
+      # commit must be present. Its bytes are the ones already required to have
+      # passed CI on main, and `gh` takes the token from the environment, not
+      # from git credentials.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: distributions
           path: dist/
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Hash the downloaded distributions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/write_release_manifest.py \
+            --output SHA256SUMS --version "$RELEASE_TAG" dist/main/* dist/fonts/*
       - name: Create draft with the exact PyPI distributions
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/main/* dist/fonts/* \
+          gh release create "$RELEASE_TAG" dist/main/* dist/fonts/* SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --title "$RELEASE_TAG" --generate-notes
       - name: Publish complete GitHub release

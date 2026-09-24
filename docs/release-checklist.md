@@ -66,8 +66,15 @@ different commit, a run still in progress, or a failed run all stop the build
 before any distribution is built or uploaded, and an API error or an
 unreadable response stops it too. Only then does it build the four artifacts,
 publishes `textflowkit-fonts` first and `textflowkit` second using PyPI Trusted
-Publishing, then creates a **draft** GitHub release with those exact artifacts.
-Only after the assets are attached does it make that release public.
+Publishing, then hashes the downloaded distributions with
+[`scripts/write_release_manifest.py`](../scripts/write_release_manifest.py) and
+creates a **draft** GitHub release with those exact artifacts plus the resulting
+`SHA256SUMS` asset. Only after the assets are attached does it make that release
+public. The step refuses to write a manifest unless it finds exactly the two
+wheels and two sdists from this release's version, so a missing, duplicated, or
+stray artifact stops the release instead of publishing misleading hashes.
+`SHA256SUMS` is a release **asset**, a sidecar of the attached files; it is not
+a table inside the release notes, which GitHub generates.
 No upload token is passed to CI. Both PyPI projects must have trusted publishers
 for owner `scottconverse`, repository `textflowkit`, workflow
 `publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
@@ -100,8 +107,9 @@ complete the GitHub draft and assets from the exact build artifact after hash
 verification. Do not move the published version tag or claim a complete release
 until all four PyPI files and all four GitHub assets match.
 
-After publication, compare PyPI SHA-256 digests against the GitHub release assets
-for **both** packages, and clean-install the exact version with
+After publication, compare the `SHA256SUMS` release asset against the GitHub
+release assets and the PyPI SHA-256 digests for **both** packages, and
+clean-install the exact version with
 `textflowkit[export,mcp,http]`. Run `doctor`, `selftest`, and an actual PDF export.
 An install with `--no-deps` only proves distribution wiring, not transcription.
 
