@@ -200,10 +200,21 @@ same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 ## 7. Release and help
 
 - [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
-- [Core package on PyPI](https://pypi.org/project/textflowkit/) and
-  [optional font package](https://pypi.org/project/textflowkit-fonts/)
+- [Core package 0.1.6 on PyPI](https://pypi.org/project/textflowkit/0.1.6/) and
+  [optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md),
   [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
+
+The v0.1.6 release passed the Windows/Linux/macOS CI matrix on the tagged
+commit, and a fresh Windows Python 3.12 install of
+`textflowkit[export,mcp,http]==0.1.6` from PyPI ran `doctor`, `selftest`, and a
+tiny CPU transcription to JSON and PDF. Its published wheel and source archive
+digests match the GitHub release assets. A local native-Windows YouTube run on
+that commit returned 3 timestamped segments and a whole-word `elephants` match;
+one clip is not evidence for the other recognized platforms or for accuracy in
+general. The core `export` extra accepts `textflowkit-fonts` `>=0.1.5,<0.2`, so a
+resolver is not required to select the 0.1.6 font release over an earlier
+compatible one, though 0.1.5 and 0.1.6 are both published.
 
 The v0.1.5 release passed Windows/Linux/macOS CI, a local native-Windows
 YouTube smoke on the release commit, and a clean PyPI install with real

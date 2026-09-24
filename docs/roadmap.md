@@ -90,9 +90,15 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   acquisition and adapter security hardening, safer subtitle wrapping and
   output-file publication, job and checkpoint storage corrections, an opt-in
   faster-whisper engine, a container example, and fail-closed release gates for
-  tagged versions, README claims, and exact-commit CI. The repairs are merged;
-  the v0.1.6 tag, PyPI upload, and live site are the coordinator's release step,
-  not a claim made here.
+  tagged versions, README claims, and exact-commit CI. The repairs are merged
+  and the release is public: the
+  [v0.1.6 tag](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
+  and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
+  [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
+  live, merged-main CI passed 16/16 on the tagged commit, the published wheel
+  and sdist digests match the GitHub release assets, the landing page serves
+  v0.1.6, and a fresh install passed `doctor`, `selftest`, and a CPU
+  transcription to JSON and PDF.
 - [ ] Follow-up: normalize exported file permissions on POSIX to respect the
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading
@@ -110,8 +116,10 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   so the reuse path still publishes the core release. See the
   [release checklist](release-checklist.md#the-fonts-version-contract-issue-15).
   This stays open until a release actually reuses a published fonts version on
-  PyPI: the reuse path is covered by deterministic tests over injected index
-  responses, not by a live tag.
+  PyPI. v0.1.6 exercised only the new-fonts path, where 0.1.6 was not yet
+  published and both packages were built and uploaded; the reuse path is still
+  covered by deterministic tests over injected index responses, not by a live
+  tag.
 
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not

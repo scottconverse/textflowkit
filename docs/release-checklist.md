@@ -231,9 +231,9 @@ passing before a release, and until a new version is staged the README
 legitimately names the last published release; requiring a matching tag on
 every `ci.yml` run would fail every unrelated pull request.
 
-This guard does not verify the published PyPI page and no version has yet been
-released with it in place; it is a pre-release check on the tagged commit's
-README, and the v0.1.5 page keeps the text it was uploaded with.
+This guard does not verify the published PyPI page. It is a pre-release check on
+the tagged commit's README, and v0.1.6 is the first release published with it in
+place; the v0.1.5 page keeps the text it was uploaded with.
 
 The automated gate is evidence about the exact tagged commit, and about
 `ci.yml` only. It is not evidence about anything else:

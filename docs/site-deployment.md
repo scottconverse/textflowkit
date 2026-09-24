@@ -42,15 +42,15 @@ like the landing page: it runs no scripts and makes no request to the
 transcription pipeline.
 
 **Verified in production, 2026-09-24.** `docs/404.html` has been deployed:
-`https://www.textflowkit.org/__missing_route__` returned **404** while the home
-page returned **200**, so an unknown path is no longer answered with the landing
-page. Record the observed status and the page title. That observation is
-point-in-time, not a standing guarantee: it holds until a change to
-`docs/404.html` or to the Pages configuration is deployed, so re-run the same
-request after any such change and confirm both the **404** status and returned
-content that is a not-found page distinct from the home page. A local file
-server is not Cloudflare Pages, so this check can only run against the deployed
-site.
+`https://www.textflowkit.org/__missing_route__` returned **404** with the page
+title `TextFlowKit — page not found (404)`, while the home page returned
+**200**, so an unknown path is no longer answered with the landing page. That
+observation is point-in-time, not a standing guarantee: it holds until a change
+to `docs/404.html` or to the Pages configuration is deployed, so after any such
+change re-run the same request and confirm both the **404** status and returned
+content that is a not-found page distinct from the home page. Each deployment
+needs its own record of the observed status and title. A local file server is not
+Cloudflare Pages, so this check can only run against the deployed site.
 
 The former GitHub Pages `docs/CNAME` file is intentionally absent. Do not
 recreate it: domain routing now lives in Cloudflare, not GitHub Pages.
