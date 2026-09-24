@@ -117,7 +117,11 @@ version being released. The manifest script takes the two versions separately:
 `--version` pins the two `textflowkit` artifacts (it is the release tag), and
 `--fonts-version` pins the two `textflowkit-fonts` artifacts, defaulting to
 `--version` when it is not given. A caller that names only `--version` therefore
-still requires the fonts package to match it.
+still requires the fonts package to match it, and a caller that names neither
+still requires all four artifacts to carry one version, exactly as before the
+fonts version could differ. Reuse is opt-in: `--fonts-version` has to be passed
+deliberately, and on its own it is refused, because pinning the fonts artifacts
+while leaving the core artifacts unpinned says less than naming neither does.
 
 Reusing an earlier fonts release means reusing the **original published bytes**:
 the wheel and sdist already on PyPI, whose digests PyPI recorded. A rebuild is a

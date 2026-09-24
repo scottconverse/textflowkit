@@ -23,7 +23,10 @@ release instead of republishing it. Each project's wheel and sdist must still
 carry the same version, and each project is checked against the version
 expected for it - `--version` for core, `--fonts-version` for fonts. Naming
 only `--version` still requires fonts to match it, which is what every caller
-did before this flag existed.
+did before this flag existed, and naming neither keeps the older and stricter
+meaning: one version across all four artifacts, so the reuse case has to be
+asked for. Naming only `--fonts-version` is refused, because it would leave the
+core artifacts unpinned.
 """
 
 from __future__ import annotations
@@ -104,6 +107,12 @@ def manifest_lines(
     `expect_fonts_version` pins the fonts artifacts. When the fonts version is
     not named, the core version is expected of it too, so a caller that names
     one version keeps the guarantee it had before the fonts flag existed.
+
+    The reuse case is opt-in, so a call that pins nothing keeps the historic
+    meaning of "one build": all four artifacts must carry the same version. A
+    fonts version with no core version is refused rather than accepted, because
+    it would name which fonts build was hashed and leave the core artifacts
+    unpinned.
     """
     found: dict[tuple[str, str], Path] = {}
     versions: dict[str, str] = {}
@@ -136,23 +145,40 @@ def manifest_lines(
     # The release tag names core; fonts is the companion package that may be
     # reused from an earlier release.
     core_project, fonts_project = EXPECTED_PROJECTS
-    expected_for = {
-        core_project: expect_version,
-        # Backward compatible default: a caller that names only the release tag
-        # still gets its version required of the fonts package.
-        fonts_project: (
-            expect_fonts_version if expect_fonts_version is not None else expect_version
-        ),
-    }
-    for project, expectation in expected_for.items():
-        if expectation is None:
-            continue
-        expected = expectation.removeprefix("v")
-        if versions[project] != expected:
+    if expect_version is None and expect_fonts_version is None:
+        # Nothing was pinned, which is the call that meant "one build" before a
+        # fonts version could differ. It keeps that meaning: one version across
+        # the whole set. Reuse has to be asked for.
+        if len(set(versions.values())) > 1:
             raise ManifestError(
-                f"artifacts disagree on version: {project} candidates are "
-                f"{versions[project]}, but the release expects {expected}"
+                "artifacts disagree on version: this set mixes "
+                + ", ".join(f"{project} {version}" for project, version in sorted(versions.items()))
+                + "; pass --version to pin the release, and --fonts-version too to allow the "
+                "fonts package a different version"
             )
+    elif expect_version is None:
+        # Fail closed: core is what the release tag names, and this call would
+        # leave the core artifacts without any expected version.
+        raise ManifestError(
+            "artifacts disagree on version: --fonts-version was given without --version, "
+            "so the textflowkit candidates would be unpinned; pass --version as well"
+        )
+    else:
+        expected_for = {
+            core_project: expect_version,
+            # Backward compatible default: a caller that names only the release
+            # tag still gets its version required of the fonts package.
+            fonts_project: (
+                expect_fonts_version if expect_fonts_version is not None else expect_version
+            ),
+        }
+        for project, expectation in expected_for.items():
+            expected = expectation.removeprefix("v")
+            if versions[project] != expected:
+                raise ManifestError(
+                    f"artifacts disagree on version: {project} candidates are "
+                    f"{versions[project]}, but the release expects {expected}"
+                )
     return [
         f"{_digest(found[key])}  {found[key].name}"
         for key in sorted(found, key=lambda key: found[key].name)
@@ -190,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="expected release version; the tag name (v0.1.6) is accepted")
     parser.add_argument("--fonts-version", default=None,
                         help="expected textflowkit-fonts version, which may be older than "
-                             "--version; defaults to --version")
+                             "--version; defaults to --version and requires it to be given")
     args = parser.parse_args(argv)
     try:
         lines = write_release_manifest(
