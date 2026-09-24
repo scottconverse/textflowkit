@@ -126,8 +126,10 @@ def _require_engine_ready(engine: str) -> None:
     Called only on the paths that are about to create or queue a job - never at
     request construction. A completed job whose transcript can be reused is
     returned without ever touching an engine, so uninstalling the optional extra
-    must not stop that reuse. The engine *name* is already settled, more cheaply,
-    in ``SubmissionRequest``; this adds the one check that needs an import.
+    must not stop that reuse. On a resume it is called before the row is
+    un-terminated, so a refusal cannot leave a job PENDING with nothing queued to
+    run it. The engine *name* is already settled, more cheaply, in
+    ``SubmissionRequest``; this adds the one check that needs an import.
     """
     require_engine(engine)
 
@@ -170,6 +172,16 @@ def submit_request(
                 return updated or prior
         if prior.state in {JobState.PENDING, JobState.RUNNING}:
             raise ValueError(f"job '{prior.id}' is already active")
+        # Reuse of this *job* has been ruled out above, so the resume is about to
+        # create or queue work. The check goes before `prepare_resume` and the
+        # reopen below, because both un-terminal the row: refusing afterwards
+        # would leave a job PENDING with its error and cancellation flag already
+        # cleared and no worker ever queued for it. A checkpoint that already
+        # holds a finished transcript can still skip the engine deeper in the
+        # pipeline; that is the pipeline's decision, made after the row is
+        # reopened, and second-guessing it here would mean duplicating its resume
+        # logic in the submission contract.
+        _require_engine_ready(request.engine)
         prepared = prepare_resume(store, prior, checkpoint) if checkpoint else None
         if checkpoint is None:
             reopened = store.update(
@@ -181,7 +193,6 @@ def submit_request(
             prepared = reopened, None
         if prepared is not None:
             job, checkpoint_payload = prepared
-            _require_engine_ready(request.engine)
             kwargs = request.run_kwargs()
             store.update(job.id, request=request.to_dict())
             if checkpoint_payload is not None:
