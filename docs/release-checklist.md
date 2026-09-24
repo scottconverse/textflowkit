@@ -139,6 +139,17 @@ the version declared in `packages/textflowkit-fonts/pyproject.toml` and asks
   hide that with `skip-existing`. The GitHub release therefore still carries the
   four distributions and `SHA256SUMS`, but the fonts files are the published
   bytes rather than a fresh build.
+
+  Skipping the fonts upload does **not** skip the rest of the release. The core
+  upload job needs both the build job and the fonts job, and it carries its own
+  condition because GitHub skips a job whose `needs:` job was skipped: it
+  continues when the fonts job uploaded a new version, or when it was skipped
+  and the resolution reported a reuse, and it refuses to continue for a failed
+  or cancelled fonts upload, a failed build, a cancelled run, or a skipped
+  fonts job that was not a reuse. So a core release can never be published
+  against a fonts version that is not on PyPI. The GitHub release job has no
+  condition of its own, so a core upload that failed or was skipped leaves the
+  release uncreated.
 - **Anything else stops the release before it builds or uploads.** A transient
   or 5xx answer, a response that is not JSON or has no file list, a release whose
   files are not exactly one wheel and one sdist for that version (a partial

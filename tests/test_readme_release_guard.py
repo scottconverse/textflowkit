@@ -324,6 +324,18 @@ def _steps(job_block: str) -> list[str]:
     return ["      - " + chunk for chunk in job_block.split(marker)[1:]]
 
 
+def _needs(job_block: str) -> list[str]:
+    """The job ids in the job's `needs:`, in order, for a scalar or a list."""
+    match = re.search(r"^    needs: (?P<value>.+)$", job_block, re.MULTILINE)
+    assert match, "the job declares no needs"
+    value = match.group("value").strip()
+    assert value and not value.startswith("#"), value
+    if value.startswith("["):
+        assert value.endswith("]"), value
+        value = value[1:-1]
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def test_the_build_job_runs_the_readme_guard_before_it_builds_anything() -> None:
     build = _job(PUBLISH, "build")
     assert GUARD_SCRIPT in build
@@ -344,8 +356,11 @@ def test_every_upload_job_depends_on_the_guard_that_the_build_job_runs() -> None
     build = _job(PUBLISH, "build")
     for job in ("publish-fonts", "publish-main"):
         assert UPLOAD_ACTION in _job(PUBLISH, job), job
-    assert "needs: build" in _job(PUBLISH, "publish-fonts")
-    assert "needs: publish-fonts" in _job(PUBLISH, "publish-main")
+    # Both upload jobs name the guard's job directly, not only through the fonts
+    # job: the core upload waits on the build as well, so no upload can be
+    # reached without the README having been checked on this commit.
+    assert "build" in _needs(_job(PUBLISH, "publish-fonts"))
+    assert "build" in _needs(_job(PUBLISH, "publish-main"))
     assert build.index(GUARD_SCRIPT) < PUBLISH.index(UPLOAD_ACTION)
 
 

@@ -113,7 +113,28 @@ jobs:
           packages-dir: dist/fonts/
 
   publish-main:
-    needs: publish-fonts
+    # The core upload needs the build as well as the fonts job. On a reuse the
+    # fonts job is *skipped*, and GitHub skips a job whose `needs:` job was
+    # skipped unless the job's `if` uses a status check function - `cancelled()`
+    # below. That is why the condition is written out instead of left implicit:
+    # an implicit `success()` would lose to the skip propagation and the reuse
+    # path would upload nothing and publish no release.
+    #
+    # `always()` would also defeat the skip propagation, but it runs the job in
+    # a cancelled run too, so it is not used.
+    #
+    # Core may continue past the fonts job only when that job uploaded a new
+    # fonts version or was skipped because the release reuses published files. A
+    # failed or cancelled fonts upload, a failed build, a cancelled run, and a
+    # skipped fonts job that was not a reuse all leave core unpublished, so a
+    # core release cannot advertise a fonts version that is not on PyPI.
+    needs: [build, publish-fonts]
+    if: >-
+      ${{ !cancelled()
+          && needs.build.result == 'success'
+          && (needs.publish-fonts.result == 'success'
+              || (needs.publish-fonts.result == 'skipped'
+                  && needs.build.outputs.fonts_mode == 'reuse')) }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -128,6 +149,11 @@ jobs:
           packages-dir: dist/main/
 
   publish-github-release:
+    # Deliberately no `if:` here. The implicit `success()` plus the default skip
+    # propagation is the gate that matters: a core upload that failed or was
+    # skipped for any reason skips this job too, so a failed release cannot end
+    # in a public GitHub release. Adding a status check function here would
+    # weaken that, not strengthen it.
     needs: publish-main
     runs-on: ubuntu-latest
     permissions:

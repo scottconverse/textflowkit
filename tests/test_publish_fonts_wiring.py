@@ -83,10 +83,23 @@ def _needs(job_block: str) -> list[str]:
 
 
 def _condition(job_block: str) -> str:
-    """The job's `if:` expression, with runs of whitespace collapsed."""
-    match = re.search(r"^    if: (?P<value>\$\{\{.*?\}\})", job_block, re.MULTILINE | re.DOTALL)
-    assert match, "the job declares no if condition"
-    return re.sub(r"\s+", " ", match.group("value"))
+    """The job's `if:` expression, with runs of whitespace collapsed.
+
+    The expression may be a one-line scalar or a folded (`>-`) block spanning
+    several lines; the continuation lines are joined before the `${{ ... }}`
+    body is taken, so both spellings are read the same way.
+    """
+    lines = job_block.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith("    if:")), None)
+    assert start is not None, "the job declares no if condition"
+    body = [lines[start].split("if:", 1)[1]]
+    for line in lines[start + 1:]:
+        if line.strip() and not line.startswith("      "):
+            break
+        body.append(line)
+    match = re.search(r"\$\{\{.*?\}\}", re.sub(r"\s+", " ", " ".join(body)))
+    assert match, f"the job's if is not an expression: {' '.join(body).strip()!r}"
+    return match.group(0)
 
 
 def _python_condition(condition: str) -> str:

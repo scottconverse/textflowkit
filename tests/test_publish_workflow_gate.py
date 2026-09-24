@@ -47,6 +47,18 @@ def _gate_step(job_block: str) -> str:
     return steps[0]
 
 
+def _needs(job_block: str) -> list[str]:
+    """The job ids in the job's `needs:`, in order, for a scalar or a list."""
+    match = re.search(r"^    needs: (?P<value>.+)$", job_block, re.MULTILINE)
+    assert match, "the job declares no needs"
+    value = match.group("value").strip()
+    assert value and not value.startswith("#"), value
+    if value.startswith("["):
+        assert value.endswith("]"), value
+        value = value[1:-1]
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def test_the_build_job_runs_the_gate_before_it_builds_anything() -> None:
     build = _job(PUBLISH, "build")
     assert build.index(GATE_SCRIPT) < build.index("Build distributions")
@@ -54,9 +66,12 @@ def test_the_build_job_runs_the_gate_before_it_builds_anything() -> None:
 
 def test_every_upload_job_depends_on_the_gate_that_the_build_job_runs() -> None:
     assert _job(PUBLISH, "build").index(GATE_SCRIPT) < PUBLISH.index(UPLOAD_ACTION)
-    assert "needs: build" in _job(PUBLISH, "publish-fonts")
-    assert "needs: publish-fonts" in _job(PUBLISH, "publish-main")
-    assert "needs: publish-main" in _job(PUBLISH, "publish-github-release")
+    # The core upload names the build job as well as the fonts upload, so no
+    # upload can run without this commit having passed main CI. A `needs:` list
+    # is spelled as a list there; the ids are read rather than substring-matched.
+    assert _needs(_job(PUBLISH, "publish-fonts")) == ["build"]
+    assert "build" in _needs(_job(PUBLISH, "publish-main"))
+    assert _needs(_job(PUBLISH, "publish-github-release")) == ["publish-main"]
     for job in ("publish-fonts", "publish-main"):
         assert UPLOAD_ACTION in _job(PUBLISH, job), job
 
