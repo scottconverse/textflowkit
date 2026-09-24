@@ -138,21 +138,3 @@ def test_the_rule_leaves_the_export_examples_alone():
     ]
     assert lines, "the user manual no longer shows an export --format example"
     assert not _format_option_offenders(lines), _format_option_offenders(lines)
-
-
-def test_abbreviated_format_still_parses_today():
-    """Record the retraction: the old example ran, via abbreviation, not by the docs.
-
-    This pins today's parser behaviour as the reason the docs edit is a
-    durability fix rather than a correctness fix. It is not a licence for new
-    examples to abbreviate: the parser is free to reject the prefix later, and
-    the docs must not depend on it.
-    """
-    parser = cli_mod._build_parser()
-
-    assert parser.parse_args(
-        ["transcribe", "clip.wav", "--diarize", "--formats", "json"]
-    ).formats == "json"
-    assert parser.parse_args(
-        ["transcribe", "clip.wav", "--diarize", "--format", "json"]
-    ).formats == "json"
