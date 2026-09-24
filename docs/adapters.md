@@ -265,9 +265,10 @@ docker compose ps            # `healthy` is the container's own authenticated pr
 
 `docker compose ps` reports the **container's health status**, which is the probe
 in `healthcheck.test` calling `/health` with the Bearer token from the container's
-own environment. It is not a call from your host. To see the response body, run
-that same probe on demand - it reads the token inside the container, so no token
-value reaches any command line:
+own environment. It is not a call from your host. To run that same probe on demand,
+use `docker compose exec`: it reads the token inside the container, so no token
+value reaches any command line, and it fails the same way the healthcheck would -
+it asserts on the response body rather than printing it:
 
 ```bash
 docker compose exec textflowkit-http python -c "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8767/health', headers={'Authorization': 'Bearer ' + os.environ['TEXTFLOWKIT_API_TOKEN']}); body = urllib.request.urlopen(request, timeout=3).read(); assert b'status' in body, body"
