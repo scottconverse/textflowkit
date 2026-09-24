@@ -259,9 +259,25 @@ they build a server, not a published service.
 ```bash
 cp .env.example .env         # then put a long random token in it
 mkdir -p data/input          # media the container is allowed to read
-docker compose up --build
-curl -H "Authorization: Bearer $TEXTFLOWKIT_API_TOKEN" http://127.0.0.1:8767/health
+docker compose up --build -d
+docker compose ps            # `healthy` is the container's own authenticated probe
 ```
+
+`docker compose ps` reports the **container's health status**, which is the probe
+in `healthcheck.test` calling `/health` with the Bearer token from the container's
+own environment. It is not a call from your host. To see the response body, run
+that same probe on demand - it reads the token inside the container, so no token
+value reaches any command line:
+
+```bash
+docker compose exec textflowkit-http python -c "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8767/health', headers={'Authorization': 'Bearer ' + os.environ['TEXTFLOWKIT_API_TOKEN']}); body = urllib.request.urlopen(request, timeout=3).read(); assert b'status' in body, body"
+```
+
+A host `curl` is deliberately not shown. `docker compose` reads `.env` to
+interpolate the Compose file; it does not export those values into your shell, so
+a host request would send an empty bearer token. Exporting the variable to make
+the call work would put the token value in that client's argv, which is what the
+token note above keeps out of command lines.
 
 The image carries ffmpeg and a JavaScript runtime, installs the package with the
 `http` extra, and runs `textflowkit-http --host 0.0.0.0 --allow-remote` as uid
