@@ -164,6 +164,17 @@ textflowkit-http --host 0.0.0.0 --allow-remote
 TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
 ```
 
+The same policy is enforced per request, so it also covers the JSON HTTP app
+started directly through an ASGI server (`uvicorn
+textflowkit.adapters.http_server:app`), where the startup check above never
+runs. A developer-mode request is refused with `403` unless its `Host` header
+names loopback, any `Origin` header it carries names a loopback origin, and the
+client's own address (not `X-Forwarded-*`, which is not trusted) is loopback.
+That blocks a hostname that resolves to loopback (DNS rebinding) and cross-site
+browser requests. `--allow-remote` / `TEXTFLOWKIT_ALLOW_REMOTE=1` is the single
+opt-in for all three: behind a gateway the public `Host` arrives, so this
+allowlist cannot apply.
+
 Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
 `TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit
 input/output/work roots, and an on-disk SQLite job store are configured. It
