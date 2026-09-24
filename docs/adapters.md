@@ -95,6 +95,10 @@ Tools: `list_sources`, `transcribe_media`, `submit_batch_media`, `resume_job`,
 Read-only tools carry `readOnlyHint: true`. Submission and export tools carry
 `openWorldHint: true`; resume and cancellation are marked as mutating.
 
+`transcribe_media` and `submit_batch_media` take the same options as the HTTP
+bodies above, `engine` included; a name that is unknown, or whose optional
+package is missing, comes back as `{"error": ...}` before any job is queued.
+
 ### Harness configuration
 
 DSH (`cordis.yml` patch), HTTP example (**not live-connection verified**):
@@ -145,6 +149,20 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | GET | `/jobs/{id}/search?q=&limit=&context=` | search a transcript |
 | POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
+
+Both submission bodies (`POST /jobs` and each item of `POST /jobs/batch`) accept
+the same options: `source`, `language`, `formats`, `output_dir`, `model`,
+`device`, `engine`, `cookies_from_browser`, `diarize`, and `translate_to`.
+`engine` defaults to `whisper` — openai-whisper on the torch stack: ROCm on AMD,
+CUDA on NVIDIA, CPU otherwise — and may be set to `faster-whisper`, the opt-in
+CTranslate2 engine for CPU and Apple Silicon that needs
+`pip install "textflowkit[faster-whisper]"`. The default is unchanged, and no
+speed or accuracy comparison between the engines is claimed. An unknown engine
+name, or a missing extra, is answered with **422 before a job record is written**;
+on `/jobs/batch` that refusal covers the whole request, so a fresh batch is never
+partly queued for one unusable engine. The choice is stored on the durable
+request and checked again when the job is resumed, except when that resume only
+reuses a completed transcript, which needs no engine.
 
 ### Developer mode and production profile
 

@@ -304,8 +304,11 @@ A faster-whisper install alongside a ROCm torch build has **not** been measured
 here, so treat it as unverified on your machine rather than as a supported
 combination.
 
-**When the extra is missing:** on the command line it is checked before any media
-is fetched or anything is loaded, so you get the install line above instead of a
-download followed by a traceback. The Python API (`transcribe(engine="faster-whisper")`)
-checks at engine load instead, which happens after acquisition inside the
-pipeline.
+**When the extra is missing:** it is checked on every surface before any media is
+fetched, so you get the install line above instead of a download followed by a
+traceback. The command line and the Python API (`transcribe(engine="faster-whisper")`)
+both refuse up front, and so do the MCP and HTTP adapters - an unknown engine name
+or a missing extra is reported there as `{"error": ...}` or HTTP 422 before a job
+record is written. A saved request is checked the same way when it is resumed -
+unless the resume is only reusing a completed transcript, which needs no engine
+at all.

@@ -76,11 +76,19 @@ def test_existing_rocm_users_are_told_how_to_keep_their_torch():
     assert "--no-deps" in section
 
 
-def test_the_missing_extra_failure_is_scoped_to_the_cli():
-    """Only the CLI preflights; the Python API reaches the error at engine load."""
-    low = _faster_section().lower()
-    assert "command line" in low
-    assert "engine load" in low
+def test_the_missing_extra_is_refused_before_acquisition_on_every_surface():
+    """U43 removed the CLI-only scope this test used to pin.
+
+    The command line was the only surface that preflighted the extra; the engine
+    then reached its error at load, after acquisition inside the pipeline. Every
+    surface - command line, Python API, MCP, and HTTP - now refuses before any
+    media is fetched, so the old wording is wrong rather than merely stale.
+    """
+    low = " ".join(_faster_section().lower().split())
+    assert "before any media is fetched" in low
+    for surface in ("command line", "python api", "mcp", "http"):
+        assert surface in low, surface
+    assert "engine load" not in low
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib is stdlib from 3.11")
