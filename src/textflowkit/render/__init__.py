@@ -15,6 +15,7 @@ Two paths, because two kinds of output:
 from __future__ import annotations
 
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -67,18 +68,27 @@ _IS_LINUX = sys.platform.startswith("linux")
 # volume without it and the export then fails closed.
 _IS_MACOS = sys.platform == "darwin"
 
-# Formats whose rendering is not byte-reproducible, so a published file can
-# never be compared with a fresh rendering of the same transcript.
+# A PDF is the one format whose rendering is not byte-reproducible, but only
+# three fields are to blame, and each is written afresh for every render:
 #
-# PDF: reportlab stamps a random document identifier into the trailer of every
-# file it writes (`/ID [<32 hex><32 hex>]`). Measured on this unit's host
-# (reportlab 5.0.1): two `render_bytes(transcript, "pdf")` calls over one
-# transcript differ in exactly those 64 bytes and in nothing else, at the same
-# length. Reuse of a PDF is therefore checked by name, location and size - the
-# length is stable for identical content - because a byte comparison would
-# refuse a PDF this tool had itself just published. Every other format renders
-# byte-identically (measured the same way).
-_NON_REPRODUCIBLE_FORMATS = frozenset({"pdf"})
+# - the trailer's `/ID`, a random pair of 32-hex-character digests;
+# - `/CreationDate` and `/ModDate`, the render time, written by reportlab's one
+#   date formatter `D:%04d%02d%02d%02d%02d%02d%+03d'%02d'`.
+#
+# Measured on this unit's host (reportlab 5.0.1): two renders of one transcript
+# back to back are the same length and differ only inside `/ID`; a third render
+# two seconds later differs only in the two date values (2 bytes at second
+# resolution). The date fields matter for a real resume, which renders long
+# after the file was published, so a comparison that blanked only `/ID` would
+# refuse the file this tool published itself.
+#
+# Comparison blanks exactly those three fields, in place and only when each
+# occurs exactly once in exactly the shape below, and compares every other byte
+# - so a tamper anywhere else, including a same-length edit, is refused. A file
+# whose metadata has an unknown or ambiguous shape cannot be compared at all and
+# is refused rather than accepted on a weaker check.
+_PDF_ID_BLOCK = re.compile(rb"/ID\s*\[<([0-9A-Fa-f]{32})><([0-9A-Fa-f]{32})>\]")
+_PDF_DATE_VALUE = re.compile(rb"/(CreationDate|ModDate)(\s*)\(D:(\d{14}[+-]\d{2}'\d{2}')\)")
 
 
 def validate_export_requirements(formats: list[str]) -> None:
@@ -153,6 +163,66 @@ def _holds_exactly(path: Path, data: bytes) -> bool:
             return handle.read() == data
     except OSError:
         return False
+
+
+def _normalize_pdf_metadata(data: bytes) -> bytes | None:
+    """`data` with the render-random PDF metadata blanked, or None.
+
+    Blanked in place, so the result is the same length as the input: the two
+    document-ID digests, and the `/CreationDate` and `/ModDate` values. Nothing
+    else is touched, so every other byte still has to match a fresh rendering
+    exactly.
+
+    None means a field is absent, repeated, or not of the shape reportlab
+    writes - see `_PDF_ID_BLOCK` and `_PDF_DATE_VALUE`. Such a file has no
+    comparable form, and the caller must fail closed rather than fall back to a
+    weaker check. The blanking is an in-memory comparison artefact only; no
+    blanked bytes are ever written anywhere.
+    """
+    ids = list(_PDF_ID_BLOCK.finditer(data))
+    if len(ids) != 1:
+        return None
+    dates = list(_PDF_DATE_VALUE.finditer(data))
+    if len(dates) != 2:
+        return None
+    by_name = {match.group(1): match for match in dates}
+    if set(by_name) != {b"CreationDate", b"ModDate"}:
+        return None
+    spans = [(ids[0].start(1), ids[0].end(1)), (ids[0].start(2), ids[0].end(2))]
+    for field in (b"CreationDate", b"ModDate"):
+        if data.count(b"/" + field) != 1:
+            return None
+        spans.append((by_name[field].start(3), by_name[field].end(3)))
+    blanked = bytearray(data)
+    for start, end in spans:
+        blanked[start:end] = b"0" * (end - start)
+    return bytes(blanked)
+
+
+def _matches_a_pdf_rendering(path: Path, data: bytes) -> bool:
+    """Whether `path` is the rendering `data`, up to its render-random metadata.
+
+    That means every byte matches except the two document-ID digests and the
+    `/CreationDate`/`/ModDate` values (`_normalize_pdf_metadata`). The link
+    refusal of `_is_regular_file` applies here too: a recorded PDF is read
+    through a name this job published, never through a link. A rendering that is
+    itself uncomparable fails closed, so an unknown reportlab shape can never
+    turn into an accepted file.
+    """
+    if not _is_regular_file(path):
+        return False
+    try:
+        with path.open("rb") as handle:
+            recorded = handle.read()
+    except OSError:
+        return False
+    expected = _normalize_pdf_metadata(data)
+    if expected is None:
+        return False
+    actual = _normalize_pdf_metadata(recorded)
+    if actual is None:
+        return False
+    return actual == expected
 
 
 def _ordinary_file_mode(directory: Path) -> int | None:
@@ -347,15 +417,16 @@ def _reusable_prior(prior: Path, expected: Path, data: bytes, norm: str) -> bool
 
     The name must be exactly the one this job's stem produces, so a
     same-suffix neighbour in the output directory is never handed back as the
-    requested output; and the file must hold what this call would write. A
-    format whose rendering cannot be reproduced (`_NON_REPRODUCIBLE_FORMATS`)
-    is matched on length instead of content - the strongest check available,
-    and one that still refuses a truncated or replaced file.
+    requested output; and the file must hold what this call would write. A PDF
+    is the one exception to "byte for byte", and a narrow one: reportlab writes
+    a random document ID and the render time into every file, so those three
+    fields alone are blanked before the comparison
+    (`_normalize_pdf_metadata`) and every other byte still has to match.
     """
     if prior.name != expected.name:
         return False
-    if norm in _NON_REPRODUCIBLE_FORMATS:
-        return _has_length(prior, data)
+    if norm == "pdf":
+        return _matches_a_pdf_rendering(prior, data)
     return _holds_exactly(prior, data)
 
 
@@ -377,7 +448,9 @@ def ensure_outputs(
     A recorded output is reused only when it is the file this job published:
     inside the requested output directory, named exactly `{stem}.{format}`, a
     regular file, and holding what this call would write (see
-    `_reusable_prior`). Nothing else is adopted. A missing output is rendered
+    `_reusable_prior`; for a PDF that means every byte but the render-random
+    metadata, and only when that metadata has the one shape reportlab writes).
+    Nothing else is adopted. A missing output is rendered
     again from the transcript in hand, and an expected name already taken by
     other bytes fails closed through the no-clobber publish rather than being
     overwritten or returned in place of the transcript.
