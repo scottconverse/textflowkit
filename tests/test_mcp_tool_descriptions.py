@@ -76,15 +76,17 @@ def _args_section(description: str) -> str | None:
 def _entries(section: str) -> list[re.Match[str]]:
     """The lines that start an `Args:` entry.
 
-    The least-indented named lines are the entries; anything indented deeper is
-    one of their wrapped continuation lines, so a colon-bearing sentence inside
-    another entry's body cannot pass for an argument name.
+    The first named line sets the indentation for the block, and a named line at
+    any other depth is body text - a wrapped continuation of the entry above it,
+    or prose such as `Available: ...`. So an unrelated sentence with a colon
+    cannot pass for an argument name, and an outdented one cannot demote the
+    entries that follow it into somebody's body.
     """
     candidates = list(_ARG_LINE.finditer(section))
     if not candidates:
         return []
-    indent = min(len(m.group("indent")) for m in candidates)
-    return [m for m in candidates if len(m.group("indent")) == indent]
+    indent = candidates[0].group("indent")
+    return [m for m in candidates if m.group("indent") == indent]
 
 
 def arg_names_in(description: str) -> list[str]:
@@ -147,6 +149,19 @@ def test_arg_help_ignores_a_colon_bearing_continuation_line():
     """`Available: ...` inside an entry's body is prose, not an argument name."""
     with pytest.raises(AssertionError):
         arg_help_in(PRE_313_TRANSCRIBE_DESCRIPTION, "Available")
+
+
+def test_arg_help_keeps_the_entry_indent_the_first_named_line_set():
+    """An outdented named line cannot demote the entries after it into a body."""
+    description = (
+        "Args:\n"
+        "    source: A media URL or a path to a local file.\n"
+        "  Note: outdented by mistake.\n"
+        "    formats: Comma-separated outputs.\n"
+    )
+    assert arg_help_in(description, "formats") == "Comma-separated outputs."
+    with pytest.raises(AssertionError):
+        arg_help_in(description, "Note")
 
 
 def test_every_tool_serves_the_same_args_help_to_a_pre_313_interpreter():
