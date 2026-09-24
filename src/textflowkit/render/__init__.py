@@ -178,10 +178,15 @@ def atomic_write_bytes(
     then a platform's second no-replace primitive after a link failure, since a
     filesystem without hard links (FAT32, exFAT, some network shares) may still
     have one - Windows' `os.rename`, Linux's `renameat2(RENAME_NOREPLACE)`, and
-    macOS's `renamex_np(RENAME_EXCL)`. A platform that has neither, or a host
-    whose native call cannot run, keeps the link's error and publishes nothing.
-    None of these paths writes bytes to the destination name directly, so a
-    partial file is never visible there.
+    macOS's `renamex_np(RENAME_EXCL)`. A platform with no second primitive
+    re-raises the link's own error. A host that has one but cannot run it - no
+    libc symbol, or a filesystem that will not take the flag - raises that
+    wrapper's error instead (`NoReplaceRenameUnsupported` on Linux,
+    `ExclusiveRenameUnsupported` on macOS): a different exception, with the link
+    failure one or two steps down its `__cause__`/`__context__` chain rather
+    than the error the caller sees. Either way nothing is published, and none of
+    these paths writes bytes to the destination name directly, so a partial file
+    is never visible there.
     """
     from textflowkit.core.paths import verify_output_file_target
 
@@ -240,8 +245,9 @@ def atomic_write_bytes(
                 elif _IS_LINUX:
                     # Raises NoReplaceRenameUnsupported when this Linux host
                     # cannot do it (no libc symbol, no filesystem support for
-                    # the flag): the export fails closed with the link failure
-                    # still in the traceback, never through a plain rename.
+                    # the flag): fails closed as its own error, never through a
+                    # plain rename, with the link failure left further down the
+                    # exception chain.
                     _rename_noreplace.rename_noreplace(temp, path)
                 elif _IS_MACOS:
                     # Raises ExclusiveRenameUnsupported on a macOS volume
