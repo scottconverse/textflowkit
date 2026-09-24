@@ -115,6 +115,10 @@ def layout_cues(
     # lines are lines of their own, so they come out of the cue's line budget.
     leading_label_lines = len(label_lines) - 1 if label_lines else 0
     payload_lines_per_cue = max(1, MAX_LINES_PER_CUE - leading_label_lines)
+    # The label is visible text on the cue's first line, so it is spent from
+    # that line's budget. A label at least as long as the target leaves the
+    # budget at one character rather than none, so a token can still be placed
+    # on the line instead of the line coming out empty.
     first_budget = MAX_LINE_CHARS - len(label_lines[-1]) if label_lines else MAX_LINE_CHARS
     first_budget = max(first_budget, 1)
 
@@ -130,7 +134,7 @@ def layout_cues(
     if not groups:
         groups = [[]]
 
-    times = _cue_times(segment, tokens, groups, total_chars, source_text)
+    times = _cue_times(segment, tokens, groups, source_text)
     if times is None:
         times = _estimated_times(segment, tokens, groups, total_chars)
 
@@ -241,7 +245,6 @@ def _cue_times(
     segment: Segment,
     tokens: list[_Token],
     groups: list[list[_Line]],
-    total_chars: int,
     source_text: bool,
 ) -> list[tuple[float, float]] | None:
     """Word-timed cue intervals, or None when they cannot be trusted.

@@ -102,6 +102,15 @@ when those formats are requested. If the optional `export` extra is missing,
 the request fails with an installation hint rather than wasting a model run.
 An existing JSON transcript can be re-rendered without retranscribing media.
 
+SRT and WebVTT are wrapped for readability: a long segment becomes several
+cues, no line is longer than about 42 characters, and no cue has more than two
+lines. Cue times come from the source-language word timings when the segment
+has them and they name the text being shown. A translation cannot use them -
+its word timings describe the original speech - so its cue times are estimated
+from the segment's own interval, and an imported transcript with no word
+timings is estimated the same way. Wrapping is a readability change only: it
+never rewrites, reorders, or drops text, and it does not realign words.
+
 ## 5. Python API
 
 ```python
@@ -119,7 +128,9 @@ for segment in result.transcript.segments:
 Pass `output_dir=` to write files, or omit it to keep only the Python result.
 Saved JSON and Python results always retain source-language word timings.
 If segment text was translated, its word timings still refer to the original
-speech, **not** to individual translated words.
+speech, **not** to individual translated words. Subtitle cue times follow the
+same distinction: they come from the word timings for source text and are
+estimated from the segment's interval otherwise.
 
 ## 6. MCP and HTTP integrations
 

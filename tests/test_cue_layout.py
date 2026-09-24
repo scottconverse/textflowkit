@@ -25,6 +25,7 @@ from textflowkit.render._cue_layout import (
     MAX_LINES_PER_CUE,
     layout_cues,
 )
+from textflowkit.render.srt import render_srt
 
 # The long segment the coordinator measured on a real clip: 86 characters and
 # nine seconds on one screen under the old one-segment-one-cue renderer.
@@ -327,3 +328,27 @@ def test_canonical_transcript_is_not_mutated_by_rendering():
     render(tr, "srt")
     render(tr, "vtt")
     assert tr.to_dict() == before
+
+
+def test_suppressing_translation_uses_source_words_not_the_estimate():
+    """Translation stays optional; timing follows whatever text is shown."""
+    seg = _worded()
+    seg.translated_text = "texto traducido"
+    tr = Transcript(source="x", segments=[seg])
+    srt = _srt_cues(render_srt(tr, include_translation=False))
+    assert " ".join(body for _, body in srt).split() == LONG.split()
+    for cue in layout_cues(seg, include_translation=False):
+        assert round(cue.start, 6) in {round(w.start, 6) for w in seg.words}
+
+
+def test_a_pathological_segment_keeps_every_token():
+    """Scale check: a very long segment must not lose or duplicate text."""
+    text = " ".join(f"w{i}" for i in range(4000))
+    seg = Segment(0.0, 500.0, text)
+    cues = layout_cues(seg)
+    assert len(cues) > 100
+    for cue in cues:
+        assert len(cue.lines) <= MAX_LINES_PER_CUE
+        for line in cue.lines:
+            assert len(line) <= MAX_LINE_CHARS
+    assert " ".join(_rendered_lines(cues)).split() == text.split()
