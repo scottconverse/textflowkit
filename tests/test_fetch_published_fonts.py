@@ -82,8 +82,18 @@ def _wheel_bytes(sources: dict[str, bytes], version: str = VERSION) -> bytes:
     return buffer.getvalue()
 
 
-def _sdist_bytes(sources: dict[str, bytes], version: str = VERSION) -> bytes:
-    """A real gzipped tarball: the published sdist, plus the generated PKG-INFO."""
+def _sdist_bytes(
+    sources: dict[str, bytes],
+    version: str = VERSION,
+    extra_members: dict[str, bytes] | None = None,
+) -> bytes:
+    """A real gzipped tarball: the published sdist, plus the generated PKG-INFO.
+
+    `extra_members` adds payload files the *builder* put there that the package
+    tree has no counterpart for, which is how the published sdists differ from
+    the checkout: hatchling copies the repository-root `.gitignore` into the
+    sdist root.
+    """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
         def add(name: str, data: bytes) -> None:
@@ -92,6 +102,8 @@ def _sdist_bytes(sources: dict[str, bytes], version: str = VERSION) -> bytes:
             tar.addfile(info, io.BytesIO(data))
 
         add(f"textflowkit_fonts-{version}/PKG-INFO", b"Metadata-Version: 2.1\n")
+        for relative, data in sorted((extra_members or {}).items()):
+            add(f"textflowkit_fonts-{version}/{relative}", data)
         for relative, data in sorted(sources.items()):
             add(f"textflowkit_fonts-{version}/{relative}", data)
     return buffer.getvalue()
@@ -127,10 +139,11 @@ def _routes(
     version: str = VERSION,
     entries: list[dict] | None = None,
     json_answer: object | None = None,
+    extra_sdist_members: dict[str, bytes] | None = None,
 ) -> dict[str, object]:
     """The index answers for one published release, keyed by URL."""
     wheel = _wheel_bytes(sources, version)
-    sdist = _sdist_bytes(sources, version)
+    sdist = _sdist_bytes(sources, version, extra_sdist_members)
     published = entries if entries is not None else [
         _entry(f"textflowkit_fonts-{version}-py3-none-any.whl", wheel),
         _entry(f"textflowkit_fonts-{version}.tar.gz", sdist),
@@ -555,6 +568,60 @@ def test_an_added_pyproject_change_alone_stops_the_reuse(tmp_path, capsys) -> No
 
     assert result.code == 1
     assert "README.md" in result.stderr
+
+
+# --- builder-added sdist members ------------------------------------------------
+
+
+def test_the_builders_root_gitignore_in_the_sdist_is_not_source_drift(tmp_path, capsys) -> None:
+    """Hatchling copies the repository-root `.gitignore` into the sdist root.
+
+    Measured on the real release: `textflowkit_fonts-0.1.5.tar.gz` carries a root
+    `.gitignore` whose bytes are the repository-root `.gitignore`, while
+    `git ls-tree -r v0.1.5 -- packages/textflowkit-fonts` has no package-local
+    `.gitignore`, and a local 0.1.6 build reproduces the same member. It is
+    builder metadata rather than package source, so a published sdist that
+    carries it must still be reused - the real 0.1.5 release was refused over
+    exactly this file.
+    """
+    sources = _sources()
+    result = _run(
+        tmp_path,
+        _routes(sources, extra_sdist_members={".gitignore": b"__pycache__/\n*.pyc\n"}),
+        sources=sources,
+        capsys=capsys,
+    )
+
+    assert result.code == 0, result.stderr
+    assert result.files() == [WHEEL, SDIST]
+
+
+def test_a_package_gitignore_is_still_compared_once_the_tree_has_one(tmp_path, capsys) -> None:
+    """The exemption is for a builder-added member, not for the name: when the
+    package ships its own `.gitignore`, different bytes are drift like any other
+    file's."""
+    published = {**_sources(), ".gitignore": b"__pycache__/\n*.pyc\n"}
+    changed = {**_sources(), ".gitignore": b"__pycache__/\n"}
+    result = _run(tmp_path, _routes(published), sources=changed, capsys=capsys)
+
+    assert result.code == 1
+    assert ".gitignore" in result.stderr
+    assert "different bytes" in result.stderr
+
+
+def test_a_nested_gitignore_in_the_sdist_still_stops_the_reuse(tmp_path, capsys) -> None:
+    """Only the payload root's `.gitignore` is builder metadata; anything nested
+    is compared against the working tree like any other published file."""
+    sources = _sources()
+    result = _run(
+        tmp_path,
+        _routes(sources, extra_sdist_members={"src/.gitignore": b"*.ttf\n"}),
+        sources=sources,
+        capsys=capsys,
+    )
+
+    assert result.code == 1
+    assert "src/.gitignore" in result.stderr
 
 
 # --- the declared version and the CLI -----------------------------------------
