@@ -29,7 +29,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5"]
+# `build` and `hatchling` are here for tests/test_sdist_allowlist.py, which
+# builds a real sdist and rebuilds a wheel from it with `--no-isolation`: the
+# packaging guarantee is only checked if the builder is actually present.
+dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5", "build>=1.2", "hatchling>=1.25"]
 mcp = ["mcp>=2.0"]
 http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
 # 4.x is required: 3.4.x imports torchaudio.AudioMetaData, which torchaudio 2.11
