@@ -199,6 +199,84 @@ some YouTube formats. Local-file jobs do not require network egress. Streamable-
 MCP is a separate surface and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
 
+### Container example (Dockerfile and Compose)
+
+The repository root carries a `Dockerfile` and a `compose.yaml` that run this
+production profile as a nonroot process. They are a **Linux deployment surface**,
+not part of a local install, and they are an example rather than a deployment:
+they build a server, not a published service.
+
+```bash
+cp .env.example .env         # then put a long random token in it
+mkdir -p data/input          # media the container is allowed to read
+docker compose up --build -d
+docker compose ps            # `healthy` is the container's own authenticated probe
+```
+
+`docker compose ps` reports the **container's health status**, which is the probe
+in `healthcheck.test` calling `/health` with the Bearer token from the container's
+own environment. It is not a call from your host. To run that same probe on demand,
+use `docker compose exec`: it reads the token inside the container, so no token
+value reaches any command line, and it fails the same way the healthcheck would -
+it asserts on the response body rather than printing it:
+
+```bash
+docker compose exec textflowkit-http python -c "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8767/health', headers={'Authorization': 'Bearer ' + os.environ['TEXTFLOWKIT_API_TOKEN']}); body = urllib.request.urlopen(request, timeout=3).read(); assert b'status' in body, body"
+```
+
+A host `curl` is deliberately not shown. `docker compose` reads `.env` to
+interpolate the Compose file; it does not export those values into your shell, so
+a host request would send an empty bearer token. Exporting the variable to make
+the call work would put the token value in that client's argv, which is what the
+token note below keeps out of command lines.
+
+The image carries ffmpeg and a JavaScript runtime, installs the package with the
+`http` extra, and runs `textflowkit-http --host 0.0.0.0 --allow-remote` as uid
+10001. The host port is published to `127.0.0.1` only. The token comes from the
+operator's environment (`${TEXTFLOWKIT_API_TOKEN:?...}`), and the server refuses
+to start without one; nothing in the repository carries a working token.
+
+That is one shared token in an environment variable, and it is **not**
+secret-store isolation. It stays out of the command line, so `ps` cannot show it,
+but Docker records the value in the container's configuration, where
+`docker inspect` and `docker compose config` render it to anyone who can reach
+the daemon, and `/proc/<pid>/environ` exposes it inside the container to anything
+running as the same user. `.env` is ignored by git, not encrypted. Restrict
+access to the daemon, the Compose file, and the env file, and treat a stronger
+secret store as a separate decision rather than something this example provides.
+
+Four things the example deliberately does not claim to solve:
+
+- **No TLS, no gateway, no independent rate or quota policy.** Put a trusted
+  gateway in front of it. The built-in limiter is per process.
+- **No SSRF-filtering egress proxy is bundled**, so `TEXTFLOWKIT_EGRESS_PROXY` is
+  left unset and production **URL jobs fail closed**. Local files and `/health`
+  work; supply a proxy that blocks private/loopback destinations and DNS
+  rebinding to serve URLs. See "Developer mode and production profile" above.
+- **One process.** `replicas` is pinned to 1 and `TEXTFLOWKIT_MAX_CONCURRENCY` to
+  its default of 1, because the durable SQLite store has one owning process. Do
+  not scale it out.
+- **No website.** Nothing here serves a public page, and the host binding keeps
+  the port off every interface.
+
+The JavaScript runtime in the image is Node 22 or newer, because the installed
+yt-dlp refuses anything below 22 (`yt_dlp/utils/_jsruntime.py`). Note that the
+production URL path does not use it: external JS runtimes are disabled there so
+they cannot bypass the egress proxy. It is present for the developer profile and
+for what `doctor` reports. The build fails rather than shipping a runtime below
+the floor.
+
+**Verification limit.** The container itself has **not** been built, started, or
+health-checked anywhere: no container engine was installed on the machine this
+example was written on. What is covered are static contract checks
+(`tests/test_container_example.py`) over both files - package set, the nonroot
+user and its directory ownership, the remote opt-in, the authenticated
+healthcheck, the production settings, the loopback-only host port, persisted
+roots, and the absent proxy - plus a native run of the production profile's
+`/health` with and without its token, which is not a container run. No `docker
+build` or `docker compose up` is claimed to have run: this is a source example,
+not a verified image.
+
 ## Durable job state
 
 By default jobs live in memory and are lost when the process exits. Set

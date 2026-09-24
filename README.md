@@ -230,6 +230,16 @@ Bearer token, explicit roots, durable SQLite jobs, and request/rate/media/output
 limits; URL input additionally requires an SSRF-filtering egress proxy. See
 [adapter deployment details](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#developer-mode-and-production-profile).
 
+A `Dockerfile` and a `compose.yaml` for that profile sit at the repository root:
+ffmpeg and a JavaScript runtime in the image, a nonroot runtime user, the host
+port published to loopback only, and a token the operator supplies (there is no
+default). This is a Linux deployment **example**, not a published service - it
+ships no TLS gateway and no egress proxy, so URL jobs fail closed until you
+provide one. The image has not been built or started anywhere: only static
+contract checks cover it, and running an actual build is deliberately out of
+scope here, so no image is claimed to build or start. See
+[the container example](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#container-example-dockerfile-and-compose).
+
 ## Durable, bounded, cancellable
 
 ```bash
