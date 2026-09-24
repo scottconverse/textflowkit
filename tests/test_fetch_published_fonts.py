@@ -54,7 +54,7 @@ def _pyproject(version: str = VERSION) -> bytes:
         "[project]\n"
         'name = "textflowkit-fonts"\n'
         f'version = "{version}"\n'
-    ).encode("utf-8")
+    ).encode()
 
 
 def _sources(version: str = VERSION) -> dict[str, bytes]:
@@ -158,7 +158,7 @@ class _Response:
         data, self._raw = self._raw[:size], self._raw[size:]
         return data
 
-    def __enter__(self) -> "_Response":
+    def __enter__(self):
         return self
 
     def __exit__(self, *exc: object) -> bool:
@@ -266,7 +266,7 @@ def test_a_reused_release_does_not_touch_the_package_tree(tmp_path, capsys) -> N
 
     assert result.code == 0, result.stderr
     after = {
-        str(path.relative_to(result.package_dir)): hashlib.sha256(path.read_bytes()).hexdigest()
+        path.relative_to(result.package_dir).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(result.package_dir.rglob("*"))
         if path.is_file()
     }
@@ -446,13 +446,15 @@ def test_a_url_that_does_not_name_its_filename_stops_the_release(tmp_path, capsy
 def test_a_download_that_does_not_match_the_recorded_digest_stops_the_release(
     tmp_path, capsys
 ) -> None:
+    """A same-size corruption is only visible through the digest."""
     sources = _sources()
     entries = [
         _entry(WHEEL, _wheel_bytes(sources)),
         _entry(SDIST, _sdist_bytes(sources)),
     ]
     routes = _routes(sources, entries=entries)
-    routes[FILE_BASE + SDIST] = _sdist_bytes(sources) + b"corruption"
+    sdist = _sdist_bytes(sources)
+    routes[FILE_BASE + SDIST] = sdist[:16] + bytes([sdist[16] ^ 0xFF]) + sdist[17:]
     result = _run(tmp_path, routes, sources=sources, capsys=capsys)
 
     assert result.code == 1

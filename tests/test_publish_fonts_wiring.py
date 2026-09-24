@@ -141,7 +141,7 @@ def test_a_reused_fonts_release_is_not_offered_to_pypi_again() -> None:
     """PyPI rejects a duplicate filename; the fonts upload must not run at all."""
     fonts = _job(PUBLISH, "publish-fonts")
 
-    assert f"if: needs.build.outputs.fonts_mode == 'new'" in fonts
+    assert "if: needs.build.outputs.fonts_mode == 'new'" in fonts
 
 
 def test_the_fonts_upload_job_keeps_its_approval_and_trusted_publishing() -> None:

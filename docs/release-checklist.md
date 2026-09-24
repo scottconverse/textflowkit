@@ -79,7 +79,9 @@ version tag (for example `v0.1.6` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the
-tag, both package versions, and ancestry on `main`, and it requires both of the
+tag, the core version, the fonts version contract, and ancestry on `main` with
+[`scripts/verify_release_versions.py`](../scripts/verify_release_versions.py),
+and it requires both of the
 README's release claims — the displayed **Current release** link and the
 `## Status` opening claim — to name the version being published (see below); it
 then requires a completed, successful `push` run of
@@ -89,9 +91,11 @@ exact tagged commit, using
 workflow's `GITHUB_TOKEN` and `actions: read`. A pull-request run, a run for a
 different commit, a run still in progress, or a failed run all stop the build
 before any distribution is built or uploaded, and an API error or an
-unreadable response stops it too. Only then does it build the four artifacts,
-publishes `textflowkit-fonts` first and `textflowkit` second using PyPI Trusted
-Publishing, then hashes the downloaded distributions with
+unreadable response stops it too. Only then does it build the core
+distributions, resolve the fonts package against PyPI (see the fonts version
+contract below), publish the projects that need publishing — `textflowkit-fonts`
+first, and only when its declared version is new, then `textflowkit` — using
+PyPI Trusted Publishing, then hash the downloaded distributions with
 [`scripts/write_release_manifest.py`](../scripts/write_release_manifest.py) and
 creates a **draft** GitHub release with those exact artifacts plus the resulting
 `SHA256SUMS` asset. Only after the assets are attached does it make that release
@@ -111,30 +115,64 @@ should require maintainer approval before an upload job can proceed.
 ### The fonts version contract (issue #15)
 
 The fonts companion package is versioned on its own contract. A core release
-that changes nothing in the fonts data has no reason to republish the fonts
-package, so the fonts package may carry its own version, older than the core
-version being released. The manifest script takes the two versions separately:
-`--version` pins the two `textflowkit` artifacts (it is the release tag), and
-`--fonts-version` pins the two `textflowkit-fonts` artifacts, defaulting to
-`--version` when it is not given. A caller that names only `--version` therefore
-still requires the fonts package to match it, and a caller that names neither
-still requires all four artifacts to carry one version, exactly as before the
-fonts version could differ. Reuse is opt-in: `--fonts-version` has to be passed
-deliberately, and on its own it is refused, because pinning the fonts artifacts
-while leaving the core artifacts unpinned says less than naming neither does.
+that changes nothing in the fonts package has no reason to republish it, so the
+fonts package may carry its own version: older than the core version being
+released when an earlier fonts publication is reused, or newer when this release
+ships a fonts change of its own. `scripts/verify_release_versions.py` requires
+the core version to be the release tag and the fonts version to satisfy the
+requirement the core `export` extra places on `textflowkit-fonts` — the range
+pip actually resolves against.
+
+The build job then resolves the fonts package from the index **before it builds
+anything**.
+[`scripts/fetch_published_fonts.py`](../scripts/fetch_published_fonts.py) reads
+the version declared in `packages/textflowkit-fonts/pyproject.toml` and asks
+`https://pypi.org/pypi/textflowkit-fonts/<version>/json`:
+
+- **A 404 for that exact version means it is new.** The release builds the fonts
+  wheel and sdist as usual and the `publish-fonts` job uploads them.
+- **A published version is reused, never rebuilt.** The workflow downloads the
+  two files PyPI recorded — the wheel and the sdist — over HTTPS, verifies each
+  against the SHA-256 and the size in PyPI's own response, places them in
+  `dist/fonts`, and skips the fonts upload job. The filename already exists on
+  PyPI, PyPI rejects a duplicate upload, and this workflow deliberately does not
+  hide that with `skip-existing`. The GitHub release therefore still carries the
+  four distributions and `SHA256SUMS`, but the fonts files are the published
+  bytes rather than a fresh build.
+- **Anything else stops the release before it builds or uploads.** A transient
+  or 5xx answer, a response that is not JSON or has no file list, a release whose
+  files are not exactly one wheel and one sdist for that version (a partial
+  publication, a duplicate, an extra file), a file URL that is not HTTPS or does
+  not name the file it serves, and a download that does not match the recorded
+  digest all fail closed. A partial publication cannot be reused *and* cannot be
+  published again, so the version has to be dealt with by hand.
+
+Reuse also requires the tagged commit's fonts package to be the source that
+produced those published files. The fetched sdist's payload is compared file by
+file with `packages/textflowkit-fonts`, and any difference stops the release: the
+checkout would otherwise claim content the published files do not have. A changed
+fonts package needs a version bump in
+`packages/textflowkit-fonts/pyproject.toml` so the change ships as its own fonts
+release — the same rule `tests/test_release_surfaces.py` enforces for a fonts
+version a release tag already published.
+
+The manifest script takes the two versions separately: `--version` pins the two
+`textflowkit` artifacts (it is the release tag), and `--fonts-version` pins the
+two `textflowkit-fonts` artifacts, defaulting to `--version` when it is not
+given. The workflow passes both, reading the fonts version from the tagged
+commit, so a reused fonts release is hashed as the bytes it actually published.
+A caller that names only `--version` still requires the fonts package to match
+it, and a caller that names neither still requires all four artifacts to carry
+one version, exactly as before the fonts version could differ. Reuse is opt-in:
+`--fonts-version` has to be passed deliberately, and on its own it is refused,
+because pinning the fonts artifacts while leaving the core artifacts unpinned
+says less than naming neither does.
 
 Reusing an earlier fonts release means reusing the **original published bytes**:
 the wheel and sdist already on PyPI, whose digests PyPI recorded. A rebuild is a
 different file with different hashes, and PyPI rejects an upload whose filename
-already exists, so a core release that reuses the fonts package has to download
-the published files and verify them against their PyPI digests rather than
-rebuilding them and presenting new hashes as the old ones.
-
-This section describes the contract only. `publish-pypi.yml` still builds and
-republishes both packages on every tag; it does not yet pass `--fonts-version`,
-does not yet download an earlier fonts release, and expects the fonts version to
-equal the core version. Conditional publication and reuse of the published fonts
-files is a separate, later change.
+already exists, which is why the reuse path downloads and verifies instead of
+building.
 
 ### The README release-claim guard
 
@@ -197,7 +235,12 @@ The automated gate is evidence about the exact tagged commit, and about
 
 This is not a transaction across two PyPI projects and GitHub. If fonts upload
 succeeds but core fails, **there is no public GitHub release**, but fonts are
-already on PyPI. Check whether any core files reached PyPI before retrying:
+already on PyPI. That partial state is recoverable the same way it is reached:
+the fonts version is now published, so a rerun of the workflow reuses those two
+files instead of building them, and the fonts upload job is skipped — but the
+rerun only proceeds if the tagged commit's fonts package still matches the
+published sdist, so a fonts change made while repairing the core failure needs a
+new fonts version. Check whether any core files reached PyPI before retrying:
 PyPI will reject duplicate filenames, and this workflow intentionally does not
 silently skip them. Correct the cause and rerun only failed jobs when safe; if
 some core files are present, reconcile their hashes against the original build

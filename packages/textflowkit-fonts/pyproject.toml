@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "textflowkit-fonts"
-version = "0.1.5"
+version = "0.1.6"
 description = "Optional offline Unicode PDF fonts for TextFlowKit"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -16,6 +16,9 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      # The upload jobs act on this: only a new fonts version may be uploaded.
+      fonts_mode: ${{ steps.fonts_release.outputs.fonts_mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,24 +32,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python - <<'PY'
-          import os, tomllib
-          from pathlib import Path
-          from packaging.version import Version
-
-          tag = os.environ['RELEASE_TAG']
-          if not tag.startswith('v'):
-              raise SystemExit('Release tag must start with v')
-          version = str(Version(tag[1:]))
-          if tag != 'v' + version:
-              raise SystemExit('Release tag is not a normalized final version')
-          if Version(version).is_prerelease or Version(version).is_devrelease:
-              raise SystemExit('PyPI release must be a final version')
-          for file in (Path('pyproject.toml'), Path('packages/textflowkit-fonts/pyproject.toml')):
-              declared = tomllib.loads(file.read_text(encoding='utf-8'))['project']['version']
-              if declared != version:
-                  raise SystemExit(f'{file}: {declared} != {version}')
-          PY
+          python scripts/verify_release_versions.py
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
             echo 'Release tag is not merged into main' >&2
             exit 1
@@ -63,11 +49,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/verify_release_ci.py
+      # The fonts package is versioned on its own contract: when the version this
+      # commit declares is already on PyPI, the release reuses those published
+      # files instead of rebuilding them, and the fonts upload job is skipped.
+      # The script decides, downloads and verifies, and stops the release on
+      # anything it cannot verify. It runs before the build so a reuse can never
+      # be overwritten by a local build, and before any upload.
+      - name: Resolve the fonts release
+        id: fonts_release
+        run: |
+          python scripts/fetch_published_fonts.py \
+            --package-dir packages/textflowkit-fonts \
+            --out-dir dist/fonts \
+            --github-output "$GITHUB_OUTPUT"
       - name: Build distributions
+        env:
+          FONTS_MODE: ${{ steps.fonts_release.outputs.fonts_mode }}
         run: |
           python -m pip install --upgrade build packaging
           python -m build --sdist --wheel --outdir dist/main .
-          python -m build --sdist --wheel --outdir dist/fonts packages/textflowkit-fonts
+          case "$FONTS_MODE" in
+            new)
+              # The declared fonts version is not on PyPI, so this release
+              # publishes it.
+              python -m build --sdist --wheel --outdir dist/fonts packages/textflowkit-fonts
+              ;;
+            reuse)
+              # dist/fonts holds the published files, fetched and verified
+              # against PyPI above. Rebuilding here would replace them with
+              # different bytes and break the hashes the manifest publishes.
+              echo "reusing the textflowkit-fonts files fetched from PyPI"
+              ;;
+            *)
+              echo "no fonts mode was resolved; refusing to build" >&2
+              exit 1
+              ;;
+          esac
           python -m pip install twine
           python -m twine check dist/main/* dist/fonts/*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -78,6 +95,10 @@ jobs:
 
   publish-fonts:
     needs: build
+    # Only a new fonts version is uploaded. A reused one is already on PyPI, and
+    # PyPI rejects a duplicate filename; this workflow deliberately does not
+    # skip such an upload, so the job must not run at all.
+    if: needs.build.outputs.fonts_mode == 'new'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -126,12 +147,29 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      # The manifest pins each project's own version. Core is the tag; fonts is
+      # the version the tagged commit declares, which is the version of the
+      # files in dist/fonts whether they were built or fetched.
+      - name: Read the declared fonts version
+        id: fonts_version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(
+              Path('packages/textflowkit-fonts/pyproject.toml').read_text(encoding='utf-8')
+          )['project']
+          print(f"version={project['version']}")
+          PY
       - name: Hash the downloaded distributions
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          FONTS_VERSION: ${{ steps.fonts_version.outputs.version }}
         run: |
           python scripts/write_release_manifest.py \
-            --output SHA256SUMS --version "$RELEASE_TAG" dist/main/* dist/fonts/*
+            --output SHA256SUMS --version "$RELEASE_TAG" --fonts-version "$FONTS_VERSION" \
+            dist/main/* dist/fonts/*
       - name: Create draft with the exact PyPI distributions
         env:
           GH_TOKEN: ${{ github.token }}
