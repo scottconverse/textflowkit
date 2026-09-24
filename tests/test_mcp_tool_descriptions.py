@@ -68,9 +68,18 @@ _ARG_LINE = re.compile(
 
 
 def _args_section(description: str) -> str | None:
-    """Everything after the `Args:` heading line, or None if there is none."""
+    """Everything after the `Args:` heading, or None if there is none.
+
+    The heading is normally a line of its own, which is the shape to prefer; a
+    description that mentions `Args:` inside another line still has a section,
+    so fall back to the plain search this parser has always used rather than
+    refusing a description the old code would have read.
+    """
     header = re.search(r"(?m)^[ \t]*Args:[ \t]*$", description)
-    return None if header is None else description[header.end() :]
+    if header is not None:
+        return description[header.end() :]
+    index = description.find("Args:")
+    return None if index < 0 else description[index + len("Args:") :]
 
 
 def _entries(section: str) -> list[re.Match[str]]:
@@ -162,6 +171,14 @@ def test_arg_help_keeps_the_entry_indent_the_first_named_line_set():
     assert arg_help_in(description, "formats") == "Comma-separated outputs."
     with pytest.raises(AssertionError):
         arg_help_in(description, "Note")
+
+
+def test_arg_help_finds_the_heading_wherever_it_sits():
+    """`Args:` need not own its line, but a description without one is an error."""
+    description = "Start here. Args:\n    source: A file.\n    formats: Comma-separated outputs.\n"
+    assert arg_help_in(description, "formats") == "Comma-separated outputs."
+    with pytest.raises(AssertionError, match="has no Args section"):
+        arg_help_in("A description with no argument list at all.", "formats")
 
 
 def test_every_tool_serves_the_same_args_help_to_a_pre_313_interpreter():
