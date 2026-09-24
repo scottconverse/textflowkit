@@ -225,6 +225,28 @@ def _matches_a_pdf_rendering(path: Path, data: bytes) -> bool:
     return actual == expected
 
 
+def _is_own_publication(path: Path, data: bytes, norm: str | None) -> bool:
+    """Whether `path` already holds what this call would publish as `norm`.
+
+    Byte equality for every format but PDF. A PDF's rendering is not
+    byte-reproducible - reportlab writes a random document id and the render
+    time into every file - so that one format is compared with
+    `_matches_a_pdf_rendering`, which blanks exactly those three fields, still
+    requires every other byte to match, and refuses a file whose metadata is
+    absent, repeated or unrecognisably shaped. `norm is None` means the caller
+    declared no format and gets the strict byte rule.
+
+    The rule is selected by this declared format and not by the file's suffix:
+    the suffix is part of a name the caller chose, while the format is what the
+    caller is actually publishing, and `atomic_write_bytes` is a public
+    primitive whose documented byte-equality meaning must not silently widen for
+    any name ending in `.pdf`.
+    """
+    if norm == "pdf":
+        return _matches_a_pdf_rendering(path, data)
+    return _holds_exactly(path, data)
+
+
 def _ordinary_file_mode(directory: Path) -> int | None:
     """The mode an ordinary newly created file gets in `directory`, or None.
 
@@ -270,17 +292,34 @@ def _ordinary_file_mode(directory: Path) -> int | None:
 
 
 def atomic_write_bytes(
-    path: Path, data: bytes, *, replace: bool = False, reuse_identical: bool = False
+    path: Path,
+    data: bytes,
+    *,
+    replace: bool = False,
+    reuse_identical: bool = False,
+    reuse_format: str | None = None,
 ) -> None:
     """Publish a complete file; optionally replace an explicitly chosen path.
 
     `reuse_identical` is the same-job resume case: a file an earlier attempt of
-    this job already published is byte-for-byte what this call would write, so
-    leaving it in place finishes the publication instead of failing on it.
-    Nothing is clobbered to make that work - only a file whose bytes are exactly
-    the ones being written is adopted. A differing file still fails closed
-    through the no-clobber link below, and the default (`False`) keeps a fresh
-    attempt from taking over an existing file even when its bytes match.
+    this job already published is what this call would write, so leaving it in
+    place finishes the publication instead of failing on it. Nothing is
+    clobbered to make that work - only a file that holds this call's own
+    publication is adopted (see `_is_own_publication`). A differing file still
+    fails closed through the no-clobber link below, and the default (`False`)
+    keeps a fresh attempt from taking over an existing file even when its bytes
+    match.
+
+    `reuse_format` names the output format being published, and is how the
+    caller says whether "already published" can mean anything other than byte
+    equality. Only `"pdf"` has a wider rule, and a narrow one: reportlab writes
+    a random document id and the render time into every render, so those three
+    fields are blanked before the comparison and every other byte still has to
+    match, with an uncomparable shape refused rather than accepted
+    (`_matches_a_pdf_rendering`). Every other format, and a caller that declares
+    none, keeps the strict byte rule. `reuse_format` is only read when
+    `reuse_identical` is set, and `replace` is an explicit instruction to write
+    the path - so a replace never adopts, whatever the format.
 
     On POSIX the staging file is given the mode an ordinary file gets here
     before it is published, so the destination does not inherit the private
@@ -306,7 +345,7 @@ def atomic_write_bytes(
 
     enforce_output_limit(len(data))
     verify_output_file_target(path)
-    if reuse_identical and _holds_exactly(path, data):
+    if reuse_identical and not replace and _is_own_publication(path, data, reuse_format):
         return
     temp: Path | None = None
     try:
@@ -417,17 +456,13 @@ def _reusable_prior(prior: Path, expected: Path, data: bytes, norm: str) -> bool
 
     The name must be exactly the one this job's stem produces, so a
     same-suffix neighbour in the output directory is never handed back as the
-    requested output; and the file must hold what this call would write. A PDF
-    is the one exception to "byte for byte", and a narrow one: reportlab writes
-    a random document ID and the render time into every file, so those three
-    fields alone are blanked before the comparison
-    (`_normalize_pdf_metadata`) and every other byte still has to match.
+    requested output; and the file must hold what this call would write, by the
+    one rule both resume paths share (`_is_own_publication`: byte equality, or
+    for a PDF the render-metadata-aware comparison).
     """
     if prior.name != expected.name:
         return False
-    if norm == "pdf":
-        return _matches_a_pdf_rendering(prior, data)
-    return _holds_exactly(prior, data)
+    return _is_own_publication(prior, data, norm)
 
 
 def ensure_outputs(
@@ -491,8 +526,13 @@ def write_all(
 
     `reuse_published` is set only by a resume of the job that owns `stem`, whose
     earlier attempt named its files with that same stem. It finishes a partial
-    publication by adopting a format whose bytes match the new rendering, and
-    leaves every other collision to the strict no-clobber rule.
+    publication by adopting a format that already holds this run's own
+    rendering, and leaves every other collision to the strict no-clobber rule.
+    Each format is published with its own name, so the format being rendered is
+    what selects the reuse rule (`_is_own_publication`) - a PDF published by an
+    earlier attempt is adopted even though reportlab renders it with a new
+    document id and render time, while every other format still has to match
+    byte for byte.
     """
     from textflowkit.core.paths import ensure_output_dir
 
@@ -501,7 +541,9 @@ def write_all(
     written: list[Path] = []
     for norm, data in rendered:
         path = out_dir / f"{stem}.{norm}"
-        atomic_write_bytes(path, data, reuse_identical=reuse_published)
+        atomic_write_bytes(
+            path, data, reuse_identical=reuse_published, reuse_format=norm
+        )
         written.append(path)
     return written
 
