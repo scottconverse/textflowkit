@@ -262,8 +262,65 @@ def test_the_manifest_records_a_reused_fonts_release_in_full(tmp_path) -> None:
     )
 
     assert len(lines) == 4
-    assert output.read_bytes().count(b"\n") == 4
-    assert manifest_lines(paths) == output.read_text(encoding="utf-8").splitlines()
+    text = output.read_text(encoding="utf-8")
+    assert text.count("\n") == 4
+    for path in paths:
+        assert f"{_sha(path)}  {path.name}\n" in text
+
+
+def test_a_set_that_mixes_versions_is_rejected_when_nothing_is_pinned(tmp_path) -> None:
+    """Naming neither version is the historic contract: one version, not two.
+
+    The reuse case is opt-in. A caller that pins nothing must not be able to
+    accept a core 0.1.6 / fonts 0.1.5 set by accident; that call meant "one
+    build" before the fonts version could differ, and it still does.
+    """
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+
+    with pytest.raises(ManifestError, match="mixes"):
+        manifest_lines(paths)
+
+
+def test_a_mixed_set_is_rejected_before_the_manifest_is_written(tmp_path) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+    output = tmp_path / "SHA256SUMS"
+
+    with pytest.raises(ManifestError, match="version"):
+        write_release_manifest(paths, output)
+
+    assert not output.exists()
+
+
+def test_an_unpinned_set_of_one_version_is_still_accepted(tmp_path) -> None:
+    """The equal-version set keeps working with no flags at all."""
+    paths = _artifacts(tmp_path)
+
+    assert len(manifest_lines(paths)) == 4
+
+
+def test_a_fonts_version_without_a_core_version_fails_closed(tmp_path) -> None:
+    """A fonts pin alone would leave the core artifacts unpinned; refuse it.
+
+    Core is what the release tag names. Accepting this call would mean the
+    manifest says which fonts build it hashed but not which core build, so it
+    fails closed instead of quietly dropping the core expectation.
+    """
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+
+    with pytest.raises(ManifestError, match="--version"):
+        manifest_lines(paths, expect_fonts_version=REUSED_FONTS)
+
+
+def test_cli_fails_closed_when_fonts_version_is_given_without_version(tmp_path, capsys) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+    output = tmp_path / "SHA256SUMS"
+
+    argv = [*map(str, paths), "--output", str(output), "--fonts-version", f"v{REUSED_FONTS}"]
+
+    assert main(argv) == 1
+    captured = capsys.readouterr()
+    assert "--version" in captured.err and captured.out == ""
+    assert not output.exists()
 
 
 def test_an_unexpected_core_version_is_still_rejected(tmp_path) -> None:
