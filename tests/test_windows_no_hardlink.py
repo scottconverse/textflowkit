@@ -79,6 +79,22 @@ def _fail_link(monkeypatch, error: OSError) -> None:
     monkeypatch.setattr(os, "link", link)
 
 
+def _pin_no_native_primitive(monkeypatch) -> None:
+    """Put the module in the configuration of a host with no native fallback.
+
+    All three platform flags, together, because the dispatch consults them in
+    order and leaving any one at the host's own value means the branch this
+    simulates is not the one that runs. U31 pinned the Windows flag and U33
+    added a macOS branch; on a Linux or macOS host the leftover flags reach
+    those native branches (`NoReplaceRenameUnsupported`, or a real
+    `renamex_np` that publishes) and the assertion that the original link error
+    propagates stops being about a fail-closed host at all.
+    """
+    monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False, raising=False)
+    monkeypatch.setattr(render_mod, "_IS_LINUX", False, raising=False)
+    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
+
+
 def _spy_publication(monkeypatch) -> list[str]:
     """Record which publication primitives are called, in order."""
     calls: list[str] = []
@@ -123,6 +139,8 @@ def test_the_platform_premise_rename_refuses_an_existing_destination(tmp_path):
     assert target.read_bytes() == b"original", "os.rename overwrote an existing destination"
     assert staged.read_bytes() == b"staged", "the staged file did not survive"
     assert render_mod._RENAME_REFUSES_EXISTING is True
+    assert render_mod._IS_LINUX is False, "a Windows host is not misdetected as Linux"
+    assert render_mod._IS_MACOS is False, "a Windows host is not misdetected as macOS"
 
 
 @WINDOWS_ONLY
@@ -269,12 +287,11 @@ def test_a_link_failure_stays_fail_closed_where_rename_would_overwrite(tmp_path,
     destination - true on Windows, false on POSIX, where rename clobbers. It is
     turned off here so the fail-closed branch runs on the Windows host that
     cannot otherwise reach it; the export must not degrade to a direct write.
+    `_pin_no_native_primitive` turns off every platform flag, not just the
+    Windows one, so the branch this reaches is the same on a Linux or macOS
+    host as it is here.
     """
-    monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False, raising=False)
-    # Pinned off too, since U33 gave macOS a primitive of its own: otherwise a
-    # macOS host would take that branch here and this would stop testing the
-    # fail-closed one.
-    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
+    _pin_no_native_primitive(monkeypatch)
     target = tmp_path / "talk.txt"
     error = OSError(errno.EINVAL, "Incorrect function.")
     _fail_link(monkeypatch, error)
@@ -289,8 +306,7 @@ def test_a_link_failure_stays_fail_closed_where_rename_would_overwrite(tmp_path,
 
 def test_fail_closed_platform_does_not_clobber_a_competing_file(tmp_path, monkeypatch):
     """And it does not touch a file that is already there, either."""
-    monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False, raising=False)
-    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
+    _pin_no_native_primitive(monkeypatch)
     target = tmp_path / "talk.txt"
     target.write_bytes(b"someone else's bytes")
     error = OSError(errno.ENOTSUP, "no hard links")

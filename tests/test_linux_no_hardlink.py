@@ -77,12 +77,15 @@ def _entries(directory: Path) -> list[str]:
 def _linux_host(monkeypatch) -> None:
     """Put the module in the configuration a Linux host has.
 
-    Both flags, because on this Windows host `_RENAME_REFUSES_EXISTING` is True
-    and the Windows rename branch would otherwise answer first and hide the
-    Linux one; on Linux both assignments restate the truth.
+    All three flags, because a Linux host has `_IS_MACOS` False as well, and
+    the dispatch consults them in order: on this Windows host
+    `_RENAME_REFUSES_EXISTING` is True and the Windows rename branch would
+    otherwise answer first and hide the Linux one. On Linux every assignment
+    restates the truth.
     """
     monkeypatch.setattr(render_mod, "_IS_LINUX", True, raising=False)
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False)
+    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
 
 
 def _fail_link(monkeypatch, error: OSError) -> None:
@@ -423,9 +426,13 @@ def test_a_host_with_neither_no_replace_primitive_stays_fail_closed(tmp_path, mo
     host has a primitive of its own, so leaving `_IS_MACOS` at its host value
     would take that branch on a Mac and this test would no longer be about a
     host that has nothing.
+
+    Nothing here restates a real host's flag values, because a test that both
+    fakes a platform and asserts which platform it is cannot be run against any
+    other one. Which host this is, and that no flag is misdetected, is asserted
+    by each platform's own gated premise test, where the values are the real
+    ones.
     """
-    assert render_mod._IS_LINUX == sys.platform.startswith("linux")
-    assert render_mod._RENAME_REFUSES_EXISTING == (os.name == "nt")
     monkeypatch.setattr(render_mod, "_IS_LINUX", False, raising=False)
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False)
     monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
@@ -685,6 +692,7 @@ def test_plain_posix_rename_would_clobber_the_destination(tmp_path):
     assert target.read_bytes() == b"staged", "POSIX rename did not replace the destination"
     assert render_mod._RENAME_REFUSES_EXISTING is False
     assert render_mod._IS_LINUX is True
+    assert render_mod._IS_MACOS is False, "a Linux host is not misdetected as macOS"
 
 
 @LINUX_ONLY

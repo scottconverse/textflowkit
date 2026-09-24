@@ -371,10 +371,13 @@ def test_a_collision_from_the_link_is_never_retried_as_the_macos_branch(tmp_path
 
 
 def test_a_host_with_no_macos_primitive_stays_fail_closed(tmp_path, monkeypatch):
-    """A plain POSIX host: the link error propagates untouched."""
-    assert render_mod._IS_MACOS == (sys.platform == "darwin")
-    assert render_mod._RENAME_REFUSES_EXISTING == (os.name == "nt")
-    assert render_mod._IS_LINUX == sys.platform.startswith("linux")
+    """A plain POSIX host: the link error propagates untouched.
+
+    All three flags are pinned. Nothing here restates a real host's values: a
+    test that fakes a platform cannot also assert which platform it is, so
+    which host this is, and that no flag is misdetected, is asserted by each
+    platform's own gated premise test instead.
+    """
     monkeypatch.setattr(render_mod, "_IS_MACOS", False)
     monkeypatch.setattr(render_mod, "_IS_LINUX", False)
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False)
@@ -568,6 +571,7 @@ def test_plain_posix_rename_would_clobber_the_destination(tmp_path):
     assert target.read_bytes() == b"staged", "POSIX rename did not replace the destination"
     assert render_mod._RENAME_REFUSES_EXISTING is False
     assert render_mod._IS_MACOS is True
+    assert render_mod._IS_LINUX is False, "a macOS host is not misdetected as Linux"
 
 
 @MACOS_ONLY
