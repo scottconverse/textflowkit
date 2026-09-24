@@ -83,6 +83,13 @@ def _rendered_lines(cues) -> list[str]:
     return [line for cue in cues for line in cue.lines]
 
 
+def _stamp_seconds(stamp: str) -> float:
+    """Read a rendered SRT timestamp back as seconds."""
+    hours, minutes, rest = stamp.split(":")
+    seconds, millis = rest.replace(",", ".").split(".")
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
+
+
 # --- readable geometry -------------------------------------------------------
 
 
@@ -266,14 +273,80 @@ def test_speaker_label_is_not_split_by_wrapping():
         assert body.split("\n")[1].startswith("B: ")
 
 
-def test_srt_speaker_label_counts_toward_line_width_and_repeats_per_cue():
-    tr = Transcript(source="x", segments=[_worded(speaker="SPEAKER ONE")])
+def _repeated_words(count: int, *, speaker: str = "SPEAKER_01") -> Segment:
+    """A long, uniform segment: every wrapped line is exactly as wide as allowed."""
+    text = " ".join(["word"] * count)
+    return Segment(
+        0.0,
+        float(count),
+        text,
+        speaker=speaker,
+        words=[WordTiming(float(i), float(i + 1), "word") for i in range(count)],
+    )
+
+
+def test_every_cue_pays_for_the_repeated_speaker_label():
+    """Audit regression: the label repeats per cue, so every cue pays for it.
+
+    The budget must be reduced on the first line of *each* cue, not only on the
+    segment's first wrapped line - otherwise a later cue's first line overflows
+    by exactly the label's width.
+    """
+    tr = Transcript(source="x", segments=[_repeated_words(40)])
     cues = _srt_cues(render(tr, "srt"))
-    assert len(cues) >= 2
-    for _, body in cues:
-        for line in body.split("\n"):
-            assert len(line) <= MAX_LINE_CHARS
-        assert body.split("\n")[0].startswith("SPEAKER ONE: ")
+    assert len(cues) >= 3
+    for timing, body in cues:
+        lines = body.split("\n")
+        assert lines[0].startswith("SPEAKER_01: ")
+        for line in lines:
+            assert len(line) <= MAX_LINE_CHARS, f"overlong visible line: {line!r}"
+    # Word timing still drives the boundaries, not the estimate.
+    starts = {round(w.start, 3) for w in tr.segments[0].words}
+    ends = {round(w.end, 3) for w in tr.segments[0].words}
+    for timing, _ in cues:
+        start, end = timing.split(" --> ")
+        assert round(_stamp_seconds(start), 3) in starts
+        assert round(_stamp_seconds(end), 3) in ends
+
+
+def test_overlong_speaker_label_fails_safe_without_losing_text():
+    """A label longer than the whole target cannot fit; nothing may be dropped."""
+    label = "S" * 60
+    seg = Segment(0.0, 2.0, "hello there", speaker=label)
+    cues = layout_cues(seg, inline_speaker=True)
+    lines = [line for cue in cues for line in cue.lines]
+    assert lines and all(lines), "a cue must not come out empty"
+    assert "".join("".join(lines).split()) == "".join(f"{label}: hello there".split())
+    # The label alone is wider than the target, so exactly one line - the one
+    # carrying it - may exceed it. No payload line may.
+    assert [line for line in lines if len(line) > MAX_LINE_CHARS] == [f"{label}: hello"]
+
+
+def test_a_speaker_label_makes_srt_wrap_tighter_than_vtt_without_losing_time():
+    """SRT's label is visible text; VTT's ``<v>`` markup is not.
+
+    The two formats therefore break lines differently when a speaker is
+    present - SRT spends the label from the width target - but every boundary
+    in both is still a word boundary, because the timing rule is shared even
+    where the width budget is not.
+    """
+    tr = Transcript(source="x", segments=[_repeated_words(40)])
+    words = tr.segments[0].words
+    starts = {round(w.start, 3) for w in words}
+    ends = {round(w.end, 3) for w in words}
+    counts = []
+    for cues in (_srt_cues(render(tr, "srt")), _vtt_cues(render(tr, "vtt"))):
+        assert len(cues) >= 3
+        previous = 0.0
+        for timing, _ in cues:
+            start, end = timing.replace(",", ".").split(" --> ")
+            start, end = round(_stamp_seconds(start), 3), round(_stamp_seconds(end), 3)
+            assert start in starts and end in ends
+            assert start >= previous
+            previous = end
+        counts.append(len(cues))
+    # Paying for the label can only split further, never merge cues back.
+    assert counts[0] >= counts[1]
 
 
 def test_vtt_voice_span_repeats_per_cue_and_stays_markup():
