@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from textflowkit import cli
+from textflowkit.core.checkpoint import load_checkpoint
 from textflowkit.core.executor import reset_default_executor
 from textflowkit.core.jobs import reset_default_store
 from textflowkit.core.model import Segment, Transcript
@@ -254,7 +255,18 @@ def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
     # Saved while the wider root was configured, then interrupted and reaped.
     saved = submission.submit_request(store, request_for(outside, wide), background=False)
     assert store.get(saved.id).request["input_root"] == str(wide)
-    store.update(saved.id, state=JobState.RUNNING, progress="transcribing")
+    # The run above reached DONE, so its transcript sits in the job field and
+    # its checkpoint is metadata only. A run that dies mid-transcribe is the
+    # other way round - the completed work is still inside the checkpoint and
+    # the job field is empty - and that is the row `reap_incomplete` marks
+    # ERROR. Both halves are restored together before the reap.
+    store.update(
+        saved.id,
+        state=JobState.RUNNING,
+        progress="transcribing",
+        transcript=None,
+        checkpoint={**saved.checkpoint, "transcript": saved.transcript},
+    )
     assert store.reap_incomplete(reason="simulated restart") == 1
     assert store.get(saved.id).state is JobState.ERROR
     assert engine.calls == 1
@@ -303,7 +315,11 @@ def test_local_diarization_resume_reacquires_wav_without_collision(
                      str(output), "--model", "tiny", "--quiet"]) == 0
     capsys.readouterr()
     assert engine.calls == 1
-    checkpoint = store.list(limit=1)[0].checkpoint
+    # A finished job keeps its transcript in the job field and its checkpoint
+    # metadata only, so read the record the way the product does.
+    record = load_checkpoint(store.list(limit=1)[0])
+    assert record is not None and record.transcript is not None
+    checkpoint = record.to_dict()
 
     class Diarizer:
         name = "fixture"

@@ -44,7 +44,7 @@ from textflowkit.core.checkpoint import (
 from textflowkit.core.jobs import JobState, MemoryJobStore
 from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.sqlite_store import SqliteJobStore
-from textflowkit.core.submission import SubmissionRequest, submit_request
+from textflowkit.core.submission import SubmissionRequest, resume_job, submit_request
 
 # A distinctive body so "is this copy present in that column" is a byte
 # question, not a structural guess.
@@ -162,7 +162,7 @@ def test_done_job_stores_the_transcript_once_in_memory(tmp_path, fake_pipeline):
 
 def test_done_job_stores_the_transcript_once_in_sqlite(tmp_path, fake_pipeline):
     """The same rule, proven on the stored columns rather than the object."""
-    output_dir, engine = fake_pipeline
+    output_dir, _engine = fake_pipeline
     source = tmp_path / "clip.wav"
     source.write_bytes(b"fake media")
     db = tmp_path / "jobs.db"
@@ -398,6 +398,56 @@ def test_done_checkpoint_with_a_corrupt_transcript_fails_closed(tmp_path):
         submit_request(
             store, request, background=False, resume_job_id=job.id
         )
+
+
+def test_error_checkpoint_still_refuses_a_tightened_input_root(tmp_path):
+    """The up-front input-root refusal must survive the storage change.
+
+    A failed job's checkpoint is the only copy of its work and is never demoted,
+    so resume still reads it and refuses a source that now falls outside the
+    configured root - before the row is reopened, so a refusal cannot leave a
+    PENDING job with nothing queued to run it.
+    """
+    wide = tmp_path / "wide"
+    narrow = tmp_path / "narrow"
+    wide.mkdir()
+    narrow.mkdir()
+    media = wide / "old.wav"
+    media.write_bytes(b"fake media")
+
+    store = MemoryJobStore()
+    request = SubmissionRequest(
+        source=str(media), formats=["json"], model="tiny", device="cpu",
+        input_root=str(wide),
+    )
+    job = store.create(str(media), request=request.to_dict())
+    store.update(
+        job.id,
+        state=JobState.ERROR,
+        error="interrupted",
+        progress="failed",
+        checkpoint={
+            "version": 2,
+            "source": str(media),
+            "model": "tiny",
+            "language": None,
+            "engine": "whisper",
+            "device": "cpu",
+            "options": request.options(),
+            "finished_stages": ["source", "fetch", "extract", "transcribe"],
+            "transcript": Transcript(
+                source=str(media), language="en", segments=[Segment(0.0, 1.0, MARKER)]
+            ).to_dict(),
+            "media_path": None,
+            "audio_path": None,
+            "local_identity": local_source_identity(str(media), input_root=wide),
+        },
+    )
+
+    with pytest.raises(ValueError, match="outside the allowed input root"):
+        resume_job(store, job.id, background=False, input_root=str(narrow))
+
+    assert store.get(job.id).state is JobState.ERROR, "a refusal must not reopen the row"
 
 
 def test_cli_completion_leaves_one_copy_on_a_pre_change_row(tmp_path, monkeypatch):
