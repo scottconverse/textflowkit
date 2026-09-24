@@ -97,6 +97,15 @@ include = [
   "/.gitignore",
   "/.gitattributes",
   "/.pre-commit-config.yaml",
+  # The container example. It is a deployment surface rather than part of the
+  # wheel, but a source archive is the whole checkout: leaving it out would make
+  # the archive the one place the project cannot be run from a container, and
+  # `tests/test_sdist_allowlist.py` compares the archive against the tracked
+  # file set rather than against a guess at what belongs in it.
+  "/Dockerfile",
+  "/compose.yaml",
+  "/.dockerignore",
+  "/.env.example",
 ]
 exclude = ["/packages/textflowkit-fonts"]
 

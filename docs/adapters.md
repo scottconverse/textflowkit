@@ -249,6 +249,57 @@ boundary described above and stands it down on `--allow-remote` /
 `TEXTFLOWKIT_ALLOW_REMOTE=1`, and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
 
+### Container example (Dockerfile and Compose)
+
+The repository root carries a `Dockerfile` and a `compose.yaml` that run this
+production profile as a nonroot process. They are a **Linux deployment surface**,
+not part of a local install, and they are an example rather than a deployment:
+they build a server, not a published service.
+
+```bash
+cp .env.example .env         # then put a long random token in it
+mkdir -p data/input          # media the container is allowed to read
+docker compose up --build
+curl -H "Authorization: Bearer $TEXTFLOWKIT_API_TOKEN" http://127.0.0.1:8767/health
+```
+
+The image carries ffmpeg and a JavaScript runtime, installs the package with the
+`http` extra, and runs `textflowkit-http --host 0.0.0.0 --allow-remote` as uid
+10001. The host port is published to `127.0.0.1` only. The token comes from the
+operator's environment (`${TEXTFLOWKIT_API_TOKEN:?...}`), and the server refuses
+to start without one; nothing in the repository carries a working token.
+
+Four things the example deliberately does not claim to solve:
+
+- **No TLS, no gateway, no independent rate or quota policy.** Put a trusted
+  gateway in front of it. The built-in limiter is per process.
+- **No SSRF-filtering egress proxy is bundled**, so `TEXTFLOWKIT_EGRESS_PROXY` is
+  left unset and production **URL jobs fail closed**. Local files and `/health`
+  work; supply a proxy that blocks private/loopback destinations and DNS
+  rebinding to serve URLs. See "Developer mode and production profile" above.
+- **One process.** `replicas` is pinned to 1 and `TEXTFLOWKIT_MAX_CONCURRENCY` to
+  its default of 1, because the durable SQLite store has one owning process. Do
+  not scale it out.
+- **No website.** Nothing here serves a public page, and the host binding keeps
+  the port off every interface.
+
+The JavaScript runtime in the image is Node 22 or newer, because the installed
+yt-dlp refuses anything below 22 (`yt_dlp/utils/_jsruntime.py`). Note that the
+production URL path does not use it: external JS runtimes are disabled there so
+they cannot bypass the egress proxy. It is present for the developer profile and
+for what `doctor` reports. The build fails rather than shipping a runtime below
+the floor.
+
+**Verification limit.** The container itself has **not** been built, started, or
+health-checked anywhere: no container engine was installed on the machine this
+example was written on. What is covered are static contract checks
+(`tests/test_container_example.py`) over both files - package set, the nonroot
+user and its directory ownership, the remote opt-in, the authenticated
+healthcheck, the production settings, the loopback-only host port, persisted
+roots, and the absent proxy - plus a native run of the production profile's
+`/health` with and without its token, which is not a container run. An actual
+`docker build` and `docker compose up` belong to a hosted CI gate.
+
 ### Client identity behind a proxy
 
 The production rate limit is per client. Behind a reverse proxy every request

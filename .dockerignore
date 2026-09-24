@@ -1,0 +1,52 @@
+# What the container image build must not receive.
+#
+# The image is built from this repository root, so anything not named here lands
+# in the build context. Only local state and secrets are named: the licence, the
+# source, the docs, and the packaging metadata stay in, because the wheel build
+# reads them (`license-files` and `readme` in pyproject.toml) and because a
+# context that quietly dropped them would produce an image that builds but is not
+# this project.
+
+# Version control, environments, caches, build output.
+.git
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+build
+dist
+
+# Local work products and media, as in .gitignore. The one exception below is
+# load-bearing: pyproject.toml's `artifacts` packs `src/textflowkit/assets/*.wav`
+# into the wheel, so a media filter without the negation would ship an image
+# whose asset directory is silently empty.
+work
+out
+outputs
+*.wav
+!src/textflowkit/assets/selftest-speech.wav
+*.mp3
+*.m4a
+*.mp4
+*.webm
+*.srt
+*.vtt
+
+# Secrets and local configuration. The production token comes from the operator's
+# environment at run time, never from the image.
+.env
+.env.*
+*.local.toml
+
+# Host-side media for the Compose example, if the operator placed it in-tree.
+data
+
+# OS and editor debris.
+.DS_Store
+Thumbs.db
+.vscode
+.idea
