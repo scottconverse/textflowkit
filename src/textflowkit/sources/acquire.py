@@ -16,6 +16,7 @@ from pathlib import Path
 from textflowkit.core.cancel import CancelledError
 from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
 from textflowkit.core.service import (
+    DEFAULT_FFMPEG_TIMEOUT_SECONDS,
     ENV_EGRESS_PROXY,
     ENV_FFMPEG_TIMEOUT_SECONDS,
     ENV_MAX_DURATION_SECONDS,
@@ -436,7 +437,7 @@ def extract_audio(
         raise AcquisitionError("decoded audio must not overwrite source media")
 
     production = production_enabled()
-    timeout = positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
+    timeout = positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, DEFAULT_FFMPEG_TIMEOUT_SECONDS)
     max_media = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production else None
     max_duration = positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600) if production else None
     max_pcm = max_media - 44 if max_media is not None else None
@@ -502,7 +503,14 @@ def extract_audio(
             if failures:
                 raise AcquisitionError(failures[0])
             if time.monotonic() >= deadline:
-                raise AcquisitionError("ffmpeg timed out during decode")
+                # This wall-clock limit is not production-only: local CLI, MCP,
+                # and HTTP jobs all decode under it, so name the setting here.
+                raise AcquisitionError(
+                    f"ffmpeg timed out during decode after {timeout}s "
+                    "(wall-clock limit for CLI, MCP, and HTTP jobs); raise "
+                    f"{ENV_FFMPEG_TIMEOUT_SECONDS} to allow more time "
+                    f"(default {DEFAULT_FFMPEG_TIMEOUT_SECONDS})"
+                )
             time.sleep(0.05)
         output_thread.join(timeout=5)
         error_thread.join(timeout=5)

@@ -182,11 +182,17 @@ enforces a bounded request body, per-process rate limit, pending queue, media
 size, source duration, rendered-output size, and transcript page size. Known
 oversize downloads are refused before transfer; download progress is capped
 during transfer. A bounded ffprobe rejects known overlong sources before full
-decode; ffmpeg decode has a wall-clock timeout, cancellation, and decoded-byte
-and duration caps even when metadata is missing. Configure
-`TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` (default 600) if the default is too short
-for your host. Each job
-gets its own scratch directory under `TEXTFLOWKIT_WORK_ROOT`.
+decode; the production profile adds decoded-byte and duration caps even when
+metadata is missing. Each job gets its own scratch directory under
+`TEXTFLOWKIT_WORK_ROOT`.
+
+One decode limit is **not** production-only. ffmpeg decoding runs under a
+wall-clock timeout in every profile, so a local `textflowkit transcribe`/`batch`
+run, a stdio MCP server, and the JSON HTTP adapter all stop a decode that
+exceeds it and report the setting to raise. The default is 600 seconds; set
+`TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` (seconds) before starting the process to
+allow a longer decode. This is separate from the production-only caps above,
+which apply only while `TEXTFLOWKIT_PROFILE=production`.
 
 ```bash
 export TEXTFLOWKIT_PROFILE=production

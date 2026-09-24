@@ -17,6 +17,10 @@ ENV_MAX_OUTPUT_BYTES = "TEXTFLOWKIT_MAX_OUTPUT_BYTES"
 ENV_MAX_MEDIA_BYTES = "TEXTFLOWKIT_MAX_MEDIA_BYTES"
 ENV_EGRESS_PROXY = "TEXTFLOWKIT_EGRESS_PROXY"
 ENV_FFMPEG_TIMEOUT_SECONDS = "TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS"
+# Wall-clock ceiling for one ffmpeg decode. It is not a production-only bound:
+# local CLI, MCP, and HTTP jobs all decode under it, so the timeout error names
+# this default to tell an operator how to raise it.
+DEFAULT_FFMPEG_TIMEOUT_SECONDS = 600
 
 
 class ServiceConfigurationError(ValueError):
@@ -101,7 +105,7 @@ def validate_production_config() -> None:
     positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600)
     positive_limit(ENV_MAX_OUTPUT_BYTES, 50 * 1024 * 1024)
     positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
-    positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
+    positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, DEFAULT_FFMPEG_TIMEOUT_SECONDS)
     positive_limit("TEXTFLOWKIT_MAX_PENDING_JOBS", 100)
 
 
