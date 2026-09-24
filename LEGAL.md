@@ -7,9 +7,18 @@ This document is plain-language guidance, not legal advice.
 textflowkit is distributed under the **Apache License 2.0**, which includes:
 
 - **§7 — Disclaimer of Warranty:** the work is provided on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-- **§8 — Limitation of Liability:** in no event shall any contributor be liable for
-  damages arising from use of the work.
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied —
+  unless required by applicable law or agreed to in writing.
+- **§8 — Limitation of Liability:** in no event shall any contributor be liable
+  for damages arising from use of the work — unless required by applicable law
+  (deliberate and grossly negligent acts are the example the license gives) or
+  agreed to in writing.
+
+Neither of those is an absolute rule: the license sets aside the disclaimer and
+the liability limit where applicable law requires otherwise, or where a separate
+written agreement says otherwise. This section is a plain-language summary; the
+[`LICENSE`](LICENSE) file is the controlling text and is what you should read for
+the terms that apply to you.
 
 The project ships no warranty of accuracy. **Transcripts produced by speech-to-text
 models contain errors.** Do not rely on output for legal, medical, safety-critical,
