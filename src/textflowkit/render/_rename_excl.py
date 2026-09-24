@@ -1,30 +1,27 @@
-"""Darwin `renamex_np(2)` with `RENAME_EXCL` as the second no-replace primitive (U33).
+"""Darwin no-replace publication through `renamex_np(2)` with `RENAME_EXCL`.
 
 `atomic_write_bytes` publishes a fully staged file with `os.link`, which is
 atomic and refuses an existing destination. Some filesystems have no hard links
 at all - FAT32 and exFAT (most USB drives and SD cards) and some network shares
 - and `link(2)` reports that as `EPERM` ("The filesystem containing oldpath and
-newpath does not support the creation of hard links"). That used to fail the
-whole export after the transcription had already run. Windows has `os.rename`
-for that case (U31) and Linux has `renameat2(RENAME_NOREPLACE)` (U32); this
-module is the macOS one.
+newpath does not support the creation of hard links"). This module is the macOS
+fallback for that case, so an export whose destination volume cannot link still
+publishes rather than failing after the transcription has already run.
 
 `renamex_np(from, to, RENAME_EXCL)` is the Darwin equivalent: it moves the
 staged inode to the destination name atomically, and with `RENAME_EXCL` the
 destination already existing is an error rather than a replacement, so
 no-clobber stays a kernel rule rather than a userspace check. The alternatives
-outside review A4 suggested stay rejected for the same reasons as on the other
-platforms: `open(dst, "xb")` puts a partly written file under the destination
-name, and an existence check followed by `os.replace` loses to whoever creates
-the file between the two calls.
+stay rejected for the same reasons as on the other platforms: `open(dst, "xb")`
+puts a partly written file under the destination name, and an existence check
+followed by `os.replace` loses to whoever creates the file between the two
+calls.
 
 Three things this module deliberately does not do:
 
 - **No `os.rename`, and no `os.replace`.** POSIX `rename(2)` silently replaces
-  an existing destination - measured on this unit's Windows host only as
-  "POSIX is not Windows", so the premise is pinned by a real `rename(2)` in the
-  `MACOS_ONLY` test rather than asserted here. Nothing in this module can
-  clobber.
+  an existing destination - pinned by a real `rename(2)` in the `MACOS_ONLY`
+  test rather than asserted here. Nothing in this module can clobber.
 - **No retry on a collision.** `EEXIST` is the no-clobber verdict; it becomes
   `FileExistsError` and is left to the caller.
 - **No degradation when the flag is unsupported.** `rename(2)` documents the
@@ -107,21 +104,20 @@ class ExclusiveRenameUnsupported(OSError):
 def _load_renamex_np():
     """The libc `renamex_np`, or `ExclusiveRenameUnsupported` if this host lacks it.
 
-    Resolved on every call, with no cached answer, for the reason U32 measured
-    on the Linux wrapper: a cache is shared by every thread in the process while
-    being published in more than one step, so a second export job could observe
-    "the probe has run" before the symbol existed and fail closed on a host that
-    has it. Resolving costs one `CDLL` handle per call on a path only reached
-    after a link has already failed, and leaves no cross-thread state that could
-    be seen half-published.
+    Resolved on every call, with no cached answer. A cache would be shared by
+    every thread in the process while being published in more than one step, so
+    a second export job could observe "the probe has run" before the symbol
+    existed and fail closed on a host that has it. Resolving instead costs one
+    `CDLL` handle per call on a path only reached after a link has already
+    failed, and leaves no cross-thread state that could be seen half-published.
 
     `ctypes.CDLL(None)` names the namespace the process itself is loaded from,
     which is how libc is reached without guessing a soname - `renamex_np` lives
     in libSystem, whose path is not part of the supported API surface. It is
     also why a non-Darwin host fails here: on Windows the argument is not even
-    accepted and the call raises `TypeError` (measured on this unit's host),
-    which is caught with the missing-symbol cases rather than left to escape as
-    something that looks like a bug in the caller.
+    accepted and the call raises `TypeError`, which is caught with the
+    missing-symbol cases rather than left to escape as something that looks like
+    a bug in the caller.
     """
     try:
         libc = ctypes.CDLL(None, use_errno=True)

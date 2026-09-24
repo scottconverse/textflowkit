@@ -1,21 +1,20 @@
-"""Linux `renameat2(2)` as the second no-replace publication primitive (U32).
+"""Linux no-replace publication through `renameat2(2)`.
 
 `atomic_write_bytes` publishes a fully staged file with `os.link`, which is
 atomic and refuses an existing destination. Some filesystems have no hard links
 at all - FAT32 and exFAT (most USB drives and SD cards) and some network shares
 - and `link(2)` reports that as `EPERM` ("The filesystem containing oldpath and
-newpath does not support the creation of hard links"). That used to fail the
-whole export after the transcription had already run. Windows has `os.rename`
-for that case (U31); this module is the Linux one.
+newpath does not support the creation of hard links"). This module is the Linux
+fallback for that case, so an export whose destination filesystem cannot link
+still publishes rather than failing after the transcription has already run.
 
 `renameat2(dirfd, oldpath, dirfd, newpath, RENAME_NOREPLACE)` is the kernel-side
 equivalent: it moves the staged inode to the destination name atomically, and
 with `RENAME_NOREPLACE` it refuses an existing destination with `EEXIST`
 instead of replacing it, so no-clobber stays a kernel rule rather than a
-userspace check. The alternatives outside review A4 suggested stay rejected:
-`open(dst, "xb")` puts a partly written file under the destination name, and an
-existence check followed by `os.replace` loses to whoever creates the file
-between the two calls.
+userspace check. The alternatives stay rejected: `open(dst, "xb")` puts a
+partly written file under the destination name, and an existence check followed
+by `os.replace` loses to whoever creates the file between the two calls.
 
 Three things this module deliberately does not do:
 
@@ -105,11 +104,10 @@ def _load_renameat2():
     Resolved on every call, with no cached answer. A cache would be shared by
     every thread in the process while being published in more than one step, so
     a second export job could observe "the probe has run" before the symbol
-    existed and fail closed on a host whose libc has the symbol - measured as
-    `{'second': NoReplaceRenameUnsupported, 'first': Sym}` under the one-shot
-    cache this module first shipped with. Resolving instead costs one `CDLL`
-    handle per call on a path that is only reached after a link has already
-    failed, and leaves no cross-thread state that could be seen half-published.
+    existed and fail closed on a host whose libc has the symbol. Resolving
+    instead costs one `CDLL` handle per call on a path that is only reached
+    after a link has already failed, and leaves no cross-thread state that could
+    be seen half-published.
 
     `ctypes.CDLL(None)` names the namespace the process itself is loaded from,
     which is how libc is reached without guessing a soname - glibc is
