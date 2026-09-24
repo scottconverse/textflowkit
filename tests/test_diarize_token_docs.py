@@ -35,6 +35,12 @@ POWERSHELL_ASSIGN = re.compile(r"\$env:HF_TOKEN\s*=")
 # ``(?<!:)`` keeps ``$env:HF_TOKEN =`` from counting as a POSIX assignment.
 POSIX_ASSIGN = re.compile(r"(?<!:)\bHF_TOKEN\s*=")
 
+POWERSHELL_LANGS = {"powershell", "ps1", "pwsh"}
+FORMS = {
+    "ps": (POWERSHELL_ASSIGN, "current-process PowerShell ($env:HF_TOKEN = 'hf_xxxxxxxx')"),
+    "posix": (POSIX_ASSIGN, "POSIX (export HF_TOKEN=..., or the VAR=value command prefix)"),
+}
+
 TOKEN_LITERAL = re.compile(r"hf_(?!hub_)[A-Za-z0-9_.-]+")
 PLACEHOLDER_TOKEN = re.compile(r"^hf_(?:x{4,}|\.{3,})$", re.IGNORECASE)
 
@@ -72,32 +78,51 @@ def _use_offset(body: str) -> int | None:
     return min(offsets) if offsets else None
 
 
-def _assert_assignment_precedes_use(section: str, assignment, form: str) -> None:
-    """``form`` must be set before the first fenced example that needs the token."""
-    blocks = _blocks(section)
-    uses = [(i, _use_offset(b.body)) for i, b in enumerate(blocks)]
-    uses = [(i, off) for i, off in uses if off is not None]
-    assert uses, (
-        "no fenced example in this section runs a diarized transcription or "
-        "verifies the token, so the ordering rule cannot be checked"
-    )
-    first_use, _ = min(uses)
+def _required_form(lang: str) -> str:
+    return "ps" if lang in POWERSHELL_LANGS else "posix"
 
-    for index, block in enumerate(blocks):
+
+def _assert_examples_set_the_token_first(section: str, form: str) -> None:
+    """Each example that needs the token must set it, in its own shell's syntax.
+
+    Coverage comes from an assignment in an earlier example, or from one inside
+    the example ahead of the command (the ``VAR=value command`` prefix).
+    """
+    assignment, name = FORMS[form]
+    checked = 0
+    assigned_earlier = False
+    for index, block in enumerate(_blocks(section)):
         match = assignment.search(block.body)
-        if match is None:
-            continue
-        if index < first_use:
-            return
-        # A command-prefixed assignment lives in the same block as its use; it
-        # still has to come first inside that block.
-        if index == first_use and match.start() < _use_offset(block.body):
-            return
-
-    raise AssertionError(
-        f"the diarization section never sets the token in the {form} form before "
-        f"the first example that consumes HF_TOKEN (block {first_use})"
+        offset = _use_offset(block.body)
+        if offset is not None and _required_form(block.lang) == form:
+            checked += 1
+            inside = match is not None and match.start() < offset
+            if not (assigned_earlier or inside):
+                raise AssertionError(
+                    f"the fenced example in block {index} consumes HF_TOKEN without the "
+                    f"token set in the {name} form before it"
+                )
+        assigned_earlier = assigned_earlier or match is not None
+    assert checked, (
+        f"no {name} example in this section consumes HF_TOKEN, so the ordering rule "
+        "cannot be checked"
     )
+
+
+def _assert_both_shells_cover_the_first_use(section: str) -> None:
+    """Install is one linear walkthrough: set the token in your shell *before* step one."""
+    blocks = _blocks(section)
+    first = next((i for i, b in enumerate(blocks) if _use_offset(b.body) is not None), None)
+    assert first is not None, (
+        "no fenced example in this section runs a diarized transcription or verifies "
+        "the token, so the ordering rule cannot be checked"
+    )
+    for form in ("ps", "posix"):
+        assignment, name = FORMS[form]
+        assert any(assignment.search(block.body) for block in blocks[:first]), (
+            f"the first example that consumes HF_TOKEN (block {first}) is not preceded by "
+            f"a token assignment in the {name} form"
+        )
 
 
 @pytest.fixture(scope="module")
@@ -111,19 +136,17 @@ def adapters_speaker_labels() -> str:
 
 
 def test_install_sets_the_token_for_the_current_powershell_process(install_diarization):
-    """``setx`` only reaches shells started later; the guide must set this one."""
-    _assert_assignment_precedes_use(
-        install_diarization, POWERSHELL_ASSIGN, "current-process PowerShell ($env:HF_TOKEN)"
-    )
+    """``setx`` only reaches shells started later; the guide must set this one first."""
+    _assert_both_shells_cover_the_first_use(install_diarization)
     blocks = [b for b in _blocks(install_diarization) if "$env:HF_TOKEN" in b.body]
-    assert any(b.lang in {"powershell", "ps1", "pwsh"} for b in blocks), (
+    assert any(b.lang in POWERSHELL_LANGS for b in blocks), (
         "the PowerShell assignment must sit in a PowerShell-labelled fence, not one "
         f"labelled {[b.lang for b in blocks]!r}"
     )
 
 
 def test_install_sets_the_token_for_posix_shells(install_diarization):
-    _assert_assignment_precedes_use(install_diarization, POSIX_ASSIGN, "POSIX (export HF_TOKEN=)")
+    _assert_examples_set_the_token_first(install_diarization, "posix")
 
 
 def test_install_keeps_setx_out_of_the_runnable_examples(install_diarization):
@@ -140,16 +163,15 @@ def test_install_keeps_setx_out_of_the_runnable_examples(install_diarization):
 
 
 def test_adapters_sets_the_token_before_invoking_diarization(adapters_speaker_labels):
-    _assert_assignment_precedes_use(
-        adapters_speaker_labels, POSIX_ASSIGN, "POSIX (export HF_TOKEN=)"
-    )
+    _assert_examples_set_the_token_first(adapters_speaker_labels, "posix")
 
 
 def test_adapters_sets_the_token_for_the_current_powershell_process(adapters_speaker_labels):
-    _assert_assignment_precedes_use(
-        adapters_speaker_labels,
-        POWERSHELL_ASSIGN,
-        "current-process PowerShell ($env:HF_TOKEN)",
+    _assert_examples_set_the_token_first(adapters_speaker_labels, "ps")
+    blocks = [b for b in _blocks(adapters_speaker_labels) if "$env:HF_TOKEN" in b.body]
+    assert any(b.lang in POWERSHELL_LANGS for b in blocks), (
+        "the PowerShell assignment must sit in a PowerShell-labelled fence, not one "
+        f"labelled {[b.lang for b in blocks]!r}"
     )
 
 
