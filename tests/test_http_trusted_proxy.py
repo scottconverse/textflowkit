@@ -20,6 +20,8 @@ address that is not a trusted proxy is the only position a caller cannot forge.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -29,6 +31,7 @@ from textflowkit.core.bind import ENV_ALLOW_REMOTE
 from textflowkit.core.executor import reset_default_executor
 from textflowkit.core.jobs import reset_default_store
 
+ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "a-long-test-token-12345"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -214,6 +217,27 @@ def test_malformed_trusted_proxy_setting_refuses_the_request(
     assert ENV_TRUSTED_PROXY_IPS in response.json()["error"]
 
 
+@pytest.mark.parametrize("value", ["", "   ", "\t", "\n  "])
+def test_explicitly_blank_trusted_proxy_setting_refuses_the_request(
+    production, monkeypatch, value
+):
+    """Set-but-blank is a broken setting, not the same thing as unset.
+
+    Treating it as unset would silently leave the operator counting every client
+    behind the proxy as one - the exact failure this unit removes - while the
+    docs promise a blank entry is refused. Only absent means "no trusted proxy".
+    """
+    monkeypatch.setenv(ENV_TRUSTED_PROXY_IPS, value)
+    monkeypatch.setenv(ENV_RATE_PER_MINUTE, "1")
+    response = get(PROXY, CLIENT_A)
+    assert response.status_code == 503, response.text
+    assert ENV_TRUSTED_PROXY_IPS in response.json()["error"]
+    # Truly unset is still the documented no-op, so the two are distinguishable.
+    monkeypatch.delenv(ENV_TRUSTED_PROXY_IPS)
+    assert get(PROXY, CLIENT_A).status_code == 200
+    assert set(http_server._RATE_BUCKETS) == {"10.0.0.1"}
+
+
 # --- the setting is production-only -----------------------------------------
 
 def test_developer_mode_ignores_the_trusted_proxy_setting(monkeypatch):
@@ -236,9 +260,13 @@ def test_trusted_proxy_setting_name_is_the_documented_one():
 
 
 def test_cli_start_does_not_let_uvicorn_rewrite_the_peer(monkeypatch):
-    """uvicorn's own middleware trusts 127.0.0.1 implicitly and takes the
-    *leftmost* forwarded entry, which is the caller's to forge. The CLI start
-    must hand the application the raw peer and let it apply its own trust set.
+    """The CLI must hand the application the raw peer and one trust set.
+
+    uvicorn's middleware applies its *own* trust set - `127.0.0.1`/`::1` by
+    default, or `FORWARDED_ALLOW_IPS` - and can rewrite the peer before this app
+    sees it, leaving two trust configurations where the operator configured one.
+    That is the reason it is off here, not any claim about its peer rule: its
+    normal path walks the chain from the right, as this implementation does.
     """
     import uvicorn
 
@@ -254,6 +282,36 @@ def test_cli_start_does_not_let_uvicorn_rewrite_the_peer(monkeypatch):
     assert http_server.main(["--host", "127.0.0.1", "--port", "8767"]) == 0
     assert captured["app"] is http_server.app
     assert captured["proxy_headers"] is False
+
+
+# --- our own notes must not overstate why uvicorn is disabled ---------------
+
+# uvicorn's `get_trusted_client_address` walks `reversed(x_forwarded_for_hosts)`
+# - the rightmost untrusted hop, the same rule this implementation uses - and
+# only reaches for the leftmost entry in its two degenerate cases. Phrasings
+# below assert the opposite and were in the first revision of both files.
+FALSE_UNIVERSAL_LEFTMOST_CLAIMS = (
+    "leftmost forwarded entry",
+    "takes the *leftmost*",
+    "leftmost entry, which is the caller's",
+)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["src/textflowkit/adapters/http_server.py", "docs/adapters.md"],
+)
+def test_notes_do_not_claim_leftmost_is_uvicons_general_rule(relative):
+    text = (ROOT / relative).read_text(encoding="utf-8").lower()
+    for phrase in FALSE_UNIVERSAL_LEFTMOST_CLAIMS:
+        assert phrase not in text, f"{relative} repeats the false claim {phrase!r}"
+
+
+def test_docs_name_the_two_cases_where_uvicorn_does_pick_the_leftmost():
+    """The caveat has to be stated, not just the corrected reason for disabling."""
+    text = (ROOT / "docs/adapters.md").read_text(encoding="utf-8")
+    assert "--forwarded-allow-ips=*" in text
+    assert "every hop in the chain is already trusted" in text
 
 
 # --- unit level: the identity rule itself ------------------------------------
