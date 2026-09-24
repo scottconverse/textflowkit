@@ -14,6 +14,17 @@ from textflowkit.sources.acquire import AcquisitionError, require_tool
 from textflowkit.sources.detect import SourceRef, resolve_source
 
 
+def _director_double():
+    """A request-director double for tests that replace yt_dlp wholesale.
+
+    A real YoutubeDL builds one lazily and the redirect guard refuses to fetch
+    through a build whose HTTP handlers cannot be verified, so a double standing
+    in for yt_dlp has to expose a director. These doubles never reach a real
+    transport, so it has no HTTP handler to guard.
+    """
+    return types.SimpleNamespace(handlers={})
+
+
 def test_require_tool_finds_ffmpeg():
     # ffmpeg is a documented prerequisite and present in the dev environment.
     assert require_tool("ffmpeg")
@@ -117,6 +128,8 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
     captured: dict = {}
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             captured.update(opts)
             self.urlopen = lambda req: None
@@ -172,6 +185,8 @@ def test_redirect_to_private_host_is_rejected(monkeypatch, tmp_path):
     from textflowkit.sources import acquire
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.urlopen = lambda req: types.SimpleNamespace(url="http://127.0.0.1/private")
 
@@ -212,7 +227,7 @@ def redirect_site():
     contacts: list[str] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's naming
+        def do_GET(self):
             contacts.append(self.path)
             location = {
                 "/start": f"{site['origin']}/private",
@@ -387,6 +402,8 @@ def test_production_rejects_known_download_size_before_transfer(
             pass
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.urlopen = lambda req: Response()
 
@@ -425,6 +442,8 @@ def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_p
         calls.append(1)
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None
@@ -473,6 +492,8 @@ def test_download_cancel_aborts_the_fetch(monkeypatch, tmp_path):
         raise JobCancelled()
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None

@@ -437,6 +437,11 @@ def test_download_byte_cap_aborts_during_transfer(cli_boundary, monkeypatch, cap
     written = []
 
     class FakeYDL:
+        # A real YoutubeDL builds a request director lazily; the redirect guard
+        # refuses a build whose HTTP handlers cannot be verified, so the double
+        # exposes one with no transport behind it.
+        _request_director = types.SimpleNamespace(handlers={})
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None
