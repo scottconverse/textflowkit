@@ -152,6 +152,13 @@ speech, **not** to individual translated words. Subtitle cue times follow the
 same distinction: they come from the word timings for source text and are
 estimated from the segment's interval otherwise.
 
+Every `Segment` also carries a `hidden` flag, `False` by default. It is the
+caller's annotation, not engine output: `transcribe()` never sets it. A hidden
+segment stays in `Transcript.segments` and in saved JSON, but is omitted from
+`Transcript.text`, from every rendered format, and from retrieval pages and
+searches — so a span can be suppressed (an off-topic aside, a section under
+review) without editing or dropping the underlying data.
+
 ## 6. MCP and HTTP integrations
 
 An AI harness can launch `textflowkit-mcp` as a stdio process, or connect to

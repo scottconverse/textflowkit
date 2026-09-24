@@ -30,7 +30,15 @@ class WordTiming:
 
 @dataclass(slots=True)
 class Segment:
-    """One timestamped span of speech."""
+    """One timestamped span of speech.
+
+    `hidden` is a caller-provided annotation, not engine output: nothing in the
+    transcription pipeline sets it. A hidden segment is still carried in the
+    transcript and in JSON round-trips, but is left out of `Transcript.text`,
+    out of every rendered export (SRT, WebVTT, TXT, Markdown, DOCX, PDF), and
+    out of retrieval pages and searches. Set it to suppress a span the caller
+    has decided not to publish without dropping it from the data.
+    """
 
     start: float
     end: float
