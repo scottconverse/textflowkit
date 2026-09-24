@@ -51,6 +51,14 @@ jobs:
             echo 'Release tag is not merged into main' >&2
             exit 1
           }
+      # A distribution's long description is built from the README at this commit
+      # and frozen on upload, so a README that still names an older tag publishes
+      # a permanently wrong version claim - the v0.1.5 mistake. This runs before
+      # anything is built or uploaded.
+      - name: Require the README to name the release being published
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/verify_readme_release.py
       - name: Require successful CI for this exact commit
         env:
           GITHUB_TOKEN: ${{ github.token }}
