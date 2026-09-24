@@ -256,20 +256,27 @@ With `TEXTFLOWKIT_TRUSTED_PROXY_IPS` unset, behaviour is unchanged: the peer
 address and nothing else.
 
 **Started through `textflowkit-http`, this is the whole story.** The CLI disables
-uvicorn's own proxy-header middleware, which trusts `127.0.0.1`/`::1` implicitly
-and takes the *leftmost* forwarded entry - the caller's to forge - and would
-otherwise rewrite the peer before this app could apply the list above. If you
-start the ASGI app directly instead, the same switch is yours:
+uvicorn's own proxy-header middleware. Not because that middleware reads the
+chain wrongly - its normal path walks it from the right too - but because it
+applies a *second* trust set of its own (`127.0.0.1` and `::1` by default, or
+`FORWARDED_ALLOW_IPS`) and can rewrite the peer before this app sees it. With it
+off, the peer is the raw TCP peer and `TEXTFLOWKIT_TRUSTED_PROXY_IPS` is the only
+trust configuration in play. If you start the ASGI app directly instead, the same
+switch is yours:
 
 ```bash
 uvicorn textflowkit.adapters.http_server:app --no-proxy-headers
 ```
 
-Leaving uvicorn's default middleware on (`--proxy-headers`) gives uvicorn's
-weaker rule precedence over this setting. Under it, anything able to reach the
-port from `127.0.0.1` or `::1` can choose its own rate-limit identity, so only do
-that behind a proxy that overwrites rather than appends `X-Forwarded-For`, and
-keep `FORWARDED_ALLOW_IPS` narrow.
+Leaving that middleware on (`--proxy-headers`) means its trust set, not this
+setting, decides the peer. Two of its cases differ from the rule above and are
+worth knowing: configured to trust everything (`--forwarded-allow-ips=*`) it
+returns the leftmost entry unconditionally, which the caller can type; and when
+every hop in the chain is already trusted it falls back to the leftmost entry
+too, where this implementation falls back to the peer. Everywhere else the two
+agree. So if you do leave it on, put it behind a proxy that appends its own
+observation rather than forwarding the caller's header, and keep
+`FORWARDED_ALLOW_IPS` narrow.
 
 ## Durable job state
 

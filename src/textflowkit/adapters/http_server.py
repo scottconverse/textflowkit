@@ -544,12 +544,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    # uvicorn's own proxy-header middleware trusts 127.0.0.1 and ::1 by default
-    # and takes the *leftmost* forwarded entry, which is the caller's to type. It
-    # would rewrite the peer before this app could apply its own trust set, so it
-    # is off: the app decides identity from the raw peer and
-    # TEXTFLOWKIT_TRUSTED_PROXY_IPS. Set --proxy-headers yourself only when you
-    # start the ASGI app directly and accept that middleware's weaker rule.
+    # uvicorn's own proxy-header middleware applies a *second* trust set of its
+    # own - 127.0.0.1/::1 by default, or FORWARDED_ALLOW_IPS - and can rewrite the
+    # peer before this app sees it. It is off so the app gets the raw peer and
+    # TEXTFLOWKIT_TRUSTED_PROXY_IPS is the only trust configuration in play. The
+    # reason is that duplication, not a weaker rule: its normal path also walks
+    # the chain from the right. It reaches for the leftmost entry only when
+    # configured to trust everything (--forwarded-allow-ips=*), or when every hop
+    # in the chain is already trusted. Start the ASGI app directly and you own
+    # that choice; see docs/adapters.md.
     uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
     return 0
 

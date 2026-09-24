@@ -240,10 +240,20 @@ def trusted_proxy_networks() -> tuple[
     prefix - is refused rather than skipped. Skipping would leave an operator who
     thinks a proxy is trusted silently without one, which is an identity hole
     that no request ever reports.
+
+    Only an *absent* variable means "no trusted proxy". A variable that is set
+    but empty is a broken setting, not an unset one: reading it as unset would
+    leave an operator who meant to configure a proxy counting every one of its
+    clients as a single caller, with nothing to show for it.
     """
-    raw = os.environ.get(ENV_TRUSTED_PROXY_IPS, "")
-    if not raw.strip():
+    raw = os.environ.get(ENV_TRUSTED_PROXY_IPS)
+    if raw is None:
         return ()
+    if not raw.strip():
+        raise TrustedProxyConfigError(
+            f"{ENV_TRUSTED_PROXY_IPS} is set but empty. Unset it to stop trusting "
+            "forwarded headers, or name the proxy addresses."
+        )
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for item in raw.split(","):
         entry = item.strip()
