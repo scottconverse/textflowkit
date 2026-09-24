@@ -113,6 +113,20 @@ def test_mcp_status_unknown_job():
     assert "error" in get_job_status("nope")
 
 
+def test_mcp_status_exposes_the_stage_in_flight():
+    """A poller over stdio must see which stage is running, not just the state."""
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_job_status
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.RUNNING, progress="transcribing")
+
+    payload = get_job_status(job.id)
+    assert payload["state"] == "running"
+    assert payload["progress"] == "transcribing"
+
+
 def test_mcp_transcript_requires_finished_job():
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import get_transcript, transcribe_media
@@ -182,6 +196,22 @@ def test_http_status_omits_complete_transcript():
     assert "transcript" not in body
     assert "checkpoint" not in body
     assert "private" not in str(body)
+
+
+def test_http_status_exposes_the_stage_in_flight():
+    """A poller over HTTP must see which stage is running, not just the state."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.RUNNING, progress="transcribing")
+
+    body = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}").json()
+    assert body["state"] == "running"
+    assert body["progress"] == "transcribing"
 
 
 @pytest.mark.parametrize("limit", [-1, 1001])
