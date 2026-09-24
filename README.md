@@ -91,6 +91,47 @@ python -m pip install 'textflowkit[mcp]'    # MCP server
 python -m pip install 'textflowkit[http]'   # JSON HTTP API
 ```
 
+PDF/DOCX export is optional. The default wheel stays small; the `export` extra
+installs `textflowkit-fonts` for offline multilingual PDF rendering:
+
+```bash
+python -m pip install 'textflowkit[export]'
+```
+
+## Python API
+
+The same pipeline used by the CLI and adapters is available to Python callers:
+
+```python
+from textflowkit import transcribe
+
+result = transcribe(
+    "meeting.mp4",            # also accepts supported URLs
+    model="small",
+    formats=["json", "srt", "txt"],
+    output_dir="transcripts", # omit to return the transcript without writing files
+)
+print(result.transcript.text)
+print(result.transcript.duration)  # full media duration in seconds
+print(result.outputs)              # pathlib.Path objects for written files
+for segment in result.transcript.segments:
+    print(segment.start, segment.end, segment.speaker, segment.text)
+    for word in segment.words:
+        print("  ", word.start, word.end, word.text)
+```
+
+`transcribe()` returns `TranscribeResult` with a canonical `Transcript` and
+written output paths. `Transcript.to_dict()` / `.to_json()` preserve segment and
+word timing; older transcript JSON without `words` remains readable. Pass
+`input_root=` to confine local input paths for untrusted callers. See
+[the install guide](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)
+for ffmpeg and Windows ROCm setup.
+
+MCP and HTTP transcript reads omit word timings by default to keep responses
+small; set `include_words=true` on a JSON read to receive them. Saved files,
+Python results, and durable job records still retain the source-language words,
+including when segment text has been translated.
+
 **AMD ROCm on native Windows:** do not use the generic command in an environment
 with a working ROCm PyTorch install. Ordinary dependency resolution can replace
 that torch build. Follow the [ROCm install notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)

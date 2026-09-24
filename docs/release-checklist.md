@@ -51,13 +51,36 @@ receipt. It does not upload cookies, media, or transcripts to GitHub.
 
 ## PyPI publication
 
-If this release is also published to PyPI, upload the **same** verified wheel
-and source archive as the GitHub release. Check package metadata before upload,
-then compare both PyPI SHA-256 digests with the GitHub release assets. Finally,
-install that exact version from the public PyPI index in a clean environment
-and smoke the CLI entry point. An install with `--no-deps` proves distribution
-and entry-point wiring only; it does not prove a full transcription run.
+After merged-main CI and the local release checks pass, push an annotated final
+version tag (for example `v0.1.5`) on that verified `main` commit. Do **not**
+create or publish a GitHub release manually. The tag push triggers
+[`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the
+tag, both package versions, and ancestry on `main`, builds the four artifacts,
+publishes `textflowkit-fonts` first and `textflowkit` second using PyPI Trusted
+Publishing, then creates a **draft** GitHub release with those exact artifacts.
+Only after the assets are attached does it make that release public.
+No upload token is passed to CI. Both PyPI projects must have trusted publishers
+for owner `scottconverse`, repository `textflowkit`, workflow
+`publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
+should require maintainer approval before an upload job can proceed.
+
+This is not a transaction across two PyPI projects and GitHub. If fonts upload
+succeeds but core fails, **there is no public GitHub release**, but fonts are
+already on PyPI. Check whether any core files reached PyPI before retrying:
+PyPI will reject duplicate filenames, and this workflow intentionally does not
+silently skip them. Correct the cause and rerun only failed jobs when safe; if
+some core files are present, reconcile their hashes against the original build
+artifact and finish the missing files deliberately. If both PyPI uploads succeed
+but draft creation or publishing fails, do not republish either PyPI project;
+complete the GitHub draft and assets from the exact build artifact after hash
+verification. Do not move the published version tag or claim a complete release
+until all four PyPI files and all four GitHub assets match.
+
+After publication, compare PyPI SHA-256 digests against the GitHub release assets
+for **both** packages, and clean-install the exact version with
+`textflowkit[export,mcp,http]`. Run `doctor`, `selftest`, and an actual PDF export.
+An install with `--no-deps` only proves distribution wiring, not transcription.
 
 Never place an API token in this repository, a CI log, or a shell command line.
 An upload is a separate public release action; passing CI alone does not
-authorize it.
+authorize it. Do not call a release complete if either package upload failed.

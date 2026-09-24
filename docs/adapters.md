@@ -136,7 +136,7 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs/{id}/resume` | resume a saved durable request/checkpoint |
 | GET | `/jobs` | list recent jobs |
 | GET | `/jobs/{id}` | job status |
-| GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=` | rendered transcript, optionally sliced |
+| GET | `/jobs/{id}/transcript?format=&offset=&limit=&start=&end=&include_words=` | rendered transcript, optionally sliced; word timings are opt-in for JSON |
 | GET | `/jobs/{id}/search?q=&limit=&context=` | search a transcript |
 | POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
@@ -338,6 +338,15 @@ question being asked.
 | `offset` | skip this many segments **within the selected range** |
 | `limit` | return at most this many |
 | `start` / `end` | restrict by time in seconds (inclusive) |
+| `include_words` | include source-language word timings in JSON; default `false` on MCP and HTTP reads |
+
+Saved JSON, SQLite job records, and resume checkpoints retain word timings even
+when `include_words=false`; the option reduces response size, not storage size.
+In one short reviewer sample, transcript JSON grew from 508 to 1,641 bytes
+(roughly threefold); the multiplier varies with segment and word counts.
+If the transcript was translated, the optional word timings still refer to the
+**original spoken language**, not the translated segment text. The Python API
+also retains the original word timings.
 
 Filtering is time first, then offset/limit inside that window - `offset` counts
 from the start of the requested range, not the start of the transcript. The

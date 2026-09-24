@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "textflowkit-fonts"
+version = "0.1.5"
+description = "Optional offline Unicode PDF fonts for TextFlowKit"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "OFL-1.1"
+license-files = ["src/textflowkit_fonts/fonts/OFL-*.txt"]
+keywords = ["textflowkit", "pdf", "fonts", "noto"]
+classifiers = ["Programming Language :: Python :: 3", "Topic :: Multimedia :: Graphics :: Graphics Conversion"]
+
+[project.urls]
+Homepage = "https://www.textflowkit.org/"
+Source = "https://github.com/scottconverse/textflowkit"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/textflowkit_fonts"]
+artifacts = ["src/textflowkit_fonts/fonts/*.ttf", "src/textflowkit_fonts/fonts/*.txt"]

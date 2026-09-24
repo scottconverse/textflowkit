@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -93,7 +94,7 @@ def test_atomic_write_never_replaces_existing_file(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_selftest_cleans_probe_even_when_engine_fails(monkeypatch):
+def test_selftest_reports_engine_failure(monkeypatch):
     from textflowkit import cli
 
     class Matrix:
@@ -118,5 +119,49 @@ def test_selftest_cleans_probe_even_when_engine_fails(monkeypatch):
     monkeypatch.setattr(cli, "get_engine", lambda *args, **kwargs: FailingEngine())
     assert cli.main(["selftest", "--model", "tiny"]) == 1
     assert len(observed) == 1
-    assert not observed[0].exists()
-    assert not observed[0].parent.exists()
+    assert observed[0].exists()  # bundled fixture, not a disposable scratch file
+
+
+def test_selftest_rejects_empty_transcription(monkeypatch, capsys):
+    from textflowkit import cli
+
+    class Matrix:
+        shape = (512, 512)
+
+        def __matmul__(self, other):
+            return self
+
+    torch = SimpleNamespace(
+        __version__="test", version=SimpleNamespace(hip=None),
+        cuda=SimpleNamespace(is_available=lambda: False),
+        device=lambda name: name, randn=lambda *args, **kwargs: Matrix(),
+    )
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    monkeypatch.setattr(cli, "get_engine", lambda *a, **k: SimpleNamespace(
+        transcribe=lambda wav: Transcript(source=str(wav), segments=[], metadata={})
+    ))
+    assert cli.main(["selftest"]) == 1
+    assert "no nonempty timed speech segments" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("has_speech", [True, False])
+def test_duration_covers_trailing_silence_or_empty_speech(tmp_path, monkeypatch, has_speech):
+    from textflowkit.core import pipeline
+
+    source = tmp_path / "clip.wav"
+    with wave.open(str(source), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 16000 * 3)
+
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: "ffmpeg")
+    monkeypatch.setattr(pipeline, "fetch_media", lambda ref, **kwargs: source)
+    monkeypatch.setattr(pipeline, "extract_audio", lambda media, **kwargs: media)
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: SimpleNamespace(
+        transcribe=lambda audio, **kwargs: Transcript(
+            source=str(audio), segments=[Segment(0, 1, "hi")] if has_speech else []
+        )
+    ))
+    result = transcribe(str(source), formats=["txt"])
+    assert result.transcript.duration == 3.0

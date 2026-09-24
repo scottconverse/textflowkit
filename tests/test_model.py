@@ -1,6 +1,6 @@
 """Canonical model round-trip and rendering."""
 
-from textflowkit.core.model import Segment, Transcript
+from textflowkit.core.model import Segment, Transcript, WordTiming
 
 
 def sample() -> Transcript:
@@ -20,12 +20,21 @@ def sample() -> Transcript:
 
 def test_roundtrip_json():
     tr = sample()
+    tr.segments[0].words = [WordTiming(0.0, 0.4, "Hello"), WordTiming(0.5, 1.0, "there.")]
     restored = Transcript.from_json(tr.to_json())
     assert restored.source == tr.source
     assert restored.language == "en"
     assert restored.platform == "youtube"
     assert len(restored.segments) == 3
     assert restored.segments[2].translated_text == "eres audaz"
+    assert restored.segments[0].words == tr.segments[0].words
+
+
+def test_legacy_transcript_without_words_still_loads():
+    data = sample().to_dict()
+    for segment in data["segments"]:
+        segment.pop("words")
+    assert all(not s.words for s in Transcript.from_dict(data).segments)
 
 
 def test_text_uses_translation_when_present():

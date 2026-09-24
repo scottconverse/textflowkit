@@ -408,6 +408,63 @@ def test_mcp_get_transcript_reports_next_page():
     assert "offset=3" in out["next"]
 
 
+def test_http_and_mcp_word_timings_are_opt_in_and_stored_data_is_unchanged():
+    import json
+
+    pytest.importorskip("mcp")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+    from textflowkit.adapters.mcp_server import get_transcript
+    from textflowkit.core.model import Segment, Transcript, WordTiming
+
+    store = get_default_store()
+    job = store.create("source.wav")
+    transcript = Transcript(source="source.wav", segments=[Segment(
+        0, 1, "source speech", translated_text="translated speech",
+        words=[WordTiming(0, 0.5, "source")],
+    )])
+    store.update(job.id, state=JobState.DONE, transcript=transcript.to_dict())
+    client = TestClient(app)
+
+    http_default = client.get(f"/jobs/{job.id}/transcript").json()
+    http_words = client.get(f"/jobs/{job.id}/transcript", params={"include_words": "true"}).json()
+    assert "words" not in http_default["transcript"]["segments"][0]
+    assert http_words["transcript"]["segments"][0]["words"][0]["text"] == "source"
+
+    mcp_default = json.loads(get_transcript(job.id, fmt="json")["content"])
+    mcp_words = json.loads(get_transcript(job.id, fmt="json", include_words=True)["content"])
+    assert "words" not in mcp_default["segments"][0]
+    assert mcp_words["segments"][0]["words"][0]["text"] == "source"
+    assert mcp_words["segments"][0]["translated_text"] == "translated speech"
+    assert store.get(job.id).transcript["segments"][0]["words"][0]["text"] == "source"
+
+
+def test_http_and_mcp_reject_unavailable_pdf_before_creating_job(monkeypatch, tmp_path):
+    pytest.importorskip("mcp")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+    from textflowkit.adapters.mcp_server import transcribe_media
+    from textflowkit.core import submission
+
+    def unavailable(formats):
+        raise ValueError("PDF export requires the 'export' extra")
+
+    monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
+    store = get_default_store()
+    http = TestClient(app).post("/jobs", json={
+        "source": "media.wav", "formats": ["pdf"], "output_dir": str(tmp_path),
+    })
+    mcp = transcribe_media("media.wav", formats="pdf", output_dir=str(tmp_path))
+    assert http.status_code == 422
+    assert "export" in http.json()["detail"]
+    assert "export" in mcp["error"]
+    assert store.list() == []
+
+
 def test_mcp_search_finds_and_reports_context():
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import search_transcript

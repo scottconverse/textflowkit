@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.request
 import venv
+import zipfile
 from pathlib import Path
 
 
@@ -151,9 +152,19 @@ def http_smoke(command: Path, cwd: Path, env: dict[str, str], *, production: boo
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python scripts/smoke_installed_wheel.py PATH_TO_WHEEL")
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: python scripts/smoke_installed_wheel.py MAIN_WHEEL FONTS_WHEEL")
     wheel = Path(sys.argv[1]).resolve(strict=True)
+    font_wheel = Path(sys.argv[2]).resolve(strict=True)
+    with zipfile.ZipFile(wheel) as archive:
+        assert not any(name.endswith(".ttf") for name in archive.namelist())
+        assert "textflowkit/assets/selftest-speech.wav" in archive.namelist()
+    with zipfile.ZipFile(font_wheel) as archive:
+        assert all(
+            f"textflowkit_fonts/fonts/{name}.ttf" in archive.namelist()
+            for name in ("NotoSans", "NotoSansArabic", "NotoSansSC")
+        )
+        assert any("OFL-NotoSans.txt" in name for name in archive.namelist())
     with tempfile.TemporaryDirectory(prefix="tfk-wheel-smoke-") as directory:
         root = Path(directory)
         env_root = root / "venv"
@@ -165,13 +176,33 @@ def main() -> None:
         env.pop("TEXTFLOWKIT_DB", None)
         env["TEXTFLOWKIT_OUTPUT_ROOT"] = str(root / "outputs")
         run(py, "-m", "pip", "install", "--disable-pip-version-check", "--no-deps",
-            wheel, cwd=root, env=env)
+            wheel, font_wheel, cwd=root, env=env)
         run(py, "-m", "pip", "install", "--disable-pip-version-check",
             "mcp>=2.0", "fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7",
+            "reportlab>=4.0", "pypdf>=5",
             cwd=root, env=env)
         installed_path = run(py, "-c", "import textflowkit; print(textflowkit.__file__)",
                              cwd=root, env=env).strip()
         assert str(root).casefold() in installed_path.casefold(), installed_path
+        speech_fixture = run(
+            py, "-c",
+            "from importlib.resources import files; "
+            "p=files('textflowkit').joinpath('assets/selftest-speech.wav'); "
+            "assert p.read_bytes().startswith(b'RIFF'); print('speech fixture present')",
+            cwd=root, env=env,
+        )
+        assert "speech fixture present" in speech_fixture
+        pdf_smoke = run(
+            py, "-c",
+            "from textflowkit import Segment, Transcript; "
+            "from textflowkit.render import render_bytes; "
+            "from pypdf import PdfReader; import io; "
+            "blob=render_bytes(Transcript(source='wheel',segments=[Segment(0,1,'Hello 你好')]),'pdf'); "
+            "assert '你好' in PdfReader(io.BytesIO(blob)).pages[0].extract_text(); "
+            "print('PDF export passed')",
+            cwd=root, env=env,
+        )
+        assert "PDF export passed" in pdf_smoke
         cli = executable(env_root, "textflowkit")
         mcp = executable(env_root, "textflowkit-mcp")
         http = executable(env_root, "textflowkit-http")

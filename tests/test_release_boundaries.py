@@ -90,6 +90,23 @@ def test_confined_cli_transcribes_real_media(suffix, cli_boundary, capsys):
     assert payload["segments"][0]["text"].startswith("duration=1")
 
 
+def test_direct_pipeline_export_preflight_runs_before_media_work(cli_boundary, monkeypatch):
+    from textflowkit.core import pipeline
+
+    root, output, _store, engine = cli_boundary
+    media = root / "clip.wav"
+    _wav(media)
+
+    def unavailable(formats):
+        assert formats == ["pdf"]
+        raise ValueError("PDF export requires the export extra")
+
+    monkeypatch.setattr(pipeline, "validate_export_requirements", unavailable)
+    with pytest.raises(ValueError, match="PDF export"):
+        pipeline.transcribe(str(media), formats=["pdf"], output_dir=output)
+    assert engine.calls == 0
+
+
 def test_completed_local_resume_requires_existing_unchanged_file(cli_boundary, capsys):
     root, output, store, engine = cli_boundary
     media = root / "clip.wav"

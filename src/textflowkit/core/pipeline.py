@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import time
 import uuid
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ from textflowkit.core.translate import (
     get_translator,
     translate_segments,
 )
-from textflowkit.render import SUPPORTED_FORMATS, write_all
+from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements, write_all
 from textflowkit.sources.acquire import (
     AcquisitionError,
     extract_audio,
@@ -202,6 +203,8 @@ def transcribe(
             raise PipelineError(
                 f"unsupported format '{fmt}'; choose from {', '.join(SUPPORTED_FORMATS)}"
             )
+    if output_dir is not None:
+        validate_export_requirements(formats)
 
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured
@@ -275,6 +278,15 @@ def transcribe(
                     transcript = eng.transcribe(audio, language=language)
                 except Exception as exc:  # engine failures are user-facing
                     raise PipelineError(f"transcription failed: {exc}") from exc
+                # extract_audio always writes PCM WAV. Its frame count includes
+                # trailing silence and is more precise than the last speech cue.
+                try:
+                    with wave.open(str(audio), "rb") as wav:
+                        if wav.getframerate() > 0:
+                            transcript.duration = wav.getnframes() / wav.getframerate()
+                except (OSError, EOFError, wave.Error):
+                    # Preserve an engine-supplied duration for test/custom engines.
+                    pass
                 if ref.kind == "file":
                     try:
                         current = local_source_identity(resolved_source, input_root=root)

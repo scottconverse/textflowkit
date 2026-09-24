@@ -248,6 +248,7 @@ def get_transcript(
     limit: int | None = None,
     start: float | None = None,
     end: float | None = None,
+    include_words: bool = False,
 ) -> dict[str, Any]:
     """Read the transcript for a completed job, optionally a slice of it.
 
@@ -262,6 +263,9 @@ def get_transcript(
         limit: Return at most this many segments.
         start: Only segments ending at or after this time (seconds).
         end: Only segments starting at or before this time (seconds).
+        include_words: Include source-language word timings in JSON output.
+            Defaults to false to keep model context small; translated text
+            does not produce translated word timings.
     """
     job, err = _resolve_job(job_id)
     if err:
@@ -307,7 +311,8 @@ def get_transcript(
         "language": tr.language,
         "platform": tr.platform,
         **page.as_dict(),
-        "content": render(sliced, norm),
+        "content": sliced.to_json(include_words=include_words) if norm == "json"
+        else render(sliced, norm),
     }
     if page.has_more:
         payload["next"] = (
@@ -548,7 +553,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 
 
 

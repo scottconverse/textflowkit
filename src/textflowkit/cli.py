@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 from textflowkit import __version__
@@ -370,10 +371,6 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
     honest way to keep it verified is to make the check reproducible and runnable
     on demand rather than relying on one engineer's memory of a good run.
     """
-    import tempfile
-    import wave
-    from pathlib import Path
-
     failures: list[str] = []
 
     def ok(label: str, detail: str = "") -> None:
@@ -414,29 +411,26 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         return summarise()
 
     print("transcribe")
-    with tempfile.TemporaryDirectory(prefix="tfk-selftest-") as scratch:
-        wav = Path(scratch) / "probe.wav"
-        try:
-            # 1 second of silence, written as real PCM wav.
-            with wave.open(str(wav), "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(16000)
-                w.writeframes(b"\x00\x00" * 16000)
-            ok("generated probe audio", f"{wav.stat().st_size} bytes")
-        except Exception as exc:  # noqa: BLE001 - diagnostic
-            bad("generated probe audio", f"{type(exc).__name__}: {exc}")
-            return 1
+    try:
+        fixture = files("textflowkit").joinpath("assets/selftest-speech.wav")
+        with fixture.open("rb") as stream:
+            if not stream.read(12).startswith(b"RIFF"):
+                raise ValueError("bundled speech fixture is not a WAV file")
+        ok("bundled speech fixture")
+        from importlib.resources import as_file
 
-        try:
+        with as_file(fixture) as wav:
             engine = get_engine("whisper", model=args.model)
             transcript = engine.transcribe(wav)
-            ok(
-                "whisper ran on this device",
-                f"model={args.model} device={transcript.metadata.get('device')} segments={len(transcript.segments)}",
-            )
-        except Exception as exc:  # noqa: BLE001 - diagnostic
-            bad("whisper ran on this device", f"{type(exc).__name__}: {exc}")
+            speech = [s for s in transcript.segments if s.text.strip() and s.end > s.start]
+            if not speech:
+                raise ValueError("model returned no nonempty timed speech segments")
+            recognized = " ".join(s.text for s in speech).lower().split()
+            if "transcribe" not in {word.strip(".,!?;:\"'()") for word in recognized}:
+                raise ValueError("model did not recognize 'transcribe' in the bundled speech")
+            ok("whisper produced timed speech", f"model={args.model} device={transcript.metadata.get('device')} segments={len(speech)}")
+    except Exception as exc:  # noqa: BLE001 - diagnostic
+        bad("whisper produced timed speech", f"{type(exc).__name__}: {exc}")
 
     return summarise()
 
@@ -470,4 +464,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

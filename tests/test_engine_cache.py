@@ -27,3 +27,24 @@ def test_whisper_model_loads_once_for_repeated_jobs(monkeypatch, tmp_path):
     assert first.transcribe(audio).segments[0].text == "hello"
     assert second.transcribe(audio).segments[0].text == "hello"
     assert loads == [("cache-test-only", "cpu")]
+
+
+def test_whisper_preserves_word_timings(monkeypatch, tmp_path):
+    class FakeModel:
+        def transcribe(self, path, **kwargs):
+            assert kwargs["word_timestamps"] is True
+            return {"language": "en", "segments": [
+                {"start": 0, "end": 2, "text": " Hello world", "words": [
+                    {"start": 0.1, "end": 0.6, "word": " Hello"},
+                    {"start": 0.7, "end": 1.2, "word": " world"},
+                ]},
+            ]}
+
+    monkeypatch.setitem(sys.modules, "whisper", SimpleNamespace(load_model=lambda *a, **k: FakeModel()))
+    transcript = get_engine("whisper", model="word-test-only", device="cpu").transcribe(
+        tmp_path / "audio.wav"
+    )
+    assert transcript.duration is None
+    assert [(w.start, w.end, w.text) for w in transcript.segments[0].words] == [
+        (0.1, 0.6, "Hello"), (0.7, 1.2, "world")
+    ]

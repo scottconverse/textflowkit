@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 
-from textflowkit.core.model import Segment, Transcript
+from textflowkit.core.model import Segment, Transcript, WordTiming
 
 
 class Engine(Protocol):
@@ -92,15 +92,24 @@ class WhisperEngine:
                     end=float(raw.get("end", 0.0)),
                     text=text,
                     speaker=None,
+                    words=[
+                        WordTiming(
+                            start=float(word["start"]),
+                            end=float(word["end"]),
+                            text=str(word["word"]).strip(),
+                        )
+                        for word in (raw.get("words") or [])
+                        if isinstance(word, dict) and word.get("word")
+                        and word.get("start") is not None and word.get("end") is not None
+                    ],
                 )
             )
 
-        duration = segments[-1].end if segments else None
         return Transcript(
             source=str(audio_path),
             language=result.get("language"),
             segments=segments,
-            duration=duration,
+            duration=None,  # Speech spans are not the length of the source audio.
             engine=self.name,
             metadata={"model": self.model_name, "device": self.device},
         )
@@ -124,4 +133,3 @@ def get_engine(name: str = "whisper", **kwargs: Any) -> Engine:
         with _ENGINE_CACHE_LOCK:
             return _cached_whisper(model, device, fp16)
     raise ValueError(f"unknown engine: {name}")
-

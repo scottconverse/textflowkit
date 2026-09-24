@@ -17,6 +17,7 @@ work/
 out/
 outputs/
 *.wav
+!src/textflowkit/assets/selftest-speech.wav
 *.mp3
 *.m4a
 *.mp4
@@ -34,4 +35,3 @@ Thumbs.db
 .vscode/
 .idea/
 board/
-

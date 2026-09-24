@@ -37,6 +37,20 @@ BINARY_FORMATS = ("docx", "pdf")
 SUPPORTED_FORMATS = TEXT_FORMATS + BINARY_FORMATS
 
 
+def validate_export_requirements(formats: list[str]) -> None:
+    """Fail before acquisition or inference when a requested export is unavailable."""
+    normalized = {fmt.lower().lstrip(".") for fmt in formats}
+    try:
+        if "docx" in normalized:
+            from textflowkit.render import docx  # noqa: F401 - import checks optional dependency
+        if "pdf" in normalized:
+            from textflowkit.render.pdf import _ensure_fonts
+
+            _ensure_fonts()
+    except ImportError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 def _render_requested(
     transcript: Transcript, formats: list[str], title: str | None
 ) -> list[tuple[str, bytes]]:
@@ -187,5 +201,6 @@ __all__ = [
     "render_srt",
     "render_txt",
     "render_vtt",
+    "validate_export_requirements",
     "write_all",
 ]
