@@ -86,6 +86,13 @@ and both [core](https://pypi.org/project/textflowkit/0.1.5/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.5/) PyPI projects are live.
 The first Trusted Publishing run succeeded; all four GitHub/PyPI artifact hashes
 matched, and a fresh install passed self-test, transcription, and PDF export.
+- [x] Ship v0.1.6 review follow-ups: the post-v0.1.5 review repair set — media
+  acquisition and adapter security hardening, safer subtitle wrapping and
+  output-file publication, job and checkpoint storage corrections, an opt-in
+  faster-whisper engine, a container example, and fail-closed release gates for
+  tagged versions, README claims, and exact-commit CI. The repairs are merged;
+  the v0.1.6 tag, PyPI upload, and live site are the coordinator's release step,
+  not a claim made here.
 - [ ] Follow-up: normalize exported file permissions on POSIX to respect the
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading

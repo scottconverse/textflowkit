@@ -41,13 +41,16 @@ assumes single-page-application routing and matches every unmatched path to
 like the landing page: it runs no scripts and makes no request to the
 transcription pipeline.
 
-**Pending until the next deployment.** The deployed site still returns 200 for
-unknown paths until `docs/404.html` reaches production. After the change is
-merged and deployed, request a random unknown path (for example
-`https://www.textflowkit.org/__missing_route__`) and confirm both that the
-status is **404** and that the returned content is a not-found page distinct
-from the home page. Record the observed status and the page title. A local file
-server is not Cloudflare Pages, so this check can only run after deployment.
+**Verified in production, 2026-09-24.** `docs/404.html` has been deployed:
+`https://www.textflowkit.org/__missing_route__` returned **404** while the home
+page returned **200**, so an unknown path is no longer answered with the landing
+page. Record the observed status and the page title. That observation is
+point-in-time, not a standing guarantee: it holds until a change to
+`docs/404.html` or to the Pages configuration is deployed, so re-run the same
+request after any such change and confirm both the **404** status and returned
+content that is a not-found page distinct from the home page. A local file
+server is not Cloudflare Pages, so this check can only run against the deployed
+site.
 
 The former GitHub Pages `docs/CNAME` file is intentionally absent. Do not
 recreate it: domain routing now lives in Cloudflare, not GitHub Pages.
