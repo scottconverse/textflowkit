@@ -58,6 +58,18 @@ def run_job(
 
     store.update(job.id, state=JobState.RUNNING, progress="starting")
 
+    def _progress(stage: str) -> None:
+        """Publish the stage in flight so a polling client sees real progress.
+
+        A cancellation already in flight owns the label: the job is
+        `cancelling`, not whichever stage the worker is about to start. Terminal
+        jobs are left alone for the same reason.
+        """
+        latest = store.get(job.id)
+        if latest is None or latest.is_terminal or latest.cancel_requested:
+            return
+        store.update(job.id, progress=stage)
+
     try:
         result = transcribe(
             source,
@@ -78,6 +90,7 @@ def run_job(
             translator_backend=translator_backend,
             resume_checkpoint=resume_checkpoint,
             on_checkpoint=lambda record: write_checkpoint(store, job.id, record),
+            on_stage=_progress,
             output_id=job.id,
         )
     except JobCancelled:

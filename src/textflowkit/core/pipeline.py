@@ -128,6 +128,7 @@ def transcribe(
     translator_backend: str = "ollama",
     resume_checkpoint: dict[str, Any] | None = None,
     on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
+    on_stage: Callable[[str], None] | None = None,
     output_id: str | None = None,
 ) -> TranscribeResult:
     """Run the full pipeline for a URL or local file.
@@ -140,6 +141,12 @@ def transcribe(
     `resume_checkpoint` carries a validated snapshot from an earlier run.
     Completed transcript work is reused; acquisition and engine work are skipped.
     `on_checkpoint` receives an atomic snapshot after each completed stage.
+
+    `on_stage` receives the name of the stage about to run. Checkpoints fire on
+    completion, so they cannot answer "what is happening now": by the time one
+    arrives, the next stage - usually the long one - has already started. The
+    two callbacks are deliberately separate, and only `on_stage` is reported
+    while work is in flight.
     """
     resumed = parse_checkpoint(resume_checkpoint)
     finished_stages = list(resumed.finished_stages) if resumed else []
@@ -176,6 +183,17 @@ def transcribe(
         )
         on_checkpoint(snapshot.to_dict())
         return snapshot
+
+    def _stage(name: str) -> None:
+        """Announce the stage now starting, or stop if cancellation arrived.
+
+        Pairing the announcement with the cancellation check keeps the two
+        honest: a stage is only announced if we are about to run it.
+        """
+        if check_cancel is not None:
+            check_cancel()
+        if on_stage is not None:
+            on_stage(name)
 
     def _recordable(path: Path | None) -> str | None:
         """A path we can honestly promise to a later run.
@@ -252,6 +270,7 @@ def transcribe(
         try:
             if not can_resume:
                 require_tool("ffmpeg")
+                _stage("fetching")
                 if ref.kind == "file" and root is not None:
                     media = stage_confined_local_media(
                         ref.location, work_dir=scratch, input_root=root
@@ -269,11 +288,13 @@ def transcribe(
                     )
                 _checkpoint("fetch")
                 enforce_predecode_limits(media)
+                _stage("extracting")
                 audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
 
                 eng = get_engine(engine, model=model, device=device)
+                _stage("transcribing")
                 try:
                     transcript = eng.transcribe(audio, language=language)
                 except Exception as exc:  # engine failures are user-facing
@@ -300,6 +321,7 @@ def transcribe(
                 # only the audio required by pyannote; never rerun Whisper.
                 require_tool("ffmpeg")
                 if media is None:
+                    _stage("fetching")
                     if ref.kind == "file" and root is not None:
                         media = stage_confined_local_media(
                             ref.location, work_dir=scratch, input_root=root
@@ -312,11 +334,18 @@ def transcribe(
                         )
                     _checkpoint("fetch")
                 enforce_predecode_limits(media)
+                _stage("extracting")
                 audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
         except (AcquisitionError, UnsafeInputPathError) as exc:
             raise PipelineError(str(exc)) from exc
+
+        if diarize or translate_to:
+            # Announced once, before the first of the optional postprocessors.
+            # Neither running means no postprocess stage happens at all, and
+            # saying otherwise would report work that does not exist.
+            _stage("postprocessing")
 
         if diarize:
             # Refuse loudly rather than returning a transcript with empty speakers.
@@ -364,6 +393,9 @@ def transcribe(
 
         outputs: list[Path] = []
         if output_dir is not None:
+            # Only announced when there is something to write: with no
+            # `output_dir` the run renders nothing and must not say it does.
+            _stage("rendering")
             stem = Path(ref.location).stem if ref.kind != "url" else "transcript"
             stem = stem.replace("textflowkit-", "") or "transcript"
             stem = f"{stem}-{output_id or uuid.uuid4().hex[:16]}"
