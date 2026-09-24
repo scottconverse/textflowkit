@@ -74,7 +74,9 @@ public. The step refuses to write a manifest unless it finds exactly the two
 wheels and two sdists from this release's version, so a missing, duplicated, or
 stray artifact stops the release instead of publishing misleading hashes.
 `SHA256SUMS` is a release **asset**, a sidecar of the attached files; it is not
-a table inside the release notes, which GitHub generates.
+a table inside the release notes, which GitHub generates. Only releases published
+after this step was added have one: v0.1.5 and earlier releases predate it and
+have no manifest to compare.
 No upload token is passed to CI. Both PyPI projects must have trusted publishers
 for owner `scottconverse`, repository `textflowkit`, workflow
 `publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment

@@ -24,6 +24,14 @@ MANIFEST = "SHA256SUMS"
 MANIFEST_SCRIPT = "scripts/write_release_manifest.py"
 DOWNLOAD_ACTION = "actions/download-artifact"
 RELEASE_JOB = "publish-github-release"
+# The manifest step is newer than the release the README links to, so a claim
+# about it must be scoped forward and must say older releases have no asset.
+FUTURE_MARKERS = ("next release", "future release", "Starting with")
+ABSENCE_MARKERS = (
+    "do not carry", "does not carry", "have no such asset", "no manifest",
+    "no such asset", "predate", "before that change", "and earlier", "included,",
+)
+EARLIER_RELEASES_ATTACH = re.compile(r"each release\s+attaches", re.IGNORECASE)
 
 
 def _job(text: str, name: str) -> str:
@@ -119,3 +127,32 @@ def test_the_checklist_names_the_manifest_it_compares_against_pypi() -> None:
     section = CHECKLIST[CHECKLIST.index("## PyPI publication"):]
     assert MANIFEST in section
     assert "asset" in section
+
+
+def _paragraphs(text: str, needle: str) -> list[str]:
+    """Return the blank-line-delimited paragraphs that mention `needle`."""
+    return [block for block in re.split(r"\n[ \t]*\n", text) if needle in block]
+
+
+def test_readme_scopes_every_manifest_claim_to_releases_after_the_change() -> None:
+    """The release the README links to is older than the manifest step.
+
+    `README.md` points readers at `/releases/latest`, which today is v0.1.5 -
+    published before the workflow attached any manifest. An unconditional "each
+    release attaches a SHA256SUMS asset" is therefore false about the very
+    release a reader reaches, so every claim about the asset must be scoped to
+    releases published after the change and must say older ones have none.
+    """
+    paragraphs = _paragraphs(README, MANIFEST)
+    assert paragraphs, "the README must still describe the manifest asset"
+    for paragraph in paragraphs:
+        assert any(marker in paragraph for marker in FUTURE_MARKERS), paragraph
+        assert any(marker in paragraph for marker in ABSENCE_MARKERS), paragraph
+    assert not EARLIER_RELEASES_ATTACH.search(README)
+
+
+def test_the_checklist_marks_earlier_releases_as_having_no_manifest() -> None:
+    """The maintainer must not hunt for a `SHA256SUMS` asset on v0.1.5."""
+    section = CHECKLIST[CHECKLIST.index("## PyPI publication"):]
+    assert MANIFEST in section
+    assert any(marker in section for marker in ABSENCE_MARKERS), section

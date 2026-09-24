@@ -144,9 +144,11 @@ to preserve it.
 
 The same version's wheel and source archive are also on the
 [GitHub release page](https://github.com/scottconverse/textflowkit/releases/latest).
-Each release attaches a `SHA256SUMS` asset with the SHA-256 hash of every wheel
-and source archive it publishes, so you can verify what you downloaded. For
-editable source development, see
+Starting with the next release, every release published by this project's release
+workflow carries a `SHA256SUMS` asset listing the SHA-256 hash of each wheel and
+source archive it contains, so you can check a download with
+`sha256sum -c SHA256SUMS`. Releases published before that change, v0.1.5
+included, have no such asset. For editable source development, see
 [CONTRIBUTING.md](https://github.com/scottconverse/textflowkit/blob/main/CONTRIBUTING.md).
 
 ## Usage

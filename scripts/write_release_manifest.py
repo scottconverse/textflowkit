@@ -1,9 +1,10 @@
 """Write the SHA256SUMS sidecar for the distributions attached to a release.
 
-The README tells a downloader that the release page carries hashes for its
-wheel and sdist. That promise is only worth something if the manifest hashes
-the *same bytes* that were attached and names exactly the distributions the
-release publishes. So this script takes the downloaded artifact paths, requires
+The README tells a downloader that releases published by this workflow carry
+hashes for their wheel and sdist; releases tagged before this step existed have
+no such asset. That promise is only worth something if the manifest hashes the
+*same bytes* that were attached and names exactly the distributions the release
+publishes. So this script takes the downloaded artifact paths, requires
 the complete set of four distributions (a wheel and an sdist for each of the
 two projects), rejects anything missing, duplicated, or unexpected, and only
 then writes the rows.
