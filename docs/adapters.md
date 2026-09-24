@@ -402,15 +402,36 @@ segments were translated).
 
 ### Speaker labels
 
-```bash
-textflowkit transcribe "$URL" --diarize
-HF_TOKEN=hf_...                   # required: the model is gated
-TEXTFLOWKIT_DIARIZE_DEVICE=cuda  # optional; ROCm also appears as cuda in torch
-```
-
 Requires the optional `diarize` extra (`pip install 'textflowkit[diarize]'`) and a
 Hugging Face token with access to the pyannote model. Missing either one **fails
 the job with an actionable message** - verified over both the CLI and MCP.
+
+The token and the optional device have to be set **before** the command, in the
+shell that runs it: the process reads the environment once, at startup, so an
+assignment placed after the command (or in a different window) has no effect on
+that run.
+
+Linux, macOS, WSL, or Git Bash:
+
+```bash
+export HF_TOKEN='hf_xxxxxxxx'            # required: the model is gated
+export TEXTFLOWKIT_DIARIZE_DEVICE=cuda   # optional; ROCm also appears as cuda in torch
+textflowkit transcribe "$URL" --diarize
+```
+
+Native Windows PowerShell:
+
+```powershell
+$env:HF_TOKEN = 'hf_xxxxxxxx'            # required: the model is gated
+$env:TEXTFLOWKIT_DIARIZE_DEVICE = 'cuda' # optional; ROCm also appears as cuda in torch
+textflowkit transcribe .\clip.wav --diarize
+```
+
+In PowerShell `$URL` is a variable reference rather than a literal, so pass the
+real path or URL there - the example uses a local file. POSIX shells also accept
+a one-off prefix, `HF_TOKEN='hf_xxxxxxxx' textflowkit transcribe clip.wav
+--diarize`; PowerShell has no `VAR=value command` prefix, so it needs the `$env:`
+assignment on its own line.
 
 Each segment takes the speaker with the greatest time overlap. A segment with no
 overlapping turn is left **unlabelled rather than guessed at**, and exact ties go

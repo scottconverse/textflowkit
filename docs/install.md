@@ -213,14 +213,27 @@ actually blocks a run:
 Accepting only the first two gets you a `403 GatedRepoError` on
 `speaker-diarization-community-1` partway through loading. Each one needs
 "Agree and access repository" clicked on its own page while logged in, then a
-read token:
+read token.
+
+Set the token **in the same shell you will run the command from**, before running
+it - the process reads the environment when it starts, so a token set after the
+command, or set in another window, never reaches that run.
+
+Native Windows PowerShell:
+
+```powershell
+$env:HF_TOKEN = 'hf_xxxxxxxx'
+```
+
+Linux, macOS, WSL, or Git Bash:
 
 ```bash
-setx HF_TOKEN hf_xxxxxxxx
+export HF_TOKEN='hf_xxxxxxxx'
 ```
 
 A **read** token is sufficient. Verify it reaches all three before blaming the
-code:
+code - run this in the same shell where you set the token (the one-liner is
+identical in PowerShell):
 
 ```bash
 python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', token=__import__('os').environ['HF_TOKEN']) for r in ['pyannote/speaker-diarization-3.1','pyannote/segmentation-3.0','pyannote/speaker-diarization-community-1']]; print('all three OK')"
@@ -228,9 +241,16 @@ python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', 
 
 ### Running it
 
+The session-scoped assignment above still applies to this command:
+
 ```bash
 textflowkit transcribe clip.wav --diarize --format json
 ```
+
+`setx HF_TOKEN "hf_xxxxxxxx"` is a separate, optional step for **new shells**
+only: it writes the value for shells started afterwards and does **not** affect
+the window you are in, so it can never replace the session-scoped assignment
+above.
 
 Segments come back with a `speaker` field (`SPEAKER_00`, `SPEAKER_01`, ...) and
 `metadata.diarization` records the backend, the speaker list, the turn count and
