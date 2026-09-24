@@ -698,6 +698,39 @@ def test_the_documented_probe_is_the_one_the_container_runs() -> None:
     )
 
 
+# What the prose promises the documented probe shows. The probe is the
+# container's own `healthcheck.test` script, which asserts on the response; it has
+# to keep asserting, because byte-equality with the shipped probe is what makes
+# the documented command a command the container actually runs. So the text
+# around it describes that, rather than promising a body nobody printed.
+BODY_OUTPUT_CLAIMS = (
+    "see the response body",
+    "shows the response body",
+    "show the response body",
+    "prints the response body",
+    "prints the body",
+    "print the body",
+    "the body is printed",
+)
+
+
+def test_the_documented_probe_is_not_described_as_printing_what_it_asserts() -> None:
+    section = _container_docs()
+    documented = EXEC_PROBE.search(section)
+    assert documented is not None, (
+        "docs/adapters.md must show the on-demand probe verbatim, not a paraphrase"
+    )
+    if "print(" in documented.group("script"):
+        return
+    text = _normalised_text(section)
+    for claim in BODY_OUTPUT_CLAIMS:
+        assert claim not in text, (
+            f"the documented probe asserts on the body and never prints it, so the prose "
+            f"cannot promise to {claim!r}. Either print the body (without the token) or say "
+            "the probe is run on demand"
+        )
+
+
 def test_no_host_http_call_is_documented_for_the_example() -> None:
     for name, text in ((COMPOSE, _read(COMPOSE)), (DOCS, _container_docs())):
         match = HOST_HTTP_CALL.search(text)
