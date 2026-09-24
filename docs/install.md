@@ -244,7 +244,7 @@ python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', 
 The session-scoped assignment above still applies to this command:
 
 ```bash
-textflowkit transcribe clip.wav --diarize --format json
+textflowkit transcribe clip.wav --diarize --formats json
 ```
 
 `setx HF_TOKEN "hf_xxxxxxxx"` is a separate, optional step for **new shells**
