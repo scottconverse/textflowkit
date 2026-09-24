@@ -242,8 +242,21 @@ TEXTFLOWKIT_MAX_CONCURRENCY=1   # default
 ```
 
 The default is **1** deliberately. Whisper saturates a GPU on its own, so parallel
-jobs thrash VRAM rather than finishing sooner. Raise it only for CPU-bound or
-I/O-bound workloads where that reasoning does not apply.
+jobs thrash VRAM rather than finishing sooner.
+
+**Raising the bound does not by itself parallelise transcription.** Model inference
+is serialized per engine *instance*: `WhisperEngine.transcribe` holds a lock across
+the whole `model.transcribe` call (`core/engine.py`), and identical
+`(model, device, fp16)` arguments return the same cached instance, so jobs with the
+same arguments share one lock. Their inference runs one job at a time however many
+workers exist.
+
+What a higher bound does buy: while one job holds the inference lock, another job can
+be downloading, decoding with ffmpeg, or writing output, and jobs pinned to
+*different* engine instances (a different `model` or `device`) hold separate locks,
+so their inference is not serialized against each other. So raise it for I/O-bound
+work, or for mixed-model or mixed-device batches - not for CPU-bound Whisper, whose
+inference serializes on that same lock exactly as it does on a GPU.
 
 ## Cancellation
 
