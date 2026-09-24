@@ -73,11 +73,16 @@ class WhisperEngine:
     ) -> Transcript:
         with self._lock:
             model = self._load()
+            # verbose=None, not False: openai-whisper's verbose is tri-state and
+            # False is its *chatty* mode (it enables the tqdm frame bar and
+            # prints the detected language), which would leak into the streams
+            # this shared core serves to the CLI, MCP, and HTTP adapters. None
+            # disables the bar, the language line, and per-segment text.
             result = model.transcribe(
                 str(audio_path),
                 language=language,
                 fp16=self.fp16,
-                verbose=False,
+                verbose=None,
                 word_timestamps=True,
             )
 
