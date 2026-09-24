@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLISH = (ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
@@ -67,6 +68,63 @@ def _branch(step: str, label: str) -> str:
         if lines[index].strip() == ";;":
             return "\n".join(lines[start + 1:index])
     raise AssertionError(f"the {label}) branch has no ;; terminator")
+
+
+def _needs(job_block: str) -> list[str]:
+    """The job ids in the job's `needs:`, in order, for a scalar or a list."""
+    match = re.search(r"^    needs: (?P<value>.+)$", job_block, re.MULTILINE)
+    assert match, "the job declares no needs"
+    value = match.group("value").strip()
+    assert value and not value.startswith("#"), value
+    if value.startswith("["):
+        assert value.endswith("]"), value
+        value = value[1:-1]
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _condition(job_block: str) -> str:
+    """The job's `if:` expression, with runs of whitespace collapsed."""
+    match = re.search(r"^    if: (?P<value>\$\{\{.*?\}\})", job_block, re.MULTILINE | re.DOTALL)
+    assert match, "the job declares no if condition"
+    return re.sub(r"\s+", " ", match.group("value"))
+
+
+def _python_condition(condition: str) -> str:
+    """Translate a workflow `if` expression into an equivalent Python one.
+
+    GitHub's expression language is close enough to Python for the boolean
+    structure to be checked by translating the two operators and the one status
+    check function used here, then evaluating the result. Job ids may contain a
+    hyphen (`needs.publish-fonts.result`), which Python cannot dereference, so
+    they are underscored. The translated text is asserted to be nothing but
+    boolean expression syntax before it reaches `eval`.
+    """
+    body = condition.strip()
+    assert body.startswith("${{") and body.endswith("}}"), body
+    body = body[3:-2].strip()
+    body = body.replace("&&", " and ").replace("||", " or ")
+    body = body.replace("!cancelled()", "not cancelled")
+    body = body.replace("publish-fonts", "publish_fonts")
+    assert re.fullmatch(r"[A-Za-z0-9_ .()<>=!']+", body), body
+    return body
+
+
+def _runs(condition: str, *, build: str, fonts: str, mode: str, cancelled: bool) -> bool:
+    """Would a job with this `if` run, given those prerequisite results?
+
+    `build` and `fonts` are the `needs.<job>.result` values GitHub reports
+    (`success`, `failure`, `skipped`, `cancelled`); `mode` is the build job's
+    `fonts_mode` output. This evaluates the job's own condition only: the
+    platform's skip propagation is the reason the condition exists.
+    """
+    needs = SimpleNamespace(
+        build=SimpleNamespace(result=build, outputs=SimpleNamespace(fonts_mode=mode)),
+        publish_fonts=SimpleNamespace(result=fonts),
+    )
+    return bool(
+        eval(_python_condition(condition), {"__builtins__": {}},
+             {"needs": needs, "cancelled": cancelled})
+    )
 
 
 # --- the build job resolves the fonts mode ------------------------------------
@@ -154,9 +212,86 @@ def test_the_fonts_upload_job_keeps_its_approval_and_trusted_publishing() -> Non
 
 
 def test_the_upload_order_stays_fonts_then_core_then_the_github_release() -> None:
-    assert "needs: build" in _job(PUBLISH, "publish-fonts")
-    assert "needs: publish-fonts" in _job(PUBLISH, "publish-main")
-    assert "needs: publish-main" in _job(PUBLISH, "publish-github-release")
+    """Core waits for the fonts upload, and the GitHub release waits for core.
+
+    Core needs `build` as well as `publish-fonts`: a job whose `needs:` names a
+    skipped job is skipped too, so the core upload has to wait on the fonts job
+    by name *and* carry its own `if` (below), not inherit its result.
+    """
+    assert _needs(_job(PUBLISH, "publish-fonts")) == ["build"]
+    assert _needs(_job(PUBLISH, "publish-main")) == ["build", "publish-fonts"]
+    assert _needs(_job(PUBLISH, "publish-github-release")) == ["publish-main"]
+
+
+# --- a skipped fonts upload must not skip the core upload ----------------------
+
+
+def test_the_core_upload_survives_a_skipped_fonts_job_with_a_status_check() -> None:
+    """GitHub skips a job whose `needs:` job was skipped unless the job's `if`
+    uses a status check function; a bare `if:` is implicitly `success()`, which
+    still loses to that propagation. `cancelled()` is the status check used, so
+    the job runs on the reuse path (fonts uploaded nothing because nothing was
+    built) while a cancelled run is still refused."""
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert "!cancelled()" in condition
+    assert "needs.publish-fonts.result" in condition
+
+
+def test_a_reused_fonts_release_still_publishes_the_core_distributions() -> None:
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert _runs(condition, build="success", fonts="skipped", mode="reuse", cancelled=False)
+
+
+def test_a_new_fonts_upload_still_publishes_the_core_distributions() -> None:
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert _runs(condition, build="success", fonts="success", mode="new", cancelled=False)
+
+
+def test_a_skipped_fonts_upload_is_only_tolerated_for_a_reused_release() -> None:
+    """Skipping the fonts upload while a *new* fonts version was declared would
+    publish core against a fonts version that never reached PyPI."""
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert not _runs(condition, build="success", fonts="skipped", mode="new", cancelled=False)
+    assert not _runs(condition, build="success", fonts="skipped", mode="", cancelled=False)
+
+
+def test_a_failed_fonts_upload_cannot_publish_the_core_distributions() -> None:
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert not _runs(condition, build="success", fonts="failure", mode="new", cancelled=False)
+    assert not _runs(condition, build="success", fonts="failure", mode="reuse", cancelled=False)
+    assert not _runs(condition, build="success", fonts="cancelled", mode="reuse", cancelled=False)
+
+
+def test_a_failed_or_cancelled_run_cannot_publish_the_core_distributions() -> None:
+    condition = _condition(_job(PUBLISH, "publish-main"))
+
+    assert not _runs(condition, build="failure", fonts="success", mode="new", cancelled=False)
+    assert not _runs(condition, build="skipped", fonts="success", mode="new", cancelled=False)
+    assert not _runs(condition, build="success", fonts="success", mode="new", cancelled=True)
+
+
+def test_the_core_upload_job_keeps_its_approval_and_trusted_publishing() -> None:
+    main = _job(PUBLISH, "publish-main")
+
+    assert UPLOAD_ACTION in main
+    assert "environment: pypi" in main
+    assert "id-token: write" in main
+    assert "packages-dir: dist/main/" in main
+
+
+def test_the_github_release_cannot_bypass_a_failed_core_upload() -> None:
+    """No job-level `if` on purpose: the default gate propagates a failed or
+    skipped `publish-main`, so a core upload that did not succeed cannot end in
+    a public release."""
+    release = _job(PUBLISH, "publish-github-release")
+
+    assert not re.search(r"^    if:", release, re.MULTILINE), "a job-level if could bypass the gate"
+    assert "environment: pypi" not in release
 
 
 def test_the_workflow_never_skips_an_existing_pypi_filename() -> None:
