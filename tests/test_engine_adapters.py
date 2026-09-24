@@ -338,6 +338,31 @@ def test_mcp_engine_choice_survives_the_stored_request_and_a_resume(
     assert get_default_store().get(job_id).request["engine"] == "faster-whisper"
 
 
+def test_resume_reuses_a_completed_transcript_after_the_extra_is_removed(
+    monkeypatch, inline_submission, http_client
+):
+    """Reuse is decided before the engine is needed, so losing the extra is safe.
+
+    The availability check sits on the paths that create or queue work, not at
+    request construction. A finished job is answered from its stored transcript
+    without touching an engine, so uninstalling the optional package must not
+    turn an otherwise valid resume into a refusal.
+    """
+    monkeypatch.setitem(sys.modules, "faster_whisper", ModuleType("faster_whisper"))
+    created = http_client.post(
+        "/jobs", json={"source": "https://example.invalid/media", "engine": "faster-whisper"}
+    )
+    assert created.status_code == 202, created.text
+    job_id = created.json()["id"]
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)  # the extra is gone
+    resumed = http_client.post(f"/jobs/{job_id}/resume")
+
+    assert resumed.status_code == 202, resumed.text
+    assert resumed.json()["id"] == job_id
+    assert get_default_store().get(job_id).request["engine"] == "faster-whisper"
+
+
 # --------------------------------------------------------------------------
 # Direct Python API preflights before acquisition
 # --------------------------------------------------------------------------
