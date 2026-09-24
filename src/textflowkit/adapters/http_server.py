@@ -82,6 +82,42 @@ app = FastAPI(
 
 _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
+RATE_BUCKET_CAPACITY = 10000
+RATE_BUCKET_TTL_SECONDS = 60.0
+_last_prune_at = float("-inf")  # guarded by _RATE_LOCK
+
+
+def _prune_expired_buckets(now: float) -> None:
+    """Drop buckets whose window has closed. Caller must hold _RATE_LOCK."""
+    cutoff = now - RATE_BUCKET_TTL_SECONDS
+    for peer in [name for name, (started, _) in _RATE_BUCKETS.items() if started <= cutoff]:
+        del _RATE_BUCKETS[peer]
+
+
+def _rate_refusal(peer: str, now: float, rate: int) -> str | None:
+    """Account one request from `peer` at monotonic time `now`.
+
+    Returns None when the request may proceed, else the refusal reason. Buckets
+    are per-peer for RATE_BUCKET_TTL_SECONDS. At capacity an untracked peer is
+    refused rather than evicting counters that are still counting down; expired
+    buckets are the only thing reclaimed, and a live table is swept at most once
+    per window so a flood of new addresses cannot force a sweep per request.
+    """
+    global _last_prune_at
+    with _RATE_LOCK:
+        started, count = _RATE_BUCKETS.get(peer, (now, 0))
+        if now - started >= RATE_BUCKET_TTL_SECONDS:
+            started, count = now, 0
+        if count >= rate:
+            return "rate limit exceeded"
+        if peer not in _RATE_BUCKETS and len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
+            if now - _last_prune_at >= RATE_BUCKET_TTL_SECONDS:
+                _prune_expired_buckets(now)
+                _last_prune_at = now
+            if len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
+                return "rate capacity reached"
+        _RATE_BUCKETS[peer] = started, count + 1
+        return None
 
 
 @app.middleware("http")
@@ -123,16 +159,9 @@ async def production_guard(request: Request, call_next):
 
     rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
     peer = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    with _RATE_LOCK:
-        started, count = _RATE_BUCKETS.get(peer, (now, 0))
-        if now - started >= 60:
-            started, count = now, 0
-        if count >= rate:
-            return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
-        _RATE_BUCKETS[peer] = started, count + 1
-        if len(_RATE_BUCKETS) > 10000:
-            _RATE_BUCKETS.clear()
+    refusal = _rate_refusal(peer, time.monotonic(), rate)
+    if refusal is not None:
+        return JSONResponse({"error": refusal}, status_code=429)
     return await call_next(request)
 
 
