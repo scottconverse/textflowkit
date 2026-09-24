@@ -1,5 +1,9 @@
 # Install notes
 
+Current release: [v0.1.5](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.5).
+Use `textflowkit --version` to confirm the installed version. For everyday
+commands and outputs, start with the [user manual](user-manual.md).
+
 ## Requirements
 
 - **Python ≥ 3.10**

@@ -1,5 +1,10 @@
 # Adapters and integration
 
+Current published release: [v0.1.5](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.5).
+Start with the [user manual](user-manual.md) for everyday use. Harness versions
+in the compatibility table below identify **historical test sessions**, not
+the version of TextFlowKit currently published.
+
 textflowkit has one core and several thin doors. Nothing is duplicated between
 them: the CLI, the MCP server, and the HTTP API all call
 `textflowkit.core.submission` and share one job model.

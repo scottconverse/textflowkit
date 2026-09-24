@@ -1,4 +1,4 @@
-"""Keep the static GitHub Pages entry point and its local navigation intact."""
+"""Keep the static Cloudflare Pages entry point and its navigation intact."""
 
 from __future__ import annotations
 
@@ -36,3 +36,5 @@ def test_github_pages_landing_has_working_local_navigation() -> None:
     assert not page.scripts, "the landing page should remain dependency-free"
     assert (PAGE.parent / ".nojekyll").is_file()
     assert "https://github.com/scottconverse/textflowkit" in page.links
+    assert "https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md" in page.links
+    assert (PAGE.parent / "user-manual.md").is_file()

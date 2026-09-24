@@ -4,6 +4,8 @@ The [TextFlowKit landing page](https://www.textflowkit.org/) is the static
 `docs/index.html` file. It does **not** run the CLI, MCP server, HTTP adapter,
 or speech models. A public transcription service is a separate, future
 deployment with its own security and capacity design.
+The landing page links to the versioned [user manual](user-manual.md), which
+is rendered on GitHub rather than by the static Pages site.
 
 ## Cloudflare Pages configuration
 
