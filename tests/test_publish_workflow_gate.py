@@ -70,6 +70,16 @@ def test_the_gate_step_passes_the_token_through_the_environment_only() -> None:
     assert run_lines and all("token" not in line.lower() for line in run_lines)
 
 
+def test_the_gate_step_does_not_override_the_workflow_identifier() -> None:
+    """The script's default is the bare filename GitHub resolves.
+
+    GitHub answers 404 for a repository-path `workflow_id` (see the probe recorded
+    in `tests/test_publish_ci_gate.py`), so a `--workflow` override here would make
+    the gate fail closed even with green CI.
+    """
+    assert "--workflow" not in _gate_step(_job(PUBLISH, "build"))
+
+
 def test_only_the_build_job_is_granted_actions_read() -> None:
     build = _job(PUBLISH, "build")
     permissions = build[build.index("permissions:"):]

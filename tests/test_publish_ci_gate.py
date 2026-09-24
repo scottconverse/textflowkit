@@ -93,14 +93,30 @@ def test_queries_the_ci_workflow_runs_filtered_by_sha_branch_and_event(capsys):
     assert len(seen) == 1
     request = seen[0]
     assert request.full_url.startswith(
-        "https://api.github.com/repos/scottconverse/textflowkit/actions/workflows/"
-        ".github/workflows/ci.yml/runs"
+        "https://api.github.com/repos/scottconverse/textflowkit/actions/workflows/ci.yml/runs"
     )
     assert f"head_sha={SHA}" in request.full_url
     assert "branch=main" in request.full_url
     assert "event=push" in request.full_url
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
     assert TOKEN not in request.full_url
+
+
+def test_default_workflow_identifier_is_the_bare_filename(capsys):
+    """GitHub resolves `workflow_id` as a filename, not as a repository path.
+
+    A read-only, unauthenticated probe of this public repository (coordinator,
+    2026-09-24) returned HTTP 200 for `/workflows/ci.yml/runs` and HTTP 404 for
+    `/workflows/.github/workflows/ci.yml/runs`. A release must not fail closed
+    over the identifier form when the commit's CI is green.
+    """
+    assert verify_release_ci.DEFAULT_WORKFLOW == "ci.yml"
+    seen: list = []
+    code, out = _gate(capsys, {"workflow_runs": [_run()]}, seen=seen)
+    assert code == 0
+    assert "/actions/workflows/ci.yml/runs?" in seen[0].full_url
+    assert "/workflows/.github" not in seen[0].full_url
+    assert out.err == ""
 
 
 def test_accepts_a_later_success_after_an_earlier_failed_rerun(capsys):
