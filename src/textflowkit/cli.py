@@ -21,6 +21,7 @@ from textflowkit.core.submission import SubmissionRequest, submit_request
 from textflowkit.render import (
     BINARY_FORMATS,
     SUPPORTED_FORMATS,
+    TEXT_FORMATS,
     atomic_write_bytes,
     render,
     render_bytes,
@@ -65,7 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--cookies-from-browser", default=None,
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
-    t.add_argument("--stdout-format", default="txt", help="format for --stdout (default txt)")
+    t.add_argument("--stdout-format", default="txt",
+                   help=f"format for --stdout (default txt; text formats only: {', '.join(TEXT_FORMATS)})")
     t.add_argument(
         "--resume",
         action="store_true",
@@ -116,6 +118,28 @@ def _formats(raw: str) -> list[str]:
     return [f.strip().lower().lstrip(".") for f in raw.split(",") if f.strip()]
 
 
+def _stdout_format(raw: str) -> str:
+    """Canonical ``--stdout-format``, or ``ValueError`` when it cannot be printed.
+
+    ``--stdout`` writes to the terminal, so it can only carry a text format.
+    The renderer refuses binary and unknown formats, but it is reached only
+    after the job has been submitted and the transcription paid for, so the run
+    ends in a traceback with the whole wait already spent. The format is known
+    from the arguments alone and is settled here instead - before any
+    acquisition, inference, or job record exists.
+    """
+    fmt = raw.strip().lower().lstrip(".")
+    if fmt in TEXT_FORMATS:
+        return fmt
+    choices = ", ".join(TEXT_FORMATS)
+    if fmt in BINARY_FORMATS:
+        raise ValueError(
+            f"--stdout-format {raw}: {fmt} is a binary format and cannot be printed "
+            f"to a terminal; write it to a file instead (text formats: {choices})"
+        )
+    raise ValueError(f"unsupported --stdout-format: {raw} (choose from {choices})")
+
+
 def _store_is_durable() -> bool:
     """Whether the default store survives this process.
 
@@ -129,6 +153,12 @@ def _store_is_durable() -> bool:
 
 def _cmd_transcribe(args: argparse.Namespace) -> int:
     formats = _formats(args.formats)
+    if args.stdout:
+        try:
+            args.stdout_format = _stdout_format(args.stdout_format)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     output_dir = args.output_dir
     if output_dir is None and not args.stdout:
         output_dir = "."
