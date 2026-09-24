@@ -5,8 +5,10 @@ the door for software products and for the eventual website: it is deliberately
 job-based so a long video never blocks a request.
 
 Not started by default. Developer mode is unauthenticated and loopback-only by
-default. The opt-in JSON HTTP production profile requires Bearer authentication
-and a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
+default: each request must carry a loopback Host and, if present, a loopback
+Origin, and must arrive from a loopback peer unless TEXTFLOWKIT_ALLOW_REMOTE is
+set. The opt-in JSON HTTP production profile requires Bearer authentication and
+a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
 """
 
 from __future__ import annotations
@@ -20,7 +22,13 @@ import time
 from typing import Annotated, Any
 
 from textflowkit import __version__
-from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
+from textflowkit.core.bind import (
+    ENV_ALLOW_REMOTE,
+    UnsafeBindError,
+    check_bind_safety,
+    developer_request_refusal,
+    resolve_client_identity,
+)
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
@@ -51,6 +59,7 @@ from textflowkit.core.submission import (
     resume_job as core_resume_job,
 )
 from textflowkit.render import (
+    DEFAULT_FORMATS,
     SUPPORTED_FORMATS,
     TEXT_FORMATS,
     atomic_write_bytes,
@@ -75,12 +84,89 @@ app = FastAPI(
 
 _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
+RATE_BUCKET_CAPACITY = 10000
+RATE_BUCKET_TTL_SECONDS = 60.0
+# Earliest monotonic time at which a tracked bucket can expire. A sweep is only
+# eligible once it passes, so a table full of live peers costs one length check
+# per request instead of an O(RATE_BUCKET_CAPACITY) walk. Every sweep relearns
+# it from the buckets that remain. Guarded by _RATE_LOCK.
+_next_expiry = float("inf")
+
+
+def _sweep_expired_buckets(now: float) -> None:
+    """Drop expired buckets and relearn when the next one can expire.
+
+    Caller must hold _RATE_LOCK. A bucket restarted in place is younger than the
+    one it replaces, so the relearned bound is exact and never too late.
+    """
+    global _next_expiry
+    cutoff = now - RATE_BUCKET_TTL_SECONDS
+    oldest = float("inf")
+    for peer in list(_RATE_BUCKETS):
+        started, _ = _RATE_BUCKETS[peer]
+        if started <= cutoff:
+            del _RATE_BUCKETS[peer]
+        elif started < oldest:
+            oldest = started
+    _next_expiry = oldest + RATE_BUCKET_TTL_SECONDS
+
+
+def _sweep_is_eligible(now: float) -> bool:
+    """True when a bucket may have expired since the last sweep.
+
+    Caller must hold _RATE_LOCK. _next_expiry is only maintained through
+    _rate_refusal. Reading it as infinite while buckets exist means the table was
+    written directly, so the bound is unknown and must be relearned rather than
+    trusted - otherwise a stale claim of "nothing can have expired" would defer
+    reclamation indefinitely.
+    """
+    return now >= _next_expiry or (_next_expiry == float("inf") and bool(_RATE_BUCKETS))
+
+
+def _rate_refusal(peer: str, now: float, rate: int) -> str | None:
+    """Account one request from `peer` at monotonic time `now`.
+
+    Returns None when the request may proceed, else the refusal reason. Buckets
+    are per-peer for RATE_BUCKET_TTL_SECONDS. At capacity an untracked peer is
+    refused rather than evicting counters that are still counting down. Expired
+    buckets are the only thing reclaimed, and only once the earliest known one
+    has actually expired, so neither a live table nor a single expiry costs a
+    scan per request.
+    """
+    global _next_expiry
+    with _RATE_LOCK:
+        known = peer in _RATE_BUCKETS
+        started, count = _RATE_BUCKETS.get(peer, (now, 0))
+        if now - started >= RATE_BUCKET_TTL_SECONDS:
+            started, count = now, 0
+        if count >= rate:
+            return "rate limit exceeded"
+        if not known and len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
+            if _sweep_is_eligible(now):
+                _sweep_expired_buckets(now)
+            if len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
+                return "rate capacity reached"
+        if not known and not _RATE_BUCKETS:
+            # Only bucket in an empty table: it is also the next to expire.
+            _next_expiry = started + RATE_BUCKET_TTL_SECONDS
+        _RATE_BUCKETS[peer] = started, count + 1
+        return None
 
 
 @app.middleware("http")
 async def production_guard(request: Request, call_next):
     try:
         if not production_enabled():
+            # Developer mode: loopback-only by Host, Origin, and peer address.
+            # This also covers an app started directly through an ASGI server,
+            # where main()'s bind check never runs.
+            refusal = developer_request_refusal(
+                host=request.headers.get("host"),
+                origin=request.headers.get("origin"),
+                peer=request.client.host if request.client else None,
+            )
+            if refusal is not None:
+                return JSONResponse({"error": refusal}, status_code=403)
             return await call_next(request)
         validate_production_config()
     except ServiceConfigurationError as exc:
@@ -105,30 +191,39 @@ async def production_guard(request: Request, call_next):
     request._body = bytes(body)
 
     rate = positive_limit(ENV_RATE_PER_MINUTE, 60)
-    peer = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    with _RATE_LOCK:
-        started, count = _RATE_BUCKETS.get(peer, (now, 0))
-        if now - started >= 60:
-            started, count = now, 0
-        if count >= rate:
-            return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
-        _RATE_BUCKETS[peer] = started, count + 1
-        if len(_RATE_BUCKETS) > 10000:
-            _RATE_BUCKETS.clear()
+    # Behind a proxy every request shares the proxy's address. The identity is
+    # the peer unless that peer is a trusted proxy this operator named, and even
+    # then only a real address from the forwarded chain is used.
+    # Every X-Forwarded-For line is joined, not just the first: a proxy may append
+    # its own header rather than extend the caller's value, and reading only the
+    # first would let a caller-supplied line stand in for the real client.
+    peer = resolve_client_identity(
+        request.client.host if request.client else None,
+        ", ".join(request.headers.getlist("x-forwarded-for")),
+    )
+    refusal = _rate_refusal(peer, time.monotonic(), rate)
+    if refusal is not None:
+        return JSONResponse({"error": refusal}, status_code=429)
     return await call_next(request)
 
 
 class TranscribeRequest(BaseModel):
     source: str = Field(..., description="Media URL or local file path")
     language: str | None = Field(None, description="ISO language code; auto-detected if omitted")
-    formats: list[str] = Field(default_factory=lambda: ["json", "srt", "txt"])
+    formats: list[str] = Field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = Field(None, description="Directory for rendered files; omit for none")
     model: str = Field("small", description="Whisper model size")
     device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted")
     cookies_from_browser: str | None = None
     diarize: bool = False
     translate_to: str | None = None
+    engine: str = Field(
+        "whisper",
+        description=(
+            "Speech engine: 'whisper' (default, openai-whisper on the torch stack) "
+            "or the opt-in 'faster-whisper' (CPU/Mac; needs the faster-whisper extra)"
+        ),
+    )
 
 
 class BatchRequest(BaseModel):
@@ -178,9 +273,12 @@ def create_batch(req: BatchRequest) -> dict[str, Any]:
     """Queue multiple independent jobs through the same core contract."""
     try:
         requests = [_submission_request(item) for item in req.jobs]
+        # The engine preflight for a fresh batch runs before the loop, so an
+        # unusable engine refuses the whole request rather than queueing part of
+        # it and erroring the rest for the same reason.
+        results = submit_batch(get_default_store(), requests, resume=req.resume)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    results = submit_batch(get_default_store(), requests, resume=req.resume)
     return {"count": len(results), "jobs": results}
 
 
@@ -457,7 +555,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    uvicorn.run(app, host=args.host, port=args.port)
+    # uvicorn's own proxy-header middleware applies a *second* trust set of its
+    # own - 127.0.0.1/::1 by default, or FORWARDED_ALLOW_IPS - and can rewrite the
+    # peer before this app sees it. It is off so the app gets the raw peer and
+    # TEXTFLOWKIT_TRUSTED_PROXY_IPS is the only trust configuration in play. The
+    # reason is that duplication, not a weaker rule: its normal path also walks
+    # the chain from the right. It reaches for the leftmost entry only when
+    # configured to trust everything (--forwarded-allow-ips=*), or when every hop
+    # in the chain is already trusted. Start the ASGI app directly and you own
+    # that choice; see docs/adapters.md.
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
     return 0
 
 

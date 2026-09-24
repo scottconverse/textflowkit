@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import http.server
 import sys
+import threading
+import types
 from pathlib import Path
 
 import pytest
 
 from textflowkit.sources.acquire import AcquisitionError, require_tool
 from textflowkit.sources.detect import SourceRef, resolve_source
+
+
+def _director_double():
+    """A request-director double for tests that replace yt_dlp wholesale.
+
+    A real YoutubeDL builds one lazily and the redirect guard refuses to fetch
+    through a build whose HTTP handlers cannot be verified, so a double standing
+    in for yt_dlp has to expose a director. These doubles never reach a real
+    transport, so it has no HTTP handler to guard.
+    """
+    return types.SimpleNamespace(handlers={})
 
 
 def test_require_tool_finds_ffmpeg():
@@ -114,6 +128,8 @@ def test_module_path_passes_detected_runtime(monkeypatch, tmp_path):
     captured: dict = {}
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             captured.update(opts)
             self.urlopen = lambda req: None
@@ -169,6 +185,8 @@ def test_redirect_to_private_host_is_rejected(monkeypatch, tmp_path):
     from textflowkit.sources import acquire
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.urlopen = lambda req: types.SimpleNamespace(url="http://127.0.0.1/private")
 
@@ -192,6 +210,160 @@ def test_redirect_to_private_host_is_rejected(monkeypatch, tmp_path):
         acquire._fetch_with_module(
             "https://example.com/video", work_dir=tmp_path, cookies_from_browser=None,
         )
+
+
+# --- redirect contact ordering ---------------------------------------------
+#
+# yt-dlp follows HTTP redirects inside its request handlers, so a response
+# object only exists once the redirect target has already been contacted. These
+# tests drive the real yt-dlp transport against a loopback site: /private stands
+# in for a destination the fetch policy forbids, and the assertion is on what
+# the server actually saw rather than on the error message.
+
+@pytest.fixture
+def redirect_site():
+    """A loopback site whose /start redirects to the disallowed /private."""
+    site: dict[str, str] = {}
+    contacts: list[str] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            contacts.append(self.path)
+            location = {
+                "/start": f"{site['origin']}/private",
+                "/ok": f"{site['origin']}/ok2",
+            }.get(self.path)
+            if location is not None:
+                self.send_response(302)
+                self.send_header("Location", location)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = b"not-really-media"
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    site["origin"] = f"http://127.0.0.1:{server.server_port}"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield types.SimpleNamespace(origin=site["origin"], contacts=contacts)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+@pytest.fixture
+def reachable_loopback(monkeypatch, redirect_site):
+    """Permit the fixture's own site except /private, keeping the real policy.
+
+    /private is left to textflowkit's real guard, so the refusal under test comes
+    from the SSRF policy rather than from a stand-in.
+    """
+    from textflowkit.sources import acquire
+
+    real_validate = acquire._validate_fetch_url
+    refused = f"{redirect_site.origin}/private"
+
+    def validate(url):
+        if url != refused and url.startswith(redirect_site.origin):
+            return
+        real_validate(url)
+
+    monkeypatch.setattr(acquire, "_validate_fetch_url", validate)
+    monkeypatch.delenv("TEXTFLOWKIT_PROFILE", raising=False)
+    return redirect_site
+
+
+def test_redirect_target_is_refused_before_it_is_contacted(reachable_loopback, tmp_path):
+    """A redirect to a disallowed URL must not reach that URL.
+
+    Asserting on the error alone is not enough: the pre-fix code produced the
+    same error after the redirect target had already been contacted.
+    """
+    from textflowkit.sources import acquire
+
+    site = reachable_loopback
+    with pytest.raises(acquire.AcquisitionError, match="unsafe download destination"):
+        acquire._fetch_with_module(
+            f"{site.origin}/start", work_dir=tmp_path, cookies_from_browser=None,
+        )
+    assert "/private" not in site.contacts
+
+
+def test_ordinary_redirect_is_still_followed(reachable_loopback, tmp_path):
+    """The guard must not become a blanket ban on redirects."""
+    from textflowkit.sources import acquire
+
+    site = reachable_loopback
+    try:
+        acquire._fetch_with_module(
+            f"{site.origin}/ok", work_dir=tmp_path, cookies_from_browser=None,
+        )
+    except acquire.AcquisitionError as exc:
+        assert "unsafe download destination" not in str(exc), exc
+    assert "/ok2" in site.contacts
+
+
+def test_unverifiable_http_handler_is_refused():
+    """A handler this build cannot wrap must not be left running unguarded."""
+    from textflowkit.sources import acquire
+
+    class Foreign:
+        _SUPPORTED_URL_SCHEMES = ("http", "https")
+        _create_instance = staticmethod(lambda **kwargs: object())
+
+    director = types.SimpleNamespace(handlers={"SomeFutureRH": Foreign()})
+    with pytest.raises(acquire.AcquisitionError, match="cannot verify"):
+        acquire._guard_http_transports(director, lambda url: None)
+
+
+def test_non_http_handler_is_ignored():
+    """Handlers that never carry HTTP are left alone."""
+    from textflowkit.sources import acquire
+
+    class Websockets:
+        _SUPPORTED_URL_SCHEMES = ("ws", "wss")
+
+    director = types.SimpleNamespace(handlers={"Websockets": Websockets()})
+    acquire._guard_http_transports(director, lambda url: None)
+
+
+def test_guard_wraps_lazily_built_transport():
+    """Handlers build their transport on first use, so the factory must be wrapped."""
+    from textflowkit.sources import acquire
+
+    seen: list[str] = []
+    built: list[object] = []
+
+    class Opener:
+        def open(self, fullurl, *args, **kwargs):
+            seen.append(fullurl)
+            return "response"
+
+    class Handler:
+        _SUPPORTED_URL_SCHEMES = ("http", "https")
+
+        def _create_instance(self, **kwargs):
+            instance = Opener()
+            built.append(instance)
+            return instance
+
+    director = types.SimpleNamespace(handlers={"Urllib": Handler()})
+    acquire._guard_http_transports(director, lambda url: seen.append(f"validate:{url}"))
+
+    transport = director.handlers["Urllib"]._create_instance()
+    assert transport is built[-1]
+    transport.open("https://example.com/a")
+    assert seen == ["validate:https://example.com/a", "https://example.com/a"]
 
 
 def test_production_url_fetch_needs_ssrf_filtering_proxy(monkeypatch, tmp_path):
@@ -230,6 +402,8 @@ def test_production_rejects_known_download_size_before_transfer(
             pass
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.urlopen = lambda req: Response()
 
@@ -268,6 +442,8 @@ def test_module_fetch_invokes_check_cancel_from_progress_hook(monkeypatch, tmp_p
         calls.append(1)
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None
@@ -316,6 +492,8 @@ def test_download_cancel_aborts_the_fetch(monkeypatch, tmp_path):
         raise JobCancelled()
 
     class FakeYDL:
+        _request_director = _director_double()
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None

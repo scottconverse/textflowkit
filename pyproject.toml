@@ -29,13 +29,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5"]
+# `build` and `hatchling` are here for tests/test_sdist_allowlist.py, which
+# builds a real sdist and rebuilds a wheel from it with `--no-isolation`: the
+# packaging guarantee is only checked if the builder is actually present.
+dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5", "build>=1.2", "hatchling>=1.25"]
 mcp = ["mcp>=2.0"]
 http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
 # 4.x is required: 3.4.x imports torchaudio.AudioMetaData, which torchaudio 2.11
 # no longer provides. See docs/install.md before installing - pyannote pulls
 # torch open-endedly, so pin your torch stack or you lose GPU acceleration.
 diarize = ["pyannote.audio>=4.0"]
+# Opt-in second engine for CPU and Apple Silicon (CTranslate2, int8 on CPU).
+# Deliberately not a base dependency and deliberately not part of `all`:
+# installing it must never be a surprise, and on AMD Windows its GPU path is
+# CUDA-only, so it is not the ROCm choice (see docs/install.md). CTranslate2 has
+# no torch dependency, but installing this extra still resolves the whole project
+# - base `openai-whisper` included - so it can change an existing environment;
+# the ROCm install path in docs/install.md is how a working torch is preserved.
+# The floor is the release verified end to end (1.2.1 / CTranslate2 4.8.2,
+# native Windows CPU); releases below it are not claimed compatible.
+faster-whisper = ["faster-whisper>=1.2.1,<2"]
 export = ["python-docx>=1.1", "reportlab>=4.0", "textflowkit-fonts>=0.1.5,<0.2"]
 all = ["textflowkit[mcp,http,diarize,export]"]
 
@@ -55,7 +68,45 @@ Changelog = "https://github.com/scottconverse/textflowkit/releases"
 packages = ["src/textflowkit"]
 artifacts = ["src/textflowkit/assets/*.wav"]
 
+# The source archive is an allowlist, not "everything .gitignore does not
+# name". Outside-review D3: a local `python -m build --sdist` copied a stray
+# `.v` environment folder - and anything else untracked - into the tarball,
+# because an ignore file cannot enumerate every piece of local debris. Adding a
+# new top-level directory to the project now means naming it here.
+#
+# This is a source archive, not a wheel: it carries the whole `src/` tree, the
+# tests, the docs, and the scripts, plus the top-level legal and contribution
+# documents and the repository metadata the release-workflow and manifest tests
+# read back from the checkout root. The fonts companion package is published
+# from `packages/textflowkit-fonts` by its own build, so it is not folded in
+# here; the `exclude` below restates that even though the allowlist already
+# leaves it out.
 [tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/docs",
+  "/scripts",
+  "/.github",
+  "/pyproject.toml",
+  "/README.md",
+  "/LICENSE",
+  "/CONTRIBUTING.md",
+  "/LEGAL.md",
+  "/SECURITY.md",
+  "/.gitignore",
+  "/.gitattributes",
+  "/.pre-commit-config.yaml",
+  # The container example. It is a deployment surface rather than part of the
+  # wheel, but a source archive is the whole checkout: leaving it out would make
+  # the archive the one place the project cannot be run from a container, and
+  # `tests/test_sdist_allowlist.py` compares the archive against the tracked
+  # file set rather than against a guess at what belongs in it.
+  "/Dockerfile",
+  "/compose.yaml",
+  "/.dockerignore",
+  "/.env.example",
+]
 exclude = ["/packages/textflowkit-fonts"]
 
 [tool.ruff]

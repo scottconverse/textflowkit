@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1420">
+  <meta name="description" content="TextFlowKit could not find that page. Return to the TextFlowKit home page.">
+  <meta name="robots" content="noindex">
+  <title>TextFlowKit — page not found (404)</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1420;
+      --panel: #152334;
+      --line: #324457;
+      --text: #edf5f4;
+      --muted: #abc0c2;
+      --mint: #92f2ce;
+      --amber: #ffd58a;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(ellipse 58rem 38rem at 100% 0%, #194238 0%, transparent 65%),
+        radial-gradient(ellipse 52rem 32rem at -12% 20%, #263950 0%, transparent 70%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    a:hover { color: var(--mint); }
+    a:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; border-radius: 3px; }
+    .skip-link {
+      position: absolute;
+      top: -4rem;
+      left: 1rem;
+      z-index: 10;
+      padding: .65rem 1rem;
+      background: var(--mint);
+      color: var(--bg);
+    }
+    .skip-link:focus { top: 1rem; }
+    .wrap { width: min(1160px, calc(100% - 3rem)); margin-inline: auto; }
+    header { border-bottom: 1px solid #ffffff20; }
+    .nav { min-height: 82px; display: flex; align-items: center; }
+    .brand { display: inline-flex; align-items: center; gap: .72rem; font-weight: 800; font-size: 1.2rem; letter-spacing: -.04em; text-decoration: none; }
+    .brand-mark { display: grid; place-items: center; width: 36px; height: 36px; color: var(--bg); background: var(--mint); border-radius: 10px; font-family: var(--mono); font-size: 1rem; letter-spacing: -.1em; }
+
+    main { flex: 1; display: flex; align-items: center; }
+    .panel { max-width: 44rem; padding-block: clamp(4rem, 12vw, 8rem); }
+    .eyebrow { display: inline-flex; align-items: center; gap: .65rem; color: var(--mint); font-family: var(--mono); font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; display: inline-block; width: 8px; height: 8px; background: currentColor; border-radius: 50%; box-shadow: 0 0 0 5px #92f2ce21; }
+    h1, p { margin-top: 0; }
+    h1 { margin-block: 1.2rem 1.1rem; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 1.02; letter-spacing: -.06em; }
+    h1 em { color: var(--mint); font-style: normal; }
+    .lead { max-width: 52ch; color: #c8d8d7; font-size: clamp(1.02rem, 1.6vw, 1.2rem); }
+    .actions { display: flex; flex-wrap: wrap; gap: .85rem; margin-block: 2rem 1.3rem; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 47px; padding: .7rem 1.2rem; border: 1px solid var(--line); border-radius: 7px; font-weight: 700; font-size: .92rem; text-decoration: none; transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+    .button:hover { transform: translateY(-2px); }
+    .button.primary { background: var(--mint); border-color: var(--mint); color: #09201b; }
+    .button.primary:hover { background: #c0ffe7; }
+    .button.secondary:hover { border-color: var(--mint); background: #ffffff0e; }
+    .note { max-width: 60ch; margin-top: 1.6rem; padding-left: 1rem; border-left: 2px solid var(--amber); color: var(--muted); font-size: .9rem; }
+    .note a { color: var(--amber); }
+    footer { padding-block: 2.5rem 3rem; border-top: 1px solid #ffffff22; }
+    footer p { margin: 0; color: var(--muted); font-size: .82rem; }
+
+    @media (max-width: 540px) {
+      .wrap { width: min(100% - 2rem, 1160px); }
+      .nav { min-height: 70px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .button { transition: none; }
+      .button:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="/" aria-label="TextFlowKit home"><span class="brand-mark" aria-hidden="true">t/</span>textflowkit</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap panel">
+      <span class="eyebrow">Error 404</span>
+      <h1>We couldn't find<br><em>that page</em>.</h1>
+      <p class="lead">The address you followed does not match a page on this site. The link may be mistyped, out of date, or the page may have moved.</p>
+      <div class="actions">
+        <a class="button primary" href="https://www.textflowkit.org/">Back to the home page <span aria-hidden="true">&nbsp;→</span></a>
+        <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual <span aria-hidden="true">&nbsp;↗</span></a>
+      </div>
+      <p class="note">This is the static TextFlowKit website. TextFlowKit is a self-hosted, open-source transcription toolkit you run on your own machine; there is no hosted upload or transcription service behind this address.</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap"><p>TextFlowKit · Apache-2.0 · As-is, without warranty.</p></div>
+  </footer>
+</body>
+</html>

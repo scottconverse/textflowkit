@@ -124,3 +124,87 @@ def test_benchmarking_range_not_treated_as_private():
     from textflowkit.sources.detect import _is_blocked_ip
 
     assert not _is_blocked_ip(ipaddress.ip_address("198.18.2.214"))
+
+
+# --- SSRF guard: IPv4-mapped IPv6 literals (::ffff:0:0/96) -----------------
+#
+# ::ffff:10.0.0.1 and 10.0.0.1 name the same destination: the IPv4 stack maps
+# the former onto the latter. A blocklist that only compares same-version
+# networks classifies the mapped form as public and lets it through.
+
+MAPPED_BLOCKED_URLS = [
+    "http://[::ffff:10.0.0.1]/v.mp4",                     # RFC 1918
+    "http://[::ffff:172.16.0.1]/v.mp4",                   # RFC 1918
+    "http://[::ffff:192.168.1.10]/v.mp4",                 # RFC 1918
+    "http://[::ffff:100.64.0.1]/x",                       # CGNAT
+    "http://[::ffff:169.254.169.254]/latest/meta-data/",  # link-local metadata
+    "http://[::ffff:127.0.0.1]:8080/x",                   # loopback
+    "http://[::ffff:0.0.0.1]/x",                          # this-network
+    "http://[::ffff:192.0.0.1]/x",                        # IETF protocol assignments
+    "http://[::ffff:240.0.0.1]/x",                        # reserved
+]
+
+MAPPED_BLOCKED_ADDRS = [url.split("[")[1].split("]")[0] for url in MAPPED_BLOCKED_URLS]
+
+
+def test_ssrf_guard_blocks_ipv4_mapped_ipv6_literals():
+    """A bracketed IPv4-mapped literal must be judged by the IPv4 policy."""
+    from textflowkit.sources.detect import UnsafeUrlError
+
+    for url in MAPPED_BLOCKED_URLS:
+        try:
+            resolve_source(url)
+        except UnsafeUrlError:
+            continue
+        raise AssertionError(f"SSRF guard failed to block IPv4-mapped URL: {url}")
+
+
+def test_mapped_ip_classification_directly():
+    import ipaddress
+
+    from textflowkit.sources.detect import _is_blocked_ip
+
+    for addr in MAPPED_BLOCKED_ADDRS:
+        assert _is_blocked_ip(ipaddress.ip_address(addr)), addr
+
+
+def test_ssrf_guard_blocks_hostname_resolving_to_mapped_private_ip(monkeypatch):
+    """The resolved-address path shares the classifier, so a hostname whose
+    record is ::ffff:10.0.0.1 is the same bypass by another door.
+    getaddrinfo is stubbed; no real name is resolved and no host is contacted."""
+    import socket as _socket
+
+    from textflowkit.sources import detect
+    from textflowkit.sources.detect import UnsafeUrlError
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(_socket.AF_INET6, _socket.SOCK_STREAM, 6, "", ("::ffff:10.0.0.1", 0, 0, 0))]
+
+    monkeypatch.setattr(detect.socket, "getaddrinfo", fake_getaddrinfo)
+    try:
+        resolve_source("https://mapped.internal.example/v.mp4")
+    except UnsafeUrlError:
+        return
+    raise AssertionError("SSRF guard failed to block a host resolving to ::ffff:10.0.0.1")
+
+
+def test_ssrf_guard_still_allows_public_mapped_addresses(monkeypatch):
+    """Closing the bypass must not turn into 'block every ::ffff: address':
+    a mapped public address stays reachable, and the RFC 2544 range the policy
+    deliberately permits is still permitted once mapped."""
+    import ipaddress
+    import socket as _socket
+
+    from textflowkit.sources import detect
+    from textflowkit.sources.detect import _is_blocked_ip
+
+    assert not _is_blocked_ip(ipaddress.ip_address("::ffff:8.8.8.8"))
+    assert not _is_blocked_ip(ipaddress.ip_address("::ffff:198.18.0.1"))
+    # Literal form needs no DNS.
+    assert resolve_source("https://[::ffff:8.8.8.8]/v.mp4").kind == "url"
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(_socket.AF_INET6, _socket.SOCK_STREAM, 6, "", ("::ffff:8.8.8.8", 0, 0, 0))]
+
+    monkeypatch.setattr(detect.socket, "getaddrinfo", fake_getaddrinfo)
+    assert resolve_source("https://mapped.public.example/v.mp4").kind == "url"

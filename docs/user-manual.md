@@ -56,6 +56,38 @@ change their access rules. Of the 13 recognized platforms, only YouTube has a
 maintained live URL release check; the others are not independently verified
 on every release. See [sources and limitations](sources.md).
 
+`--engine` chooses the speech engine. The default is `whisper`
+(`openai-whisper` on the torch stack — ROCm on AMD, CUDA on NVIDIA, CPU
+otherwise) and is unchanged. `--engine faster-whisper` is an opt-in CPU/Mac
+engine; it needs `pip install "textflowkit[faster-whisper]"` and is not a ROCm
+replacement. The same choice is available as `engine` on the MCP tools
+(`transcribe_media`, `submit_batch_media`) and on the HTTP `/jobs` and
+`/jobs/batch` request bodies. On every surface an unknown engine name, or a
+missing extra, is rejected before anything is fetched — the install line above
+when the extra is the reason: an exit code on the command line, `{"error": ...}`
+over MCP, HTTP 422 over HTTP. See
+[install notes](install.md#optional-cpumac-engine-faster-whisper), including how
+to keep an existing ROCm torch build.
+
+Decoding runs under a wall-clock limit that applies in every mode, not only
+production: `transcribe`, `batch`, the MCP server, and the HTTP adapter all
+abort a decode that runs past it and report the setting to raise. The default
+is 600 seconds. For a long recording, raise it before starting the process:
+
+```powershell
+$env:TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS = '3600'
+textflowkit transcribe long-meeting.mkv
+```
+
+```bash
+export TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS=3600
+textflowkit transcribe long-meeting.mkv
+```
+
+The value is in seconds. See [adapter and production settings](adapters.md) for
+the separate size and duration caps that only apply under the production
+profile.
+
 ## 3. Batch and resume
 
 Set a durable SQLite job store before relying on resume across process
@@ -83,6 +115,22 @@ when those formats are requested. If the optional `export` extra is missing,
 the request fails with an installation hint rather than wasting a model run.
 An existing JSON transcript can be re-rendered without retranscribing media.
 
+SRT and WebVTT are wrapped for readability: a long segment becomes several
+cues, no line is longer than about 42 characters, and no cue has more than two
+lines. Cue times come from the source-language word timings when the segment
+has them and they name the text being shown. A translation cannot use them -
+its word timings describe the original speech - so its cue times are estimated
+from the segment's own interval, and an imported transcript with no word
+timings is estimated the same way. Wrapping is a readability change only: it
+never rewrites, reorders, or drops text, and it does not realign words.
+
+A speaker label repeats on every cue. In SRT the label is visible text, so it
+counts toward that line's width and leaves the rest of the cue slightly
+narrower; WebVTT carries the speaker as `<v ...>` markup, which is not visible
+text and so is not counted. A label that is itself wider than the target, or
+one containing line breaks, is kept whole rather than being shortened, which
+can push a line past the target - text is never sacrificed to the width.
+
 ## 5. Python API
 
 ```python
@@ -100,7 +148,16 @@ for segment in result.transcript.segments:
 Pass `output_dir=` to write files, or omit it to keep only the Python result.
 Saved JSON and Python results always retain source-language word timings.
 If segment text was translated, its word timings still refer to the original
-speech, **not** to individual translated words.
+speech, **not** to individual translated words. Subtitle cue times follow the
+same distinction: they come from the word timings for source text and are
+estimated from the segment's interval otherwise.
+
+Every `Segment` also carries a `hidden` flag, `False` by default. It is the
+caller's annotation, not engine output: `transcribe()` never sets it. A hidden
+segment stays in `Transcript.segments` and in saved JSON, but is omitted from
+`Transcript.text`, from every rendered format, and from retrieval pages and
+searches — so a span can be suppressed (an off-topic aside, a section under
+review) without editing or dropping the underlying data.
 
 ## 6. MCP and HTTP integrations
 
@@ -136,7 +193,9 @@ batching, cancellation, paging, and production settings.
 The HTTP server is local-only by default. Do not expose it on a network
 without the documented authentication/TLS gateway, input/output boundaries,
 and SSRF-filtering egress proxy. Long model calls cancel cooperatively at
-their next stage boundary, not immediately.
+their next stage boundary, not immediately. MCP and HTTP jobs decode under the
+same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
+(see [transcribe one file or URL](#2-transcribe-one-file-or-url)).
 
 ## 7. Release and help
 

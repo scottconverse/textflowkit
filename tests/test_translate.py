@@ -138,6 +138,41 @@ def test_batch_accepts_various_number_formats(monkeypatch):
     assert t._translate_batch(["a", "b", "c"], "es") == ["uno", "dos", "tres"]
 
 
+def test_batch_rejects_unnumbered_continuation_line(monkeypatch):
+    """An unnumbered line is content the model produced, not noise.
+
+    Silently discarding it returns a truncated translation as though it were
+    complete, so the batch must be rejected and left to the per-item fallback.
+    """
+    t = OllamaTranslator()
+    monkeypatch.setattr(t, "_generate", lambda prompt: "1. buenos\ndías\n2. dos")
+    with pytest.raises(TranslationError):
+        t._translate_batch(["good morning", "two"], "es")
+
+
+def test_batch_still_tolerates_blank_lines(monkeypatch):
+    """Blank separator lines carry no content, so they stay accepted."""
+    t = OllamaTranslator()
+    monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n\n2. dos\n")
+    assert t._translate_batch(["one", "two"], "es") == ["uno", "dos"]
+
+
+def test_batch_rejects_duplicate_numbered_rows(monkeypatch):
+    """A repeated number means one item's translation overwrote the other."""
+    t = OllamaTranslator()
+    monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n1. dos\n2. tres")
+    with pytest.raises(TranslationError):
+        t._translate_batch(["one", "two"], "es")
+
+
+def test_batch_rejects_out_of_range_numbered_rows(monkeypatch):
+    """A number nobody asked for is a line being dropped on the floor."""
+    t = OllamaTranslator()
+    monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n2. dos\n3. extra")
+    with pytest.raises(TranslationError):
+        t._translate_batch(["one", "two"], "es")
+
+
 def test_falls_back_to_per_segment_on_bad_batch(monkeypatch):
     """A malformed batch must not be trusted - redo it one at a time."""
     t = OllamaTranslator()
@@ -155,6 +190,42 @@ def test_falls_back_to_per_segment_on_bad_batch(monkeypatch):
     assert out == ["translated", "translated", "translated"]
     assert calls["batches"] == 1
     assert calls["singles"] == 3
+
+
+def test_dropped_continuation_gets_full_per_item_text_not_a_truncation(monkeypatch):
+    """The public path must never accept or cache a truncated batch.
+
+    The batch below numbers both items but leaves `días` unnumbered, so a
+    parser that ignores stray lines reports `buenos` as the whole translation
+    of "good morning". The per-item fallback answers with its own *multiline*
+    translation - the newline is inside the model's answer, not a join of two
+    answers - and that exact string must come back and be cached. Asserting the
+    newline itself is the point: a fallback that returned `"buenos días"` would
+    pass a looser check while proving nothing about `_translate_one`, which
+    returns the model output stripped but with interior newlines intact.
+    """
+    t = OllamaTranslator()
+    singles: list[str] = []
+    single = {"good morning": "buenos\ndías", "two": "dos"}
+
+    def fake_generate(prompt):
+        if "numbered line" in prompt:
+            return "1. buenos\ndías\n2. dos"
+        source = prompt.rsplit("\n\n", 1)[1]
+        singles.append(source)
+        return single[source]
+
+    monkeypatch.setattr(t, "_generate", fake_generate)
+    out = t.translate(["good morning", "two"], "es")
+
+    assert out == ["buenos\ndías", "dos"]       # the interior newline survived
+    assert singles == ["good morning", "two"]   # the fallback actually ran
+    # Exact cache contents: the truncated ("good morning", "es") -> "buenos"
+    # entry must not exist alongside them.
+    assert t._cache == {
+        ("good morning", "es"): "buenos\ndías",
+        ("two", "es"): "dos",
+    }
 
 
 def test_repeated_text_is_translated_once_per_batch(monkeypatch):

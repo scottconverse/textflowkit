@@ -1,19 +1,15 @@
 """Bounded job executor.
 
-Before this, `submit()` spawned one raw `threading.Thread` per job and forgot it.
-That had two consequences the review called out:
+`submit()` runs jobs on a fixed worker pool that owns job lifecycle, so the
+number of simultaneous model runs is capped by configuration instead of by how
+many jobs were submitted. On a device Whisper already saturates, extra parallel
+jobs do not go faster - they thrash memory.
 
-- **No concurrency bound.** N submissions meant N simultaneous Whisper runs
-  competing for the same GPU. On a device Whisper already saturates, parallel
-  jobs do not go faster - they thrash memory.
-- **No handle on running work.** Nothing held a reference to a running job, so
-  "cancel" had nothing to act on.
-
-This module replaces the fire-and-forget thread with a fixed worker pool that
-owns job lifecycle. Cancellation is cooperative: a job checks a token at stage
-boundaries and stops cleanly. A job inside a single long model call cannot be
-interrupted mid-call - that call finishes, then the job stops. Stated plainly
-here because it is a real limit, not an implementation detail.
+The pool holds a reference to every running job, which is what gives
+cancellation something to act on. Cancellation is cooperative: a job checks a
+token at stage boundaries and stops cleanly. A job inside a single long model
+call cannot be interrupted mid-call - that call finishes, then the job stops.
+Stated plainly here because it is a real limit, not an implementation detail.
 """
 
 from __future__ import annotations

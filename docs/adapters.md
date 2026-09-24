@@ -95,6 +95,10 @@ Tools: `list_sources`, `transcribe_media`, `submit_batch_media`, `resume_job`,
 Read-only tools carry `readOnlyHint: true`. Submission and export tools carry
 `openWorldHint: true`; resume and cancellation are marked as mutating.
 
+`transcribe_media` and `submit_batch_media` take the same options as the HTTP
+bodies above, `engine` included; a name that is unknown, or whose optional
+package is missing, comes back as `{"error": ...}` before any job is queued.
+
 ### Harness configuration
 
 DSH (`cordis.yml` patch), HTTP example (**not live-connection verified**):
@@ -146,6 +150,22 @@ textflowkit-http --host 127.0.0.1 --port 8767
 | POST | `/jobs/{id}/export?formats=docx&formats=pdf` | write files to disk (docx/pdf included) |
 | POST | `/jobs/{id}/cancel` | request cancellation |
 
+Both submission bodies (`POST /jobs` and each item of `POST /jobs/batch`) accept
+the same options: `source`, `language`, `formats`, `output_dir`, `model`,
+`device`, `engine`, `cookies_from_browser`, `diarize`, and `translate_to`.
+`engine` defaults to `whisper` — openai-whisper on the torch stack: ROCm on AMD,
+CUDA on NVIDIA, CPU otherwise — and may be set to `faster-whisper`, the opt-in
+CTranslate2 engine for CPU and Apple Silicon that needs
+`pip install "textflowkit[faster-whisper]"`. The default is unchanged, and no
+speed or accuracy comparison between the engines is claimed. An unknown engine
+name, or a missing extra, is answered with **422 before a job record is written**;
+on `/jobs/batch` that refusal covers the whole request, so a fresh batch is never
+partly queued for one unusable engine. The choice is stored on the durable
+request and checked again when the job is resumed - except for a job that already
+finished, which is answered from its stored transcript and needs no engine. A
+resume refused for an unusable engine leaves the job's terminal state, error, and
+cancellation flag untouched, so nothing is left queued-less in `pending`.
+
 ### Developer mode and production profile
 
 Developer mode is localhost-only by default and has no authentication. Binding
@@ -164,6 +184,28 @@ textflowkit-http --host 0.0.0.0 --allow-remote
 TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
 ```
 
+The same policy is enforced per request, so it also covers the JSON HTTP app
+started directly through an ASGI server (`uvicorn
+textflowkit.adapters.http_server:app`), where the startup check above never
+runs. The MCP Streamable-HTTP app carries the same per-request boundary, for
+the same reason: the MCP SDK's DNS-rebinding protection checks `Host` and
+`Origin` but never the client's address, so an app built with
+`mcp.streamable_http_app()` and reached through another ASGI server would accept
+a remote caller that sends a loopback `Host`. `run_http()` performs the startup
+bind check itself, so calling it from Python refuses a wide bind exactly as the
+CLI does.
+A developer-mode request is refused with `403` unless its `Host` header
+names loopback, any `Origin` header it carries names a loopback origin, and the
+client's own address (not `X-Forwarded-*`, which is not trusted) is loopback.
+That blocks a hostname that resolves to loopback (DNS rebinding) and cross-site
+browser requests. The peer test is fail-closed: a request whose peer the server
+does not report as an IP address - including one that reports no peer at all,
+as an in-process ASGI test harness does - is refused rather than assumed local,
+because headers a browser sends cannot stand in for the caller's address.
+`--allow-remote` / `TEXTFLOWKIT_ALLOW_REMOTE=1` is the single opt-in for all
+three: behind a gateway the public `Host` arrives, so this allowlist cannot
+apply.
+
 Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
 `TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit
 input/output/work roots, and an on-disk SQLite job store are configured. It
@@ -171,11 +213,17 @@ enforces a bounded request body, per-process rate limit, pending queue, media
 size, source duration, rendered-output size, and transcript page size. Known
 oversize downloads are refused before transfer; download progress is capped
 during transfer. A bounded ffprobe rejects known overlong sources before full
-decode; ffmpeg decode has a wall-clock timeout, cancellation, and decoded-byte
-and duration caps even when metadata is missing. Configure
-`TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` (default 600) if the default is too short
-for your host. Each job
-gets its own scratch directory under `TEXTFLOWKIT_WORK_ROOT`.
+decode; the production profile adds decoded-byte and duration caps even when
+metadata is missing. Each job gets its own scratch directory under
+`TEXTFLOWKIT_WORK_ROOT`.
+
+One decode limit is **not** production-only. ffmpeg decoding runs under a
+wall-clock timeout in every profile, so a local `textflowkit transcribe`/`batch`
+run, a stdio MCP server, and the JSON HTTP adapter all stop a decode that
+exceeds it and report the setting to raise. The default is 600 seconds; set
+`TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` (seconds) before starting the process to
+allow a longer decode. This is separate from the production-only caps above,
+which apply only while `TEXTFLOWKIT_PROFILE=production`.
 
 ```bash
 export TEXTFLOWKIT_PROFILE=production
@@ -196,7 +244,9 @@ the operator must ensure that proxy blocks private/loopback destinations and
 DNS rebinding. External JavaScript runtimes are disabled for production URL
 jobs because they are not guaranteed to honor yt-dlp's proxy; this may limit
 some YouTube formats. Local-file jobs do not require network egress. Streamable-HTTP
-MCP is a separate surface and should remain on loopback or behind a gateway;
+MCP is a separate surface: it enforces the loopback peer/`Host`/`Origin`
+boundary described above and stands it down on `--allow-remote` /
+`TEXTFLOWKIT_ALLOW_REMOTE=1`, and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
 
 ### Container example (Dockerfile and Compose)
@@ -277,6 +327,68 @@ roots, and the absent proxy - plus a native run of the production profile's
 build` or `docker compose up` is claimed to have run: this is a source example,
 not a verified image.
 
+### Client identity behind a proxy
+
+The production rate limit is per client. Behind a reverse proxy every request
+arrives from the proxy's address, so without configuration one bucket serves
+every caller. Name the proxy, and each forwarded client gets its own bucket:
+
+```bash
+export TEXTFLOWKIT_TRUSTED_PROXY_IPS=127.0.0.1            # one proxy
+export TEXTFLOWKIT_TRUSTED_PROXY_IPS=10.0.0.0/8,2001:db8::1  # a network, IPv4 or IPv6
+```
+
+Comma-separated IP literals and CIDR networks. A value that is not an address or
+network - a hostname, a blank entry, `*` - makes the service refuse requests with
+`503` rather than be ignored, because an operator who believes a proxy is trusted
+when it is not would never see the mistake.
+
+Two rules keep this from becoming a spoofing hole:
+
+- **Only a configured proxy is believed.** If the TCP peer is not in the list,
+  every `X-Forwarded-For` value is ignored and the peer itself is the identity.
+  A direct client cannot name itself.
+- **The rightmost untrusted hop wins.** A proxy appends the address it saw to the
+  *right* of the header; everything left of that was typed by the caller. So
+  `X-Forwarded-For: 1.2.3.4, 198.51.100.7` from a trusted proxy counts against
+  `198.51.100.7` no matter what `1.2.3.4` claims. Several `X-Forwarded-For`
+  header lines are joined before the walk, so a proxy that appends its own line
+  rather than extending the caller's value is handled the same way.
+  Unparseable text is never adopted as an identity; it falls back to the proxy's
+  own address.
+
+This rule assumes the trusted proxy *adds* the address it saw rather than
+forwarding whatever the caller sent (nginx's `$proxy_add_x_forwarded_for`, for
+instance). A proxy that passes a client-supplied `X-Forwarded-For` through
+unchanged hands that client the choice of its own identity, and no header
+inspection can detect the difference.
+
+With `TEXTFLOWKIT_TRUSTED_PROXY_IPS` unset, behaviour is unchanged: the peer
+address and nothing else.
+
+**Started through `textflowkit-http`, this is the whole story.** The CLI disables
+uvicorn's own proxy-header middleware. Not because that middleware reads the
+chain wrongly - its normal path walks it from the right too - but because it
+applies a *second* trust set of its own (`127.0.0.1` and `::1` by default, or
+`FORWARDED_ALLOW_IPS`) and can rewrite the peer before this app sees it. With it
+off, the peer is the raw TCP peer and `TEXTFLOWKIT_TRUSTED_PROXY_IPS` is the only
+trust configuration in play. If you start the ASGI app directly instead, the same
+switch is yours:
+
+```bash
+uvicorn textflowkit.adapters.http_server:app --no-proxy-headers
+```
+
+Leaving that middleware on (`--proxy-headers`) means its trust set, not this
+setting, decides the peer. Two of its cases differ from the rule above and are
+worth knowing: configured to trust everything (`--forwarded-allow-ips=*`) it
+returns the leftmost entry unconditionally, which the caller can type; and when
+every hop in the chain is already trusted it falls back to the leftmost entry
+too, where this implementation falls back to the peer. Everywhere else the two
+agree. So if you do leave it on, put it behind a proxy that appends its own
+observation rather than forwarding the caller's header, and keep
+`FORWARDED_ALLOW_IPS` narrow.
+
 ## Durable job state
 
 By default jobs live in memory and are lost when the process exits. Set
@@ -303,8 +415,21 @@ TEXTFLOWKIT_MAX_CONCURRENCY=1   # default
 ```
 
 The default is **1** deliberately. Whisper saturates a GPU on its own, so parallel
-jobs thrash VRAM rather than finishing sooner. Raise it only for CPU-bound or
-I/O-bound workloads where that reasoning does not apply.
+jobs thrash VRAM rather than finishing sooner.
+
+**Raising the bound does not by itself parallelise transcription.** Model inference
+is serialized per engine *instance*: `WhisperEngine.transcribe` holds a lock across
+the whole `model.transcribe` call (`core/engine.py`), and identical
+`(model, device, fp16)` arguments return the same cached instance, so jobs with the
+same arguments share one lock. Their inference runs one job at a time however many
+workers exist.
+
+What a higher bound does buy: while one job holds the inference lock, another job can
+be downloading, decoding with ffmpeg, or writing output, and jobs pinned to
+*different* engine instances (a different `model` or `device`) hold separate locks,
+so their inference is not serialized against each other. So raise it for I/O-bound
+work, or for mixed-model or mixed-device batches - not for CPU-bound Whisper, whose
+inference serializes on that same lock exactly as it does on a GPU.
 
 ## Cancellation
 
@@ -388,15 +513,36 @@ segments were translated).
 
 ### Speaker labels
 
-```bash
-textflowkit transcribe "$URL" --diarize
-HF_TOKEN=hf_...                   # required: the model is gated
-TEXTFLOWKIT_DIARIZE_DEVICE=cuda  # optional; ROCm also appears as cuda in torch
-```
-
 Requires the optional `diarize` extra (`pip install 'textflowkit[diarize]'`) and a
 Hugging Face token with access to the pyannote model. Missing either one **fails
 the job with an actionable message** - verified over both the CLI and MCP.
+
+The token and the optional device have to be set **before** the command, in the
+shell that runs it: the process reads the environment once, at startup, so an
+assignment placed after the command (or in a different window) has no effect on
+that run.
+
+Linux, macOS, WSL, or Git Bash:
+
+```bash
+export HF_TOKEN='hf_xxxxxxxx'            # required: the model is gated
+export TEXTFLOWKIT_DIARIZE_DEVICE=cuda   # optional; ROCm also appears as cuda in torch
+textflowkit transcribe "$URL" --diarize
+```
+
+Native Windows PowerShell:
+
+```powershell
+$env:HF_TOKEN = 'hf_xxxxxxxx'            # required: the model is gated
+$env:TEXTFLOWKIT_DIARIZE_DEVICE = 'cuda' # optional; ROCm also appears as cuda in torch
+textflowkit transcribe .\clip.wav --diarize
+```
+
+In PowerShell `$URL` is a variable reference rather than a literal, so pass the
+real path or URL there - the example uses a local file. POSIX shells also accept
+a one-off prefix, `HF_TOKEN='hf_xxxxxxxx' textflowkit transcribe clip.wav
+--diarize`; PowerShell has no `VAR=value command` prefix, so it needs the `$env:`
+assignment on its own line.
 
 Each segment takes the speaker with the greatest time overlap. A segment with no
 overlapping turn is left **unlabelled rather than guessed at**, and exact ties go

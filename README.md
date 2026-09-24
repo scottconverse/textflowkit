@@ -19,16 +19,31 @@ products, AI harnesses, and agents.
 
 ---
 
-> ## ⚠️ NO WARRANTY — AS IS
->
-> **This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND**, express or
-> implied, including but not limited to the warranties of MERCHANTABILITY, FITNESS
-> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE) (Apache-2.0,
-> §7–8) for the full disclaimer and limitation of liability.
->
-> **You are responsible for what you transcribe.** textflowkit can fetch media from
-> third-party platforms. Copyright, terms-of-service, and privacy obligations for any
-> media you choose to process are **yours alone**. See [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md).
+## Quickstart
+
+Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
+
+Windows (PowerShell or CMD):
+
+```powershell
+python -m pip install textflowkit
+textflowkit doctor
+textflowkit transcribe .\meeting.mp4 --formats srt,txt --output-dir .\out
+```
+
+macOS or Linux:
+
+```bash
+python -m pip install textflowkit
+textflowkit doctor
+textflowkit transcribe ./meeting.mp4 --formats srt,txt --output-dir ./out
+```
+
+`doctor` prints the Python, ffmpeg, yt-dlp, JavaScript-runtime, and
+optional-extra versions this install will use. The `transcribe` example writes
+the SRT and TXT files into `out\` and prints the path of each one; give it a
+supported URL instead of a path to fetch remote media. See **Install** below for
+the extras, and **Usage** for language, translation, speaker labels, and resume.
 
 ---
 
@@ -144,7 +159,11 @@ to preserve it.
 
 The same version's wheel and source archive are also on the
 [GitHub release page](https://github.com/scottconverse/textflowkit/releases/latest).
-The release lists their SHA-256 hashes. For editable source development, see
+Starting with the next release, every release published by this project's release
+workflow carries a `SHA256SUMS` asset listing the SHA-256 hash of each wheel and
+source archive it contains, so you can check a download with
+`sha256sum -c SHA256SUMS`. Releases published before that change, v0.1.5
+included, have no such asset. For editable source development, see
 [CONTRIBUTING.md](https://github.com/scottconverse/textflowkit/blob/main/CONTRIBUTING.md).
 
 ## Usage
@@ -263,11 +282,27 @@ web frontend share the job contract without blocking a request.
 coverage. The release added a speech-bearing self-test, full-media duration,
 retained word timings, optional PDF fonts, and tokenless PyPI publishing.
 Windows-native ROCm and a local Windows YouTube run on the release commit were verified.
+That run's receipt records the clip, timestamps, and hashes; the checklist's
+recognized-speech assertion was added after it, so treat it as shape evidence for
+that commit rather than proof of what was said.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
 live transcription is not verified.
 This does not imply that all 13 platforms or every harness workflow has been
 tested end to end. See the [user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 and [roadmap](https://github.com/scottconverse/textflowkit/blob/main/docs/roadmap.md).
+
+---
+
+> ## ⚠️ NO WARRANTY — AS IS
+>
+> **This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND**, express or
+> implied, including but not limited to the warranties of MERCHANTABILITY, FITNESS
+> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE) (Apache-2.0,
+> §7–8) for the full disclaimer and limitation of liability.
+>
+> **You are responsible for what you transcribe.** textflowkit can fetch media from
+> third-party platforms. Copyright, terms-of-service, and privacy obligations for any
+> media you choose to process are **yours alone**. See [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md).
 
 ## License
 

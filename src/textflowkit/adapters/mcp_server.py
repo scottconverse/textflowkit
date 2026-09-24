@@ -6,6 +6,12 @@ Transport decision (2026-09-21): stdio first, Streamable HTTP second. Both are
 served from this one module so the tool definitions cannot drift apart. Every
 tool calls straight into `core.runner`; no pipeline logic lives here.
 
+Streamable HTTP is unauthenticated and loopback-only unless remote access is
+deliberately opted into. `run_http()` refuses a wide bind, and the app itself
+refuses a request that is not provably from a local caller, so a remote peer
+cannot reach the tools by pointing an ASGI server at the app and sending a
+loopback `Host`. See `LoopbackPeerGuard`.
+
 Verified harness support:
   - DSH (@deepseek-ai/dsh-mcp-client) - stdio + streamable-http
   - Claude Code                       - stdio + http (+ sse)
@@ -20,10 +26,16 @@ long video returns a job id immediately rather than blocking the call.
 from __future__ import annotations
 
 import sys
+from contextvars import ContextVar
 from typing import Any
 
 from textflowkit import __version__
-from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
+from textflowkit.core.bind import (
+    ENV_ALLOW_REMOTE,
+    UnsafeBindError,
+    check_bind_safety,
+    developer_request_refusal,
+)
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
@@ -34,6 +46,7 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
+from textflowkit.core.service import service_work_root
 from textflowkit.core.submission import (
     SubmissionRequest,
     submit_batch,
@@ -55,6 +68,12 @@ try:  # the MCP SDK is an optional extra
     # mcp 2.x renamed FastMCP to MCPServer (mcp.server.mcpserver).
     from mcp.server.mcpserver import MCPServer
     from mcp.types import ToolAnnotations
+
+    # Starlette arrives with the SDK and is what the Streamable-HTTP app is built
+    # from, so the guard below is only reachable where it is importable.
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.types import ASGIApp, Receive, Scope, Send
 except ImportError as exc:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The MCP adapter requires the 'mcp' extra. Install with: pip install 'textflowkit[mcp]'"
@@ -80,8 +99,96 @@ Transcription runs locally. Long videos are processed in the background, so neve
 block on transcribe_media; poll the job instead.
 """
 
-mcp = MCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
 
+def _scope_header(scope: Scope, name: bytes) -> str | None:
+    """An ASGI request header value, or None. ASGI lowercases header names."""
+    for key, value in scope.get("headers") or ():
+        if key == name:
+            return value.decode("latin-1")
+    return None
+
+
+def _scope_peer(scope: Scope) -> str | None:
+    """The ASGI peer address, or None when the server reports none."""
+    client = scope.get("client")
+    return client[0] if client else None
+
+
+class LoopbackPeerGuard:
+    """Refuse an MCP-over-HTTP request that is not provably from a local caller.
+
+    The SDK's built-in DNS-rebinding protection checks the `Host` and `Origin`
+    headers but never the ASGI peer, and a header says who the caller was
+    pointing at rather than who the caller is. So the app
+    `streamable_http_app()` returns is reachable by a remote caller that simply
+    sends `Host: 127.0.0.1` whenever another ASGI server sits in front of it - a
+    widened bind, a container port mapping, or a reverse proxy. `main()`'s
+    startup bind check cannot see any of that, and never runs at all when the
+    app is started directly by an ASGI server.
+
+    `developer_request_refusal()` is asked instead: it wants a loopback `Host`
+    and `Origin`, and a peer address that is *provably* loopback, so an
+    unjudged peer is refused rather than assumed local. That is the same verdict
+    the developer JSON-HTTP surface reaches, from the same core policy, so the
+    two HTTP surfaces cannot drift apart. Explicit remote opt-in
+    (`--allow-remote` per app, or `TEXTFLOWKIT_ALLOW_REMOTE=1`) stands it down.
+
+    Pure ASGI, not `BaseHTTPMiddleware`: MCP responses stream, and middleware
+    that buffers `receive`/`send` would break them. Only the scope is read, and
+    a permitted request is passed through untouched.
+    """
+
+    def __init__(self, app: ASGIApp, *, allow_remote: bool | None = None) -> None:
+        self.app = app
+        self.allow_remote = allow_remote
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Non-HTTP scopes (lifespan above all: it starts the SDK's session
+        # manager) are not requests and have no peer to judge.
+        if scope.get("type") != "http" or self.allow_remote:
+            await self.app(scope, receive, send)
+            return
+        refusal = developer_request_refusal(
+            host=_scope_header(scope, b"host"),
+            origin=_scope_header(scope, b"origin"),
+            peer=_scope_peer(scope),
+        )
+        if refusal is None:
+            await self.app(scope, receive, send)
+            return
+        await JSONResponse({"error": refusal}, status_code=403)(scope, receive, send)
+
+
+# The per-app form of `--allow-remote`. It is a ContextVar, not an attribute on
+# the server, because the server is process-wide: a plain attribute would be
+# visible to every thread that builds an app while an opted-in server is
+# starting, quietly widening an app that was never granted the opt-in. A
+# ContextVar is per-context (per thread, per task), so the opt-in is visible
+# only to the call that set it - the server start - and the app built there
+# captures it. `run_http` sets and resets it around that one call.
+_REMOTE_OPT_IN: ContextVar[bool | None] = ContextVar("textflowkit_mcp_remote_opt_in", default=None)
+
+
+class GuardedMCPServer(MCPServer):
+    """`MCPServer` whose Streamable-HTTP app carries the loopback peer guard.
+
+    `streamable_http_app()` is the SDK's extension point: both a direct call and
+    `run(transport='streamable-http')` (which `run_http` uses) go through it, so
+    building the app here covers every way this module reaches Streamable HTTP.
+
+    The app captures the opt-in in force where it is built. Every other context
+    - another thread, another task, a later call - gets the fail-closed default,
+    and an operator starting the app directly can still use
+    `TEXTFLOWKIT_ALLOW_REMOTE`, which the guard reads per request.
+    """
+
+    def streamable_http_app(self, **kwargs: Any) -> Starlette:
+        app = super().streamable_http_app(**kwargs)
+        app.add_middleware(LoopbackPeerGuard, allow_remote=_REMOTE_OPT_IN.get())
+        return app
+
+
+mcp = GuardedMCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
 
 def _job_payload(job: Job) -> dict[str, Any]:
     return job.to_dict()
@@ -120,6 +227,7 @@ def transcribe_media(
     cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
+    engine: str = "whisper",
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
@@ -132,7 +240,8 @@ def transcribe_media(
             direct media link) or a path to a local file.
         language: Optional ISO language code (e.g. 'en'). Auto-detected if omitted.
         formats: Comma-separated outputs to write when output_dir is set.
-            Available: txt, srt, vtt, md, json.
+            Available: txt, srt, vtt, md, json, docx, pdf. The binary formats
+            (docx, pdf) are written to disk and require the export extra.
         output_dir: Directory to write rendered files into. Omit to keep the
             transcript in memory only.
         model: Whisper model size - tiny, base, small, medium, or large.
@@ -145,6 +254,11 @@ def transcribe_media(
             rather than returning empty speakers.
         translate_to: Target language code (e.g. 'es'). Translates the transcript
             with the configured backend; fails loudly if it is unreachable.
+        engine: Speech engine. 'whisper' (the default: openai-whisper on the
+            torch stack - ROCm on AMD, CUDA on NVIDIA, CPU otherwise) or the
+            opt-in 'faster-whisper', a CTranslate2 engine for CPU and Apple
+            Silicon that needs the faster-whisper extra. The default is
+            unchanged; no speed or accuracy comparison is claimed here.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
@@ -164,8 +278,10 @@ def transcribe_media(
             device=device,
             cookies_from_browser=cookies_from_browser,
             input_root=server_input_root(),
+            work_dir=service_work_root(),
             diarize=diarize,
             translate_to=translate_to,
+            engine=engine,
         )
         job = submit_request(get_default_store(), request)
     except ValueError as exc:
@@ -191,27 +307,64 @@ def submit_batch_media(
     diarize: bool = False,
     translate_to: str | None = None,
     resume: bool = False,
+    engine: str = "whisper",
 ) -> dict[str, Any]:
-    """Queue multiple independent media jobs and return each job handle."""
+    """Queue multiple independent media jobs and return each job handle.
+
+    Each source gets its own job, so one bad source cannot hide the others. Poll
+    each returned job_id with get_job_status.
+
+    Args:
+        sources: Media URLs or local file paths; one job per source.
+        language: Optional ISO language code (e.g. 'en') applied to every job.
+        formats: Comma-separated outputs to write when output_dir is set.
+            Available: txt, srt, vtt, md, json, docx, pdf. The binary formats
+            (docx, pdf) require the export extra.
+        output_dir: Directory to write rendered files into.
+        model: Whisper model size - tiny, base, small, medium, or large.
+        device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+        diarize: Label speakers (needs the diarize extra and a gated model).
+        translate_to: Target language code; fails loudly if unreachable.
+        resume: Reuse matching saved checkpoints and completed transcripts.
+        engine: Speech engine, applied to every job. 'whisper' (the default:
+            openai-whisper on the torch stack) or the opt-in 'faster-whisper'
+            (CPU/Mac; needs the faster-whisper extra). An unusable engine
+            refuses the whole batch before anything is queued.
+    """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     try:
         requests = [SubmissionRequest(
             source=source, language=language, formats=fmt_list,
             output_dir=output_dir, model=model, device=device,
             diarize=diarize, translate_to=translate_to,
-            input_root=server_input_root(),
+            input_root=server_input_root(), work_dir=service_work_root(),
+            engine=engine,
         ) for source in sources]
+        # Fresh batches preflight the engine once, inside submit_batch, before
+        # queueing anything; a resume batch decides reuse per item instead.
+        results = submit_batch(get_default_store(), requests, resume=resume)
     except ValueError as exc:
         return {"error": str(exc)}
-    results = submit_batch(get_default_store(), requests, resume=resume)
     return {"count": len(results), "jobs": results}
 
 
 @mcp.tool(annotations=MUTATING)
 def resume_job(job_id: str) -> dict[str, Any]:
-    """Resume an interrupted job using its saved request and transcript checkpoint."""
+    """Resume an interrupted job using its saved request and transcript checkpoint.
+
+    The *current* input root and service work root are applied, exactly as on the
+    HTTP surface: a source that falls outside a root the operator has since
+    tightened is refused rather than resumed using the wider root saved with the
+    original request, and any scratch tree is created under the configured work
+    root rather than a root saved before the operator last changed it.
+    """
     try:
-        job = core_resume_job(get_default_store(), job_id)
+        current_root = server_input_root()
+        job = core_resume_job(
+            get_default_store(), job_id,
+            input_root=str(current_root) if current_root else None,
+            work_dir=service_work_root(),
+        )
     except QueueFullError as exc:
         return {"error": str(exc), "retryable": True}
     except ValueError as exc:
@@ -332,9 +485,9 @@ def search_transcript(
 ) -> dict[str, Any]:
     """Search a completed transcript for a phrase.
 
-    Returns matching segments with their timestamps, newest-first order
-    preserved from the transcript. Use this instead of paging through a long
-    transcript looking for a topic.
+    Returns matching segments with their timestamps, in the order they appear in
+    the transcript - not sorted by relevance or recency. Use this instead of
+    paging through a long transcript looking for a topic.
 
     Args:
         job_id: The id returned by transcribe_media.
@@ -392,7 +545,8 @@ def export_transcript(
     Args:
         job_id: The id returned by transcribe_media.
         output_dir: Directory to write into. Created if missing.
-        formats: Comma-separated formats to write - txt, srt, vtt, md, json.
+        formats: Comma-separated formats to write - txt, srt, vtt, md, json,
+            docx, pdf. The binary formats (docx, pdf) require the export extra.
     """
     job, err = _resolve_job(job_id)
     if err:
@@ -503,13 +657,33 @@ def run_stdio() -> None:
     mcp.run(transport="stdio")
 
 
-def run_http(host: str = "127.0.0.1", port: int = 8766, path: str = "/mcp") -> None:
+def run_http(
+    host: str = "127.0.0.1",
+    port: int = 8766,
+    path: str = "/mcp",
+    *,
+    allow_remote: bool | None = None,
+) -> None:
     """Run the server over Streamable HTTP (for remote/multi-client use).
 
     Binds to localhost by default. Exposing this beyond localhost requires your
     own auth layer; the server ships none.
+
+    This validates the bind itself rather than leaving it to `main()`: called
+    directly from Python it must refuse a non-loopback bind just as the CLI
+    does. `allow_remote=True` is the per-app opt-in (the CLI flag); left unset,
+    `TEXTFLOWKIT_ALLOW_REMOTE=1` still permits a wide bind, and the app it
+    builds keeps refusing a remote peer unless one of the two is set.
+
+    The flag is carried in this call's context, so the app this server builds
+    captures it and an app any other caller builds meanwhile does not.
     """
-    mcp.run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
+    check_bind_safety(host, allow_remote=allow_remote)
+    token = _REMOTE_OPT_IN.set(allow_remote)
+    try:
+        mcp.run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
+    finally:
+        _REMOTE_OPT_IN.reset(token)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -543,11 +717,15 @@ def main(argv: list[str] | None = None) -> int:
         run_stdio()
     else:
         try:
-            check_bind_safety(args.host, allow_remote=args.allow_remote or None)
+            run_http(
+                host=args.host,
+                port=args.port,
+                path=args.path,
+                allow_remote=args.allow_remote or None,
+            )
         except UnsafeBindError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        run_http(host=args.host, port=args.port, path=args.path)
     return 0
 
 

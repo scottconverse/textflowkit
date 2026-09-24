@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import wave
 from collections.abc import Callable
 from pathlib import Path
@@ -15,6 +16,7 @@ from pathlib import Path
 from textflowkit.core.cancel import CancelledError
 from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
 from textflowkit.core.service import (
+    DEFAULT_FFMPEG_TIMEOUT_SECONDS,
     ENV_EGRESS_PROXY,
     ENV_FFMPEG_TIMEOUT_SECONDS,
     ENV_MAX_DURATION_SECONDS,
@@ -121,6 +123,83 @@ def _js_runtime_args() -> list[str]:
         return []
     return ["--no-js-runtimes", "--js-runtimes", runtime]
 
+
+# --- redirect guard --------------------------------------------------------
+#
+# yt-dlp follows HTTP redirects inside its request handlers, so a response
+# object only exists once the redirect target has already been contacted. Every
+# handler does route each hop through a single transport funnel, though:
+# `requests` calls `Session.send` once per hop from `resolve_redirects`, and
+# urllib's redirect handler re-enters `OpenerDirector.open`. Wrapping that funnel
+# checks the next URL before its connection is opened.
+#
+# The funnel is wrapped on the handler's own transport instance rather than on a
+# shared class, so concurrent jobs in one process stay independent.
+
+
+def _checked_requests_send(session, validate_url) -> None:
+    """Validate each hop before `requests` sends it."""
+    send = session.send
+
+    def checked_send(request, *args, **kwargs):
+        url = getattr(request, "url", None)
+        if isinstance(url, str):
+            validate_url(url)
+        return send(request, *args, **kwargs)
+
+    session.send = checked_send
+
+
+def _checked_urllib_open(opener, validate_url) -> None:
+    """Validate each hop before urllib opens a connection for it."""
+    open_url = opener.open
+
+    def checked_open(fullurl, *args, **kwargs):
+        url = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl
+        if isinstance(url, str):
+            validate_url(url)
+        return open_url(fullurl, *args, **kwargs)
+
+    opener.open = checked_open
+
+
+# yt-dlp handler registry key -> the funnel to wrap on that handler's transport.
+_HTTP_TRANSPORT_GUARDS = {
+    "Requests": _checked_requests_send,
+    "Urllib": _checked_urllib_open,
+}
+
+
+def _guard_http_transports(director, validate_url) -> None:
+    """Attach the redirect guard to every HTTP transport yt-dlp could select.
+
+    Handlers build their transport lazily and cache it, so the instance factory
+    is wrapped rather than any already-built transport. A handler that serves
+    http/https without a funnel this build knows how to wrap is refused outright:
+    leaving it running unguarded would silently restore the gap this guard
+    exists to close.
+    """
+    for key, handler in director.handlers.items():
+        schemes = getattr(handler, "_SUPPORTED_URL_SCHEMES", None) or ()
+        if not {"http", "https"} & set(schemes):
+            continue
+        guard = _HTTP_TRANSPORT_GUARDS.get(key)
+        create = getattr(handler, "_create_instance", None)
+        if guard is None or create is None:
+            raise AcquisitionError(
+                f"yt-dlp would send HTTP through a request handler this build cannot "
+                f"verify ('{key}'); refusing a fetch whose redirect targets cannot be "
+                "checked before they are contacted"
+            )
+
+        def install(*args, _create=create, _guard=guard, **kwargs):
+            instance = _create(*args, **kwargs)
+            _guard(instance, validate_url)
+            return instance
+
+        handler._create_instance = install
+
+
 def _fetch_with_module(
     url: str,
     *,
@@ -188,8 +267,31 @@ def _fetch_with_module(
         # honor yt-dlp's proxy option. Do not let them create an egress bypass.
         opts["js_runtimes"] = {}
 
+    refusals: list[AcquisitionError] = []
+
+    def _refuse(url: str) -> None:
+        """Validate a URL about to be contacted, keeping the reason for the caller.
+
+        The guard runs inside the transport, where yt-dlp turns an unexpected
+        exception into its own "no handler could handle this" error. Recording
+        the refusal lets the failure below report the policy violation that
+        actually stopped the fetch.
+        """
+        try:
+            _validate_fetch_url(url)
+        except AcquisitionError as exc:
+            refusals.append(exc)
+            raise
+
     try:
         with YoutubeDL(opts) as ydl:
+            director = getattr(ydl, "_request_director", None)
+            if director is None:
+                raise AcquisitionError(
+                    "this yt-dlp build does not expose the request handler set needed to "
+                    "verify redirect targets before they are contacted"
+                )
+            _guard_http_transports(director, _refuse)
             original_open = ydl.urlopen
 
             def checked_open(request):
@@ -224,6 +326,11 @@ def _fetch_with_module(
     except AcquisitionError:
         raise
     except Exception as exc:
+        if refusals:
+            # The transport wrapped the refusal in its own error type (yt-dlp
+            # reports "no handler could handle this"); surface the policy
+            # violation that actually stopped the fetch.
+            raise refusals[0] from exc
         raise AcquisitionError(f"yt-dlp failed: {exc}") from exc
 
     if hooks and hooks[-1].exists():
@@ -330,7 +437,7 @@ def extract_audio(
         raise AcquisitionError("decoded audio must not overwrite source media")
 
     production = production_enabled()
-    timeout = positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
+    timeout = positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, DEFAULT_FFMPEG_TIMEOUT_SECONDS)
     max_media = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024) if production else None
     max_duration = positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600) if production else None
     max_pcm = max_media - 44 if max_media is not None else None
@@ -396,7 +503,14 @@ def extract_audio(
             if failures:
                 raise AcquisitionError(failures[0])
             if time.monotonic() >= deadline:
-                raise AcquisitionError("ffmpeg timed out during decode")
+                # This wall-clock limit is not production-only: local CLI, MCP,
+                # and HTTP jobs all decode under it, so name the setting here.
+                raise AcquisitionError(
+                    f"ffmpeg timed out during decode after {timeout}s "
+                    "(wall-clock limit for CLI, MCP, and HTTP jobs); raise "
+                    f"{ENV_FFMPEG_TIMEOUT_SECONDS} to allow more time "
+                    f"(default {DEFAULT_FFMPEG_TIMEOUT_SECONDS})"
+                )
             time.sleep(0.05)
         output_thread.join(timeout=5)
         error_thread.join(timeout=5)

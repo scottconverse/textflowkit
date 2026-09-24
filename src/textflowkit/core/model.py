@@ -7,7 +7,7 @@ object is what lets the pipeline stay shared while platforms multiply.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +30,15 @@ class WordTiming:
 
 @dataclass(slots=True)
 class Segment:
-    """One timestamped span of speech."""
+    """One timestamped span of speech.
+
+    `hidden` is a caller-provided annotation, not engine output: nothing in the
+    transcription pipeline sets it. A hidden segment is still carried in the
+    transcript and in JSON round-trips, but is left out of `Transcript.text`,
+    out of every rendered export (SRT, WebVTT, TXT, Markdown, DOCX, PDF), and
+    out of retrieval pages and searches. Set it to suppress a span the caller
+    has decided not to publish without dropping it from the data.
+    """
 
     start: float
     end: float
@@ -45,16 +53,28 @@ class Segment:
         return self.translated_text or self.text
 
     def to_dict(self, *, include_words: bool = True) -> dict[str, Any]:
+        """Serialize this segment, optionally without word timings.
+
+        `include_words=False` is the compact form the HTTP and MCP adapters
+        serve by default. It drops `words` and nothing else: the result is
+        derived from the full serialization rather than from a list of known
+        field names, so a field added to this dataclass later is carried in
+        both forms instead of silently disappearing from the compact one
+        (issue #16). Loading such a transcript is unaffected; `from_dict`
+        still reads the documented fields.
+
+        The compact form serializes a copy with the words already emptied
+        rather than removing the key afterwards, so the omitted word timings
+        are never converted — compact reads are the default HTTP/MCP path and
+        exist to avoid that work. With no words to skip, converting in place is
+        already free, so the copy is not built.
+        """
         if include_words:
             return asdict(self)
-        return {
-            "start": self.start,
-            "end": self.end,
-            "text": self.text,
-            "speaker": self.speaker,
-            "translated_text": self.translated_text,
-            "hidden": self.hidden,
-        }
+        source = replace(self, words=[]) if self.words else self
+        data = asdict(source)
+        data.pop("words", None)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Segment:

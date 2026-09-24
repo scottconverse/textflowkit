@@ -16,18 +16,20 @@ from textflowkit.core.checkpoint import (
     reusable_done_result,
     validate_local_resume,
 )
+from textflowkit.core.engine import require_engine, validate_engine
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.paths import default_input_root
 from textflowkit.core.runner import run_job
-from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements
+from textflowkit.core.service import reject_browser_cookie_requests
+from textflowkit.render import DEFAULT_FORMATS, SUPPORTED_FORMATS, validate_export_requirements
 
 
 @dataclass(slots=True)
 class SubmissionRequest:
     source: str
     language: str | None = None
-    formats: list[str] = field(default_factory=lambda: ["json", "srt", "txt"])
+    formats: list[str] = field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = None
     model: str = "small"
     engine: str = "whisper"
@@ -43,6 +45,16 @@ class SubmissionRequest:
     def __post_init__(self) -> None:
         if not self.source:
             raise ValueError("source is required")
+        # Every surface (CLI, MCP, HTTP single/batch, and resume rebuilding a
+        # saved request) passes through here, so this is the one place a
+        # production refusal covers all of them before any store write or queue.
+        reject_browser_cookie_requests(self.cookies_from_browser)
+        # The engine *name* is settled here, where it is still free: it is a
+        # pure lookup with no import, so a typo is rejected on all four adapters
+        # before a job record exists rather than after acquisition. Whether an
+        # optional engine's package is actually installed is a separate question
+        # and deliberately not asked here - see `_require_engine_ready`.
+        validate_engine(self.engine)
         # Adapter path helpers return Path objects, but a durable request must
         # be JSON-serializable before it is inserted into SQLite.
         if isinstance(self.input_root, Path):
@@ -50,6 +62,14 @@ class SubmissionRequest:
         if isinstance(self.work_dir, Path):
             self.work_dir = str(self.work_dir)
         self.formats = [str(fmt).lower().lstrip(".") for fmt in self.formats]
+        if not self.formats:
+            # `pipeline.transcribe` has always read an empty list as its normal
+            # default, so an empty request means the default formats and nothing
+            # else. Recording that here - before the request is persisted and
+            # matched - is what keeps a checkpoint written under the default
+            # findable by the request that produced it. Explicit, invalid, and
+            # duplicate formats are untouched: only "nothing asked for" resolves.
+            self.formats = list(DEFAULT_FORMATS)
         bad = [fmt for fmt in self.formats if fmt not in SUPPORTED_FORMATS]
         if bad:
             raise ValueError(f"unsupported format(s): {', '.join(bad)}")
@@ -108,6 +128,20 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
     )
 
 
+def _require_engine_ready(engine: str) -> None:
+    """Refuse an engine whose optional package is absent, before any work.
+
+    Called only on the paths that are about to create or queue a job - never at
+    request construction. A completed job whose transcript can be reused is
+    returned without ever touching an engine, so uninstalling the optional extra
+    must not stop that reuse. On a resume it is called before the row is
+    un-terminated, so a refusal cannot leave a job PENDING with nothing queued to
+    run it. The engine *name* is already settled, more cheaply, in
+    ``SubmissionRequest``; this adds the one check that needs an import.
+    """
+    require_engine(engine)
+
+
 def submit_request(
     store: JobStore,
     request: SubmissionRequest,
@@ -146,6 +180,16 @@ def submit_request(
                 return updated or prior
         if prior.state in {JobState.PENDING, JobState.RUNNING}:
             raise ValueError(f"job '{prior.id}' is already active")
+        # Reuse of this *job* has been ruled out above, so the resume is about to
+        # create or queue work. The check goes before `prepare_resume` and the
+        # reopen below, because both un-terminal the row: refusing afterwards
+        # would leave a job PENDING with its error and cancellation flag already
+        # cleared and no worker ever queued for it. A checkpoint that already
+        # holds a finished transcript can still skip the engine deeper in the
+        # pipeline; that is the pipeline's decision, made after the row is
+        # reopened, and second-guessing it here would mean duplicating its resume
+        # logic in the submission contract.
+        _require_engine_ready(request.engine)
         prepared = prepare_resume(store, prior, checkpoint) if checkpoint else None
         if checkpoint is None:
             reopened = store.update(
@@ -171,6 +215,7 @@ def submit_request(
             run_job(job, store, **kwargs)
             return store.get(job.id) or job
 
+    _require_engine_ready(request.engine)
     kwargs = request.run_kwargs()
     if executor is not None and executor.store is store:
         return executor.submit(request=request.to_dict(), **kwargs)
@@ -203,7 +248,19 @@ def resume_job(
 def submit_batch(
     store: JobStore, requests: list[SubmissionRequest], *, resume: bool = False
 ) -> list[dict[str, Any]]:
-    """Accept each source independently; a bad item never hides later items."""
+    """Accept each source independently; a bad item never hides later items.
+
+    An engine whose optional package is missing is the one exception, and only
+    for a fresh batch: it is a property of the request rather than of one
+    source, so every item naming it fails identically. Checking it once here,
+    before the loop, is what keeps a batch from queueing half its items and
+    erroring the rest for the same reason. A *resume* batch skips this because
+    reuse is decided per item - a completed transcript needs no engine - and
+    `submit_request` covers the items that do run.
+    """
+    if not resume:
+        for engine in dict.fromkeys(request.engine for request in requests):
+            require_engine(engine)
     results: list[dict[str, Any]] = []
     for request in requests:
         try:

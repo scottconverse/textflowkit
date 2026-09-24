@@ -213,14 +213,27 @@ actually blocks a run:
 Accepting only the first two gets you a `403 GatedRepoError` on
 `speaker-diarization-community-1` partway through loading. Each one needs
 "Agree and access repository" clicked on its own page while logged in, then a
-read token:
+read token.
+
+Set the token **in the same shell you will run the command from**, before running
+it - the process reads the environment when it starts, so a token set after the
+command, or set in another window, never reaches that run.
+
+Native Windows PowerShell:
+
+```powershell
+$env:HF_TOKEN = 'hf_xxxxxxxx'
+```
+
+Linux, macOS, WSL, or Git Bash:
 
 ```bash
-setx HF_TOKEN hf_xxxxxxxx
+export HF_TOKEN='hf_xxxxxxxx'
 ```
 
 A **read** token is sufficient. Verify it reaches all three before blaming the
-code:
+code - run this in the same shell where you set the token (the one-liner is
+identical in PowerShell):
 
 ```bash
 python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', token=__import__('os').environ['HF_TOKEN']) for r in ['pyannote/speaker-diarization-3.1','pyannote/segmentation-3.0','pyannote/speaker-diarization-community-1']]; print('all three OK')"
@@ -228,9 +241,16 @@ python -c "from huggingface_hub import hf_hub_download as d; [d(r, 'README.md', 
 
 ### Running it
 
+The session-scoped assignment above still applies to this command:
+
 ```bash
-textflowkit transcribe clip.wav --diarize --format json
+textflowkit transcribe clip.wav --diarize --formats json
 ```
+
+`setx HF_TOKEN "hf_xxxxxxxx"` is a separate, optional step for **new shells**
+only: it writes the value for shells started afterwards and does **not** affect
+the window you are in, so it can never replace the session-scoped assignment
+above.
 
 Segments come back with a `speaker` field (`SPEAKER_00`, `SPEAKER_01`, ...) and
 `metadata.diarization` records the backend, the speaker list, the turn count and
@@ -241,3 +261,54 @@ how many segments were labelled. If the backend or token is missing, the run
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
 CPU transcription is dramatically slower; prefer a smaller `--model`.
+
+## Optional CPU/Mac engine: faster-whisper
+
+`openai-whisper` on CPU is slow, which hurts most on CPU-only machines and Apple
+Silicon. `faster-whisper` (CTranslate2) is an **opt-in** alternative engine:
+
+```bash
+python -m pip install "textflowkit[faster-whisper]"
+textflowkit transcribe meeting.mp4 --engine faster-whisper
+```
+
+The double quotes matter: CMD treats single quotes as literal characters, so a
+single-quoted extra name is passed to pip with the quotes still on it.
+
+- It is an extra, never a base dependency, and **the default engine does not
+  change**: without `--engine` you still get `openai-whisper` on the
+  torch/ROCm/CUDA stack.
+- With no `--device`, or `--device cpu`, it runs CPU `int8`.
+- It is **not** the ROCm path. CTranslate2's GPU path is CUDA-only (a ROCm build
+  means compiling it yourself with `-DWITH_HIP=ON`), so on AMD Windows keep the
+  default engine. `--engine faster-whisper --device cuda` passes `cuda` straight
+  to upstream; on an AMD box that fails there, and that failure is the point -
+  the device is never silently rewritten into a CPU run.
+- Its decoding defaults differ from `openai-whisper`, so the same audio can
+  produce different text. No speed or accuracy comparison is claimed here;
+  measure on your own machine.
+
+**If you already have a ROCm torch build,** do not let this install re-resolve
+your environment. CTranslate2 itself has no torch dependency, but `pip install`
+resolves the *whole project*, base `openai-whisper` included, and that resolution
+is what disturbs a working ROCm setup. Install the way the ROCm section above
+does - without allowing dependency resolution:
+
+```bash
+python -m pip install "textflowkit[faster-whisper]" --no-deps
+python -m pip install faster-whisper
+```
+
+Then re-check `python -c "import torch; print(torch.__version__, torch.version.hip)"`.
+A faster-whisper install alongside a ROCm torch build has **not** been measured
+here, so treat it as unverified on your machine rather than as a supported
+combination.
+
+**When the extra is missing:** it is checked on every surface before any media is
+fetched, so you get the install line above instead of a download followed by a
+traceback. The command line and the Python API (`transcribe(engine="faster-whisper")`)
+both refuse up front, and so do the MCP and HTTP adapters - an unknown engine name
+or a missing extra is reported there as `{"error": ...}` or HTTP 422 before a job
+record is written. A saved request is checked the same way when it is resumed; a
+job that already finished is the exception - it is answered from its stored
+transcript and needs no engine.

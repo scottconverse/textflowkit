@@ -36,7 +36,10 @@
 - [x] DOCX and PDF export (`export` extra)
 - [x] Executor survives unexpected failures, with a bounded pending queue
 - [x] Collision-resistant output names, atomic writes, and scratch cleanup
-- [x] Core resume and batch shared by CLI, MCP, and HTTP
+- [x] Shared submission and resume core for CLI, MCP, and HTTP - every path submits
+  through `core.submission.submit_request` and resumes through the same core; the
+  CLI's `batch` adds its own synchronous per-item report loop, while MCP/HTTP
+  `submit_batch` only returns job handles
 - [x] Explicit translation model; separate Whisper/pyannote device reporting
 - [x] Cached model objects and ROCm/CUDA selection for diarization
 - [x] CLI binary exports and Unicode-capable PDF fonts
@@ -87,9 +90,21 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading
   exported subtitles or documents. Fix and regression-test separately.
+  The mode is now measured and applied before publication, with regression
+  tests for it, but the POSIX behaviour has not been verified on a live POSIX
+  host yet, so this stays open until CI or a POSIX machine confirms it.
 - [ ] Follow-up: decouple the fonts package's version from core releases so
-  unchanged font wheels are not rebuilt/uploaded every patch. Keep duplicate
-  PyPI uploads visible rather than relying on `skip-existing`.
+  unchanged font wheels are not rebuilt/uploaded every patch. The publish
+  workflow now resolves the fonts version against PyPI before it builds: an
+  unpublished version is built and uploaded, and a published one is fetched
+  from PyPI with its recorded SHA-256 and size verified and is never rebuilt,
+  re-uploaded, or hidden behind `skip-existing`. A changed fonts package must
+  carry a new version, and the fonts upload and the core upload are conditional
+  so the reuse path still publishes the core release. See the
+  [release checklist](release-checklist.md#the-fonts-version-contract-issue-15).
+  This stays open until a release actually reuses a published fonts version on
+  PyPI: the reuse path is covered by deterministic tests over injected index
+  responses, not by a live tag.
 
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not

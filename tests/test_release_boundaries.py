@@ -13,9 +13,33 @@ from pathlib import Path
 import pytest
 
 from textflowkit import cli
+from textflowkit.core.checkpoint import load_checkpoint
+from textflowkit.core.executor import reset_default_executor
+from textflowkit.core.jobs import reset_default_store
 from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.sqlite_store import SqliteJobStore
 from textflowkit.sources.acquire import require_tool
+
+# Developer HTTP refuses a peer it cannot judge, and `TestClient`'s default peer
+# is the non-address `testclient`; the in-process callers below declare the
+# loopback peer a real local caller has. No socket is opened.
+LOCAL_PEER = ("127.0.0.1", 50000)
+
+
+@pytest.fixture(autouse=True)
+def _release_default_store():
+    """Do not leave a store built under this file's TEXTFLOWKIT_DB cached.
+
+    `cli_boundary` points TEXTFLOWKIT_DB at a temporary database but
+    monkeypatches only `cli.get_default_store`; the MCP and HTTP adapters call
+    the process-wide `get_default_store`/`get_default_executor` directly. A test
+    that touches them caches a SqliteJobStore bound to a directory pytest then
+    deletes, and every later test file inherits it. Reset both - the executor
+    holds its own reference to the store it was built with.
+    """
+    yield
+    reset_default_executor()
+    reset_default_store()
 
 
 def _wav(path: Path, seconds: int = 1) -> None:
@@ -188,14 +212,94 @@ def test_http_and_mcp_resume_share_local_identity_validation(
     monkeypatch.setattr(http_server, "get_default_store", lambda: store)
     monkeypatch.setattr(mcp_server, "get_default_store", lambda: store)
     assert mcp_server.resume_job(job.id)["state"] == "done"
-    assert TestClient(http_server.app).post(f"/jobs/{job.id}/resume").status_code == 202
+    assert TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/resume").status_code == 202
 
     _wav(media, seconds=2)
     assert "changed" in mcp_server.resume_job(job.id)["error"]
-    http = TestClient(http_server.app).post(f"/jobs/{job.id}/resume")
+    http = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/resume")
     assert http.status_code == 409
     assert "changed" in http.json()["detail"]
     assert engine.calls == 1
+
+
+def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
+    """A8: resume re-checks the *current* input root, not the saved one.
+
+    A job requested while a wider root was configured serializes that root into
+    its durable request. After an operator tightens TEXTFLOWKIT_INPUT_ROOT, MCP
+    resume must refuse the out-of-boundary source instead of reinstating the
+    saved root; HTTP already does. A source inside the new root still resumes.
+    """
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters import http_server, mcp_server
+    from textflowkit.core import submission
+    from textflowkit.core.jobs import JobState
+
+    root, output, store, engine = cli_boundary
+    wide = root / "wide"
+    narrow = root / "narrow"
+    wide.mkdir()
+    narrow.mkdir()
+    outside = wide / "old.wav"
+    inside = narrow / "new.wav"
+    _wav(outside)
+    _wav(inside)
+
+    def request_for(media, media_root):
+        return submission.SubmissionRequest(
+            source=str(media), formats=["json"], output_dir=str(output),
+            model="tiny", device="cpu", input_root=str(media_root),
+        )
+
+    # Saved while the wider root was configured, then interrupted and reaped.
+    saved = submission.submit_request(store, request_for(outside, wide), background=False)
+    assert store.get(saved.id).request["input_root"] == str(wide)
+    # The run above reached DONE, so its transcript sits in the job field and
+    # its checkpoint is metadata only. A run that dies mid-transcribe is the
+    # other way round - the completed work is still inside the checkpoint and
+    # the job field is empty - and that is the row `reap_incomplete` marks
+    # ERROR. Both halves are restored together before the reap.
+    store.update(
+        saved.id,
+        state=JobState.RUNNING,
+        progress="transcribing",
+        transcript=None,
+        checkpoint={**saved.checkpoint, "transcript": saved.transcript},
+    )
+    assert store.reap_incomplete(reason="simulated restart") == 1
+    assert store.get(saved.id).state is JobState.ERROR
+    assert engine.calls == 1
+    rendered = sorted(p.name for p in output.glob("*.json"))
+    assert len(rendered) == 1
+
+    monkeypatch.setattr(http_server, "get_default_store", lambda: store)
+    monkeypatch.setattr(mcp_server, "get_default_store", lambda: store)
+    # The operator tightens the boundary: `wide/old.wav` is now outside it.
+    monkeypatch.setenv("TEXTFLOWKIT_INPUT_ROOT", str(narrow))
+
+    mcp_result = mcp_server.resume_job(saved.id)
+    # Nothing may be re-run or re-published against the stale wider root.
+    assert engine.calls == 1
+    assert store.get(saved.id).state is JobState.ERROR
+    assert sorted(p.name for p in output.glob("*.json")) == rendered
+    assert "error" in mcp_result, mcp_result
+    assert "outside the allowed input root" in mcp_result["error"]
+
+    http = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
+        f"/jobs/{saved.id}/resume"
+    )
+    assert http.status_code == 409
+    assert "outside the allowed input root" in http.json()["detail"]
+
+    # A source inside the tightened root still resumes on both surfaces.
+    allowed = submission.submit_request(store, request_for(inside, narrow), background=False)
+    assert engine.calls == 2
+    assert mcp_server.resume_job(allowed.id)["state"] == "done"
+    assert TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
+        f"/jobs/{allowed.id}/resume"
+    ).status_code == 202
+    assert engine.calls == 2
 
 
 def test_local_diarization_resume_reacquires_wav_without_collision(
@@ -211,7 +315,11 @@ def test_local_diarization_resume_reacquires_wav_without_collision(
                      str(output), "--model", "tiny", "--quiet"]) == 0
     capsys.readouterr()
     assert engine.calls == 1
-    checkpoint = store.list(limit=1)[0].checkpoint
+    # A finished job keeps its transcript in the job field and its checkpoint
+    # metadata only, so read the record the way the product does.
+    record = load_checkpoint(store.list(limit=1)[0])
+    assert record is not None and record.transcript is not None
+    checkpoint = record.to_dict()
 
     class Diarizer:
         name = "fixture"
@@ -390,6 +498,30 @@ def test_ffmpeg_timeout_kills_child_and_cleans(cli_boundary, monkeypatch, capsys
     assert scratch and all(not path.exists() for path in scratch)
 
 
+def test_ffmpeg_timeout_error_names_setting_in_default_profile(cli_boundary, monkeypatch, capsys):
+    """The decode timeout also fires for a local CLI job in the default profile.
+
+    An operator who hits it needs the setting name and the duration in effect,
+    not just "timed out", because the fix is to raise that one variable.
+    """
+    root, output, _store, engine = cli_boundary
+    media = root / "clip.wav"
+    _wav(media)
+    monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "developer")
+    monkeypatch.setenv("TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS", "1")
+    children = _sleeping_decoder(monkeypatch)
+    rc = cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
+                   str(output), "--quiet"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "timed out" in err
+    assert "TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS" in err
+    assert "after 1s" in err
+    assert "default 600" in err
+    assert engine.calls == 0
+    assert children and all(child.poll() is not None for child in children)
+
+
 def test_cancellation_kills_decoder_child_and_cleans(cli_boundary, monkeypatch):
     from textflowkit.core import pipeline
     from textflowkit.core.cancel import CancelledError
@@ -437,6 +569,11 @@ def test_download_byte_cap_aborts_during_transfer(cli_boundary, monkeypatch, cap
     written = []
 
     class FakeYDL:
+        # A real YoutubeDL builds a request director lazily; the redirect guard
+        # refuses a build whose HTTP handlers cannot be verified, so the double
+        # exposes one with no transport behind it.
+        _request_director = types.SimpleNamespace(handlers={})
+
         def __init__(self, opts):
             self.opts = opts
             self.urlopen = lambda req: None

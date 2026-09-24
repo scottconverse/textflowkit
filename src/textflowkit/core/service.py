@@ -17,6 +17,10 @@ ENV_MAX_OUTPUT_BYTES = "TEXTFLOWKIT_MAX_OUTPUT_BYTES"
 ENV_MAX_MEDIA_BYTES = "TEXTFLOWKIT_MAX_MEDIA_BYTES"
 ENV_EGRESS_PROXY = "TEXTFLOWKIT_EGRESS_PROXY"
 ENV_FFMPEG_TIMEOUT_SECONDS = "TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS"
+# Wall-clock ceiling for one ffmpeg decode. It is not a production-only bound:
+# local CLI, MCP, and HTTP jobs all decode under it, so the timeout error names
+# this default to tell an operator how to raise it.
+DEFAULT_FFMPEG_TIMEOUT_SECONDS = 600
 
 
 class ServiceConfigurationError(ValueError):
@@ -30,6 +34,25 @@ def production_enabled() -> bool:
             f"{ENV_PROFILE} must be 'developer' or 'production', not '{value}'"
         )
     return value == "production"
+
+
+def reject_browser_cookie_requests(cookies_from_browser: str | None) -> None:
+    """Refuse browser-cookie requests while the production profile is active.
+
+    The production profile serves callers who are not the Windows account owner,
+    and the server cannot tell an owner-run CLI or stdio MCP session from a remote
+    HTTP caller. So the fail-closed rule is applied to every submission that
+    reaches the shared contract, including resume of a request saved earlier with
+    the option. Developer mode on the owner's own machine is unaffected.
+    """
+    if not cookies_from_browser:
+        return
+    if production_enabled():
+        raise ServiceConfigurationError(
+            "cookies_from_browser is rejected in the production profile: the server must "
+            "not read the account owner's browser cookies for a remote caller. Use the "
+            "developer profile on the owner's machine."
+        )
 
 
 def positive_limit(name: str, default: int) -> int:
@@ -82,8 +105,17 @@ def validate_production_config() -> None:
     positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600)
     positive_limit(ENV_MAX_OUTPUT_BYTES, 50 * 1024 * 1024)
     positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
-    positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, 600)
+    positive_limit(ENV_FFMPEG_TIMEOUT_SECONDS, DEFAULT_FFMPEG_TIMEOUT_SECONDS)
     positive_limit("TEXTFLOWKIT_MAX_PENDING_JOBS", 100)
+    # Optional, but never silently ignored: an operator who mistypes a proxy
+    # address and believes it is trusted would be left counting every client
+    # behind that proxy as one. Fail closed instead.
+    from textflowkit.core.bind import TrustedProxyConfigError, trusted_proxy_networks
+
+    try:
+        trusted_proxy_networks()
+    except TrustedProxyConfigError as exc:
+        raise ServiceConfigurationError(str(exc)) from exc
 
 
 def service_work_root() -> str | None:

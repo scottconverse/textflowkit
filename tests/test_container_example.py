@@ -11,9 +11,10 @@ what they do not prove: whether the image builds, starts, and passes its
 healthcheck in a real engine is **unverified**. Running one is deliberately out
 of scope for this example, so no build or start is claimed anywhere.
 
-`compose.yaml` is read with the strict subset parser below rather than PyYAML:
-PyYAML is not a dependency of the package or of the `dev` extra, so a parser
-import could fail on a CI matrix leg that has no diarization stack. The
+`compose.yaml` is read with the strict subset parser below rather than PyYAML,
+for the same reason `tests/test_publish_workflow_gate.py` scans workflow text by
+hand: PyYAML is not a dependency of the package or of the `dev` extra, so a
+parser import could fail on a CI matrix leg that has no diarization stack. The
 parser refuses every construct it cannot verify - flow collections, block
 scalars, anchors, tags, tabs, inline mapping sequence items - so a file it
 accepts is known to be inside the subset, and a file that leaves the subset
@@ -631,7 +632,7 @@ def test_the_env_example_names_who_can_read_the_token() -> None:
 CONTAINER_SECTION = "### Container example (Dockerfile and Compose)"
 
 # The next heading at or above the section's own level ends it. The section is a
-# `###` under `## HTTP`, and in this repository the `## Durable job state` that
+# `###` under `## HTTP`, and the `### Client identity behind a proxy` that
 # follows it is the first such heading; a deeper `####` subheading inside the
 # section would not end it. Reading past the section would let these checks
 # judge prose that has nothing to do with the container example.

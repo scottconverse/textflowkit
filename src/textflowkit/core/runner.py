@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.checkpoint import write_checkpoint
+from textflowkit.core.checkpoint import metadata_only_checkpoint, write_checkpoint
 from textflowkit.core.executor import JobCancelled, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
@@ -58,6 +58,18 @@ def run_job(
 
     store.update(job.id, state=JobState.RUNNING, progress="starting")
 
+    def _progress(stage: str) -> None:
+        """Publish the stage in flight so a polling client sees real progress.
+
+        A cancellation already in flight owns the label: the job is
+        `cancelling`, not whichever stage the worker is about to start. Terminal
+        jobs are left alone for the same reason.
+        """
+        latest = store.get(job.id)
+        if latest is None or latest.is_terminal or latest.cancel_requested:
+            return
+        store.update(job.id, progress=stage)
+
     try:
         result = transcribe(
             source,
@@ -78,6 +90,7 @@ def run_job(
             translator_backend=translator_backend,
             resume_checkpoint=resume_checkpoint,
             on_checkpoint=lambda record: write_checkpoint(store, job.id, record),
+            on_stage=_progress,
             output_id=job.id,
         )
     except JobCancelled:
@@ -103,13 +116,22 @@ def run_job(
     if latest is not None and latest.state is JobState.CANCELLED:
         return
 
-    store.update(
-        job.id,
-        state=JobState.DONE,
-        progress="complete",
-        transcript=result.transcript.to_dict(),
-        outputs=[str(p) for p in result.outputs],
+    # The transcript is stored once, in the job's own field: the checkpoint that
+    # carried it through the run keeps only the metadata a later request is
+    # matched against. Both go in one update, so no reader can catch the row
+    # holding neither copy.
+    fields: dict[str, Any] = {
+        "state": JobState.DONE,
+        "progress": "complete",
+        "transcript": result.transcript.to_dict(),
+        "outputs": [str(p) for p in result.outputs],
+    }
+    metadata = metadata_only_checkpoint(
+        latest.checkpoint if latest is not None else job.checkpoint
     )
+    if metadata is not None:
+        fields["checkpoint"] = metadata
+    store.update(job.id, **fields)
 
 
 def submit(
@@ -124,11 +146,16 @@ def submit(
     `background=False` runs inline (used by tests and by callers that want a
     blocking call). Otherwise the job goes to the process-wide executor, which
     bounds concurrency and can cancel it.
+
+    Both inline routes read the job back from the store afterwards: a durable
+    store persists the terminal state and returns a freshly read Job, so the
+    object `create` returned would still say PENDING. `MemoryJobStore.update`
+    mutates in place, which is why returning that object looks right there.
     """
     if not background:
         job = store.create(source)
         run_job(job, store, source=source, **kwargs)
-        return job
+        return store.get(job.id) or job
 
     executor = get_default_executor()
     if executor.store is not store:
@@ -136,7 +163,7 @@ def submit(
         # routing the job to a different store than the one they hold.
         job = store.create(source)
         run_job(job, store, source=source, **kwargs)
-        return job
+        return store.get(job.id) or job
     return executor.submit(source=source, **kwargs)
 
 

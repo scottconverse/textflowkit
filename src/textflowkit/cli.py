@@ -11,7 +11,8 @@ from pathlib import Path
 
 from textflowkit import __version__
 from textflowkit.core.batch import run_batch
-from textflowkit.core.engine import get_engine
+from textflowkit.core.checkpoint import metadata_only_checkpoint
+from textflowkit.core.engine import ENGINE_CHOICES, ensure_engine_available, get_engine
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
@@ -21,6 +22,7 @@ from textflowkit.core.submission import SubmissionRequest, submit_request
 from textflowkit.render import (
     BINARY_FORMATS,
     SUPPORTED_FORMATS,
+    TEXT_FORMATS,
     atomic_write_bytes,
     render,
     render_bytes,
@@ -46,6 +48,15 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     t.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
     t.add_argument(
+        "--engine",
+        default="whisper",
+        help=(
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
+            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
+            "CPU/Mac engine and needs its optional extra"
+        ),
+    )
+    t.add_argument(
         "--diarize",
         action="store_true",
         help=(
@@ -65,7 +76,8 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--cookies-from-browser", default=None,
                    help="pass cookies to yt-dlp from a browser (e.g. firefox) for access-controlled content")
     t.add_argument("--stdout", action="store_true", help="print transcript to stdout instead of writing files")
-    t.add_argument("--stdout-format", default="txt", help="format for --stdout (default txt)")
+    t.add_argument("--stdout-format", default="txt",
+                   help=f"format for --stdout (default txt; text formats only: {', '.join(TEXT_FORMATS)})")
     t.add_argument(
         "--resume",
         action="store_true",
@@ -81,6 +93,15 @@ def _build_parser() -> argparse.ArgumentParser:
     b.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
     b.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
     b.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    b.add_argument(
+        "--engine",
+        default="whisper",
+        help=(
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
+            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
+            "CPU/Mac engine and needs its optional extra"
+        ),
+    )
     b.add_argument("--diarize", action="store_true", help="label speakers (same requirements as transcribe)")
     b.add_argument("--translate-to", default=None, metavar="LANG", help="translate transcript into LANG")
     b.add_argument("--cookies-from-browser", default=None,
@@ -116,6 +137,28 @@ def _formats(raw: str) -> list[str]:
     return [f.strip().lower().lstrip(".") for f in raw.split(",") if f.strip()]
 
 
+def _stdout_format(raw: str) -> str:
+    """Canonical ``--stdout-format``, or ``ValueError`` when it cannot be printed.
+
+    ``--stdout`` writes to the terminal, so it can only carry a text format.
+    The renderer refuses binary and unknown formats, but it is reached only
+    after the job has been submitted and the transcription paid for, so the run
+    ends in a traceback with the whole wait already spent. The format is known
+    from the arguments alone and is settled here instead - before any
+    acquisition, inference, or job record exists.
+    """
+    fmt = raw.strip().lower().lstrip(".")
+    if fmt in TEXT_FORMATS:
+        return fmt
+    choices = ", ".join(TEXT_FORMATS)
+    if fmt in BINARY_FORMATS:
+        raise ValueError(
+            f"--stdout-format {raw}: {fmt} is a binary format and cannot be printed "
+            f"to a terminal; write it to a file instead (text formats: {choices})"
+        )
+    raise ValueError(f"unsupported --stdout-format: {raw} (choose from {choices})")
+
+
 def _store_is_durable() -> bool:
     """Whether the default store survives this process.
 
@@ -127,8 +170,34 @@ def _store_is_durable() -> bool:
     return bool(os.environ.get("TEXTFLOWKIT_DB"))
 
 
+def _preflight_engine(name: str) -> str | None:
+    """Reject an unusable ``--engine`` before any work is submitted.
+
+    The engine name and, for an optional engine, whether its package is even
+    importable are both knowable from the arguments alone. Discovering either
+    later means discovering it after the media was acquired, the audio decoded
+    and a job record written - the same reason ``--stdout-format`` is settled
+    here. Returns an error message, or ``None`` when the engine is usable.
+    """
+    try:
+        ensure_engine_available(name)
+    except (ValueError, RuntimeError) as exc:
+        return str(exc)
+    return None
+
+
 def _cmd_transcribe(args: argparse.Namespace) -> int:
     formats = _formats(args.formats)
+    error = _preflight_engine(args.engine)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    if args.stdout:
+        try:
+            args.stdout_format = _stdout_format(args.stdout_format)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     output_dir = args.output_dir
     if output_dir is None and not args.stdout:
         output_dir = "."
@@ -143,7 +212,8 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
     try:
         request = SubmissionRequest(
             source=args.source, language=args.language, formats=formats,
-            output_dir=output_dir, model=args.model, device=args.device,
+            output_dir=output_dir, model=args.model, engine=args.engine,
+            device=args.device,
             cookies_from_browser=args.cookies_from_browser,
             diarize=args.diarize, translate_to=args.translate_to,
         )
@@ -177,13 +247,24 @@ def _finish_transcribe(
     if not isinstance(result, TranscribeResult):
         transcript, outputs = result
         result = TranscribeResult(transcript=transcript, outputs=list(outputs))
-    store.update(
-        job.id,
-        state=JobState.DONE,
-        progress="complete",
-        transcript=result.transcript.to_dict(),
-        outputs=[str(p) for p in result.outputs],
-    )
+    # The runner is not the only writer that finishes a job, so this transition
+    # keeps the same storage rule: the transcript goes in once, and the
+    # checkpoint keeps only the metadata a later request is matched against. The
+    # row is re-read rather than trusting the caller's object: a stale one
+    # carries no checkpoint, and writing that absence over a real one would throw
+    # away the job's resume identity. Both fields go in one update, so a row is
+    # never left holding neither copy.
+    current = store.get(job.id)
+    fields = {
+        "state": JobState.DONE,
+        "progress": "complete",
+        "transcript": result.transcript.to_dict(),
+        "outputs": [str(p) for p in result.outputs],
+    }
+    metadata = metadata_only_checkpoint(current.checkpoint if current is not None else None)
+    if metadata is not None:
+        fields["checkpoint"] = metadata
+    store.update(job.id, **fields)
 
     tr = result.transcript
     if not args.quiet:
@@ -204,6 +285,12 @@ def _finish_transcribe(
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
+    # One engine for the whole batch, so a bad name fails before the first item
+    # is submitted rather than once per source.
+    error = _preflight_engine(args.engine)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if args.resume and not _store_is_durable():
         print(
             "warning: batch --resume cannot survive a process restart without "
@@ -219,6 +306,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         formats=_formats(args.formats),
         output_dir=args.output_dir or ".",
         model=args.model,
+        engine=args.engine,
         device=args.device,
         cookies_from_browser=args.cookies_from_browser,
         diarize=args.diarize,
@@ -319,6 +407,7 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
         ("mcp", "mcp"),
         ("fastapi", "fastapi"),
         ("pyannote", "pyannote.audio"),
+        ("faster-whisper", "faster_whisper"),
         ("python-docx", "docx"),
         ("reportlab", "reportlab"),
     ):

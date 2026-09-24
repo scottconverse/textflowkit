@@ -6,10 +6,26 @@ transcription: tool listing, job plumbing, and error handling.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
-from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.jobs import (
+    ENV_DB,
+    JobState,
+    MemoryJobStore,
+    get_default_store,
+)
 from textflowkit.core.runner import submit
+from textflowkit.core.sqlite_store import SqliteJobStore
+
+MISSING_SOURCE = "C:/definitely/missing.mp4"
+
+# Developer HTTP refuses a peer it cannot judge, and `TestClient`'s default peer
+# is the non-address `testclient`. Every HTTP test here means "a local caller",
+# so it declares the loopback peer a real one has. No socket is opened.
+LOCAL_PEER = ("127.0.0.1", 50000)
 
 
 @pytest.fixture(autouse=True)
@@ -23,9 +39,54 @@ def clean_store():
 
 def test_submit_sync_records_error_for_missing_file():
     store = get_default_store()
-    job = submit(store, source="C:/definitely/missing.mp4", background=False, model="tiny")
+    job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
     assert job.state is JobState.ERROR
     assert "no such file" in (job.error or "")
+
+
+@pytest.mark.parametrize("kind", ["memory", "sqlite"])
+def test_inline_submit_returns_the_persisted_terminal_job(kind, tmp_path):
+    """`background=False` must hand back the job the store now holds.
+
+    `MemoryJobStore.update` mutates the object `create` returned, so returning
+    that same object happens to be correct there. A durable store writes the row
+    and reads a *new* Job back, which leaves the created object PENDING forever.
+    Both stores must report the same thing the store does.
+    """
+    store = MemoryJobStore() if kind == "memory" else SqliteJobStore(tmp_path / "jobs.db")
+    try:
+        job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
+        persisted = store.get(job.id)
+        assert persisted.state is JobState.ERROR
+        assert "no such file" in (persisted.error or "")
+        assert job.state is persisted.state
+        assert job.error == persisted.error
+    finally:
+        store.close()
+
+
+def test_inline_store_mismatch_returns_the_persisted_terminal_job(tmp_path, monkeypatch):
+    """The other inline route: a store the default executor does not own.
+
+    A caller holding their own durable store gets inline execution, and that
+    route must read the job back for the same reason as `background=False`.
+    The executor is injected so the process-wide default is left untouched.
+    """
+    from textflowkit.core import runner
+    from textflowkit.core.executor import JobExecutor
+
+    store = SqliteJobStore(tmp_path / "mismatch.db")
+    elsewhere = MemoryJobStore()
+    monkeypatch.setattr(runner, "get_default_executor", lambda: JobExecutor(elsewhere))
+    try:
+        job = submit(store, source=MISSING_SOURCE, model="tiny")
+        assert elsewhere.get(job.id) is None, "job was queued, not run inline"
+        persisted = store.get(job.id)
+        assert persisted.state is JobState.ERROR
+        assert job.state is persisted.state
+        assert job.error == persisted.error
+    finally:
+        store.close()
 
 
 def test_submit_background_returns_pending_job():
@@ -113,6 +174,20 @@ def test_mcp_status_unknown_job():
     assert "error" in get_job_status("nope")
 
 
+def test_mcp_status_exposes_the_stage_in_flight():
+    """A poller over stdio must see which stage is running, not just the state."""
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import get_job_status
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.RUNNING, progress="transcribing")
+
+    payload = get_job_status(job.id)
+    assert payload["state"] == "running"
+    assert payload["progress"] == "transcribing"
+
+
 def test_mcp_transcript_requires_finished_job():
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import get_transcript, transcribe_media
@@ -149,7 +224,7 @@ def test_http_health_and_sources():
 
     from textflowkit.adapters.http_server import app
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER)
     assert c.get("/health").json()["status"] == "ok"
     s = c.get("/sources").json()
     assert "youtube" in s["platforms"]
@@ -161,7 +236,7 @@ def test_http_404_for_unknown_job():
 
     from textflowkit.adapters.http_server import app
 
-    assert TestClient(app).get("/jobs/nope").status_code == 404
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs/nope").status_code == 404
 
 
 def test_http_status_omits_complete_transcript():
@@ -177,11 +252,27 @@ def test_http_status_omits_complete_transcript():
         transcript={"segments": [{"text": "private"}]},
         checkpoint={"transcript": {"segments": [{"text": "private"}]}},
     )
-    body = TestClient(app).get(f"/jobs/{job.id}").json()
+    body = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}").json()
     assert body["state"] == "done"
     assert "transcript" not in body
     assert "checkpoint" not in body
     assert "private" not in str(body)
+
+
+def test_http_status_exposes_the_stage_in_flight():
+    """A poller over HTTP must see which stage is running, not just the state."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from textflowkit.adapters.http_server import app
+
+    store = get_default_store()
+    job = store.create("x")
+    store.update(job.id, state=JobState.RUNNING, progress="transcribing")
+
+    body = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}").json()
+    assert body["state"] == "running"
+    assert body["progress"] == "transcribing"
 
 
 @pytest.mark.parametrize("limit", [-1, 1001])
@@ -193,7 +284,7 @@ def test_list_limits_are_rejected_by_both_adapters(limit):
     from textflowkit.adapters.http_server import app
     from textflowkit.adapters.mcp_server import list_jobs
 
-    assert TestClient(app).get("/jobs", params={"limit": limit}).status_code == 422
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs", params={"limit": limit}).status_code == 422
     assert "error" in list_jobs(limit=limit)
 
 
@@ -205,7 +296,7 @@ def test_list_zero_limit_is_empty_on_both_adapters():
     from textflowkit.adapters.http_server import app
     from textflowkit.adapters.mcp_server import list_jobs
 
-    assert TestClient(app).get("/jobs", params={"limit": 0}).json()["jobs"] == []
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs", params={"limit": 0}).json()["jobs"] == []
     assert list_jobs(limit=0)["jobs"] == []
 
 
@@ -215,7 +306,7 @@ def test_http_422_for_bad_format():
 
     from textflowkit.adapters.http_server import app
 
-    r = TestClient(app).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
     assert r.status_code == 422
 
 
@@ -230,7 +321,7 @@ def test_http_queue_full_returns_429(monkeypatch):
         raise QueueFullError("job queue is full")
 
     monkeypatch.setattr(http_server, "submit_request", full)
-    response = TestClient(http_server.app).post("/jobs", json={"source": "x"})
+    response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x"})
     assert response.status_code == 429
     assert "queue is full" in response.json()["detail"]
 
@@ -243,7 +334,7 @@ def test_http_transcript_conflict_before_done():
 
     store = get_default_store()
     job = store.create("x")  # stays PENDING
-    r = TestClient(app).get(f"/jobs/{job.id}/transcript")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript")
     assert r.status_code == 409
 
 
@@ -314,7 +405,7 @@ def test_http_cancel_unknown_job_404():
 
     from textflowkit.adapters.http_server import app
 
-    assert TestClient(app).post("/jobs/nope/cancel").status_code == 404
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs/nope/cancel").status_code == 404
 
 
 def test_http_cancel_terminal_job():
@@ -327,7 +418,7 @@ def test_http_cancel_terminal_job():
     job = store.create("x")
     store.update(job.id, state=JobState.ERROR)
 
-    r = TestClient(app).post(f"/jobs/{job.id}/cancel")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/cancel")
     assert r.status_code == 200
     assert r.json()["cancelled"] is False
     assert r.json()["state"] == "error"
@@ -342,7 +433,7 @@ def test_http_cancel_pending_job():
     store = get_default_store()
     job = store.create("x")
 
-    r = TestClient(app).post(f"/jobs/{job.id}/cancel")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/cancel")
     assert r.status_code == 200
     assert r.json()["cancelled"] is True
     assert r.json()["state"] == "cancelled"
@@ -426,7 +517,7 @@ def test_http_and_mcp_word_timings_are_opt_in_and_stored_data_is_unchanged():
         words=[WordTiming(0, 0.5, "source")],
     )])
     store.update(job.id, state=JobState.DONE, transcript=transcript.to_dict())
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER)
 
     http_default = client.get(f"/jobs/{job.id}/transcript").json()
     http_words = client.get(f"/jobs/{job.id}/transcript", params={"include_words": "true"}).json()
@@ -455,7 +546,7 @@ def test_http_and_mcp_reject_unavailable_pdf_before_creating_job(monkeypatch, tm
 
     monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
     store = get_default_store()
-    http = TestClient(app).post("/jobs", json={
+    http = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={
         "source": "media.wav", "formats": ["pdf"], "output_dir": str(tmp_path),
     })
     mcp = transcribe_media("media.wav", formats="pdf", output_dir=str(tmp_path))
@@ -502,7 +593,7 @@ def test_http_transcript_paging_and_metadata():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app).get(f"/jobs/{job.id}/transcript", params={"format": "json", "limit": 3})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript", params={"format": "json", "limit": 3})
     assert r.status_code == 200
     body = r.json()
     assert body["returned"] == 3
@@ -517,7 +608,7 @@ def test_http_transcript_time_range_renders_srt():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app).get(
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(
         f"/jobs/{job.id}/transcript", params={"format": "srt", "start": 1.0, "end": 3.0}
     )
     assert r.status_code == 200
@@ -532,7 +623,7 @@ def test_http_transcript_bad_offset_422():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 5)
-    r = TestClient(app).get(f"/jobs/{job.id}/transcript", params={"offset": -1})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript", params={"offset": -1})
     assert r.status_code == 422
 
 
@@ -543,7 +634,7 @@ def test_http_search_endpoint():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app).get(f"/jobs/{job.id}/search", params={"q": "word7"})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/search", params={"q": "word7"})
     assert r.status_code == 200
     assert r.json()["match_count"] == 1
 
@@ -555,7 +646,7 @@ def test_http_search_empty_query_422():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 5)
-    r = TestClient(app).get(f"/jobs/{job.id}/search", params={"q": ""})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/search", params={"q": ""})
     assert r.status_code == 422
 
 
@@ -571,7 +662,7 @@ def test_http_export_honours_requested_formats(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_OUTPUT_ROOT, str(tmp_path))
     job = _seed_done_job(get_default_store(), 3)
 
-    r = TestClient(app).post(
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         f"/jobs/{job.id}/export",
         params={"formats": ["srt", "txt"], "output_dir": "out"},
     )
@@ -581,3 +672,25 @@ def test_http_export_honours_requested_formats(tmp_path, monkeypatch):
     assert any(n.endswith(".srt") for n in names)
     assert any(n.endswith(".txt") for n in names)
     assert not any(n.endswith(".json") for n in names), "defaults were used instead"
+
+
+# --- default store isolation ----------------------------------------------
+
+def test_default_store_agrees_with_the_current_environment():
+    """No earlier test may leave a store built under a different environment cached.
+
+    The MCP and HTTP adapters call `get_default_store`/`get_default_executor`
+    directly, so a test that points `TEXTFLOWKIT_DB` at a temporary database and
+    never resets the process-wide store leaves that durable store - bound to a
+    directory pytest has deleted - in place for every later test file.
+    """
+    store = get_default_store()
+    configured = os.environ.get(ENV_DB)
+    if configured:
+        assert isinstance(store, SqliteJobStore)
+        assert Path(store.path).resolve() == Path(configured).resolve()
+    else:
+        assert not isinstance(store, SqliteJobStore), (
+            f"process-wide store is {store.path!r} from an earlier test's "
+            f"{ENV_DB}; the file that set it did not reset the default store"
+        )

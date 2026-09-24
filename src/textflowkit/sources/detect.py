@@ -28,8 +28,6 @@ PLATFORMS: dict[str, tuple[str, ...]] = {
     "dropbox": ("dropbox.com", "dropboxusercontent.com"),
 }
 
-DIRECT_MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".wav", ".ogg", ".flac")
-
 
 class UnsafeUrlError(ValueError):
     """Raised when a URL targets a loopback, link-local, or private address.
@@ -77,8 +75,19 @@ BLOCKED_NETWORKS = tuple(
 )
 
 
+# RFC 4291 IPv4-mapped IPv6 (::ffff:0:0/96). Detected with an explicit range
+# test and mask rather than `IPv6Address.ipv4_mapped`, so the guard rests only
+# on arithmetic that is identical across the declared 3.10-3.13 range.
+IPV4_MAPPED_NETWORK = ipaddress.ip_network("::ffff:0:0/96")
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for addresses that must never be reachable from a user-supplied URL."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip in IPV4_MAPPED_NETWORK:
+        # ::ffff:10.0.0.1 names the same destination as 10.0.0.1 - the IPv4 stack
+        # connects to the embedded address - so judge it by the IPv4 policy. The
+        # mapped range as a whole is not blocked: ::ffff:8.8.8.8 stays reachable.
+        return _is_blocked_ip(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
     if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
         return True
     return any(ip in net for net in BLOCKED_NETWORKS if net.version == ip.version)
@@ -168,7 +177,11 @@ def is_url(value: str) -> bool:
 
 
 def detect_platform(value: str) -> str:
-    """Identify the platform for a URL, or 'local' for a filesystem path."""
+    """Identify the platform for a URL, or 'local' for a filesystem path.
+
+    A URL that is not one of the recognized platforms is `direct`: it is fetched
+    as a plain media URL rather than through a site adapter.
+    """
     if not is_url(value):
         return "local"
     host = (urlparse(value).netloc or "").lower().split("@")[-1].split(":")[0]
@@ -177,11 +190,6 @@ def detect_platform(value: str) -> str:
         for domain in domains:
             if host == domain or host.endswith("." + domain):
                 return platform
-    if host and host.split("/")[-1].lower().endswith(DIRECT_MEDIA_SUFFIXES):
-        return "direct"
-    path = urlparse(value).path.lower()
-    if path.endswith(DIRECT_MEDIA_SUFFIXES):
-        return "direct"
     return "direct"
 
 
