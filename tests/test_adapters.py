@@ -6,10 +6,21 @@ transcription: tool listing, job plumbing, and error handling.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
-from textflowkit.core.jobs import JobState, get_default_store
+from textflowkit.core.jobs import (
+    ENV_DB,
+    JobState,
+    MemoryJobStore,
+    get_default_store,
+)
 from textflowkit.core.runner import submit
+from textflowkit.core.sqlite_store import SqliteJobStore
+
+MISSING_SOURCE = "C:/definitely/missing.mp4"
 
 
 @pytest.fixture(autouse=True)
@@ -23,9 +34,54 @@ def clean_store():
 
 def test_submit_sync_records_error_for_missing_file():
     store = get_default_store()
-    job = submit(store, source="C:/definitely/missing.mp4", background=False, model="tiny")
+    job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
     assert job.state is JobState.ERROR
     assert "no such file" in (job.error or "")
+
+
+@pytest.mark.parametrize("kind", ["memory", "sqlite"])
+def test_inline_submit_returns_the_persisted_terminal_job(kind, tmp_path):
+    """`background=False` must hand back the job the store now holds.
+
+    `MemoryJobStore.update` mutates the object `create` returned, so returning
+    that same object happens to be correct there. A durable store writes the row
+    and reads a *new* Job back, which leaves the created object PENDING forever.
+    Both stores must report the same thing the store does.
+    """
+    store = MemoryJobStore() if kind == "memory" else SqliteJobStore(tmp_path / "jobs.db")
+    try:
+        job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
+        persisted = store.get(job.id)
+        assert persisted.state is JobState.ERROR
+        assert "no such file" in (persisted.error or "")
+        assert job.state is persisted.state
+        assert job.error == persisted.error
+    finally:
+        store.close()
+
+
+def test_inline_store_mismatch_returns_the_persisted_terminal_job(tmp_path, monkeypatch):
+    """The other inline route: a store the default executor does not own.
+
+    A caller holding their own durable store gets inline execution, and that
+    route must read the job back for the same reason as `background=False`.
+    The executor is injected so the process-wide default is left untouched.
+    """
+    from textflowkit.core import runner
+    from textflowkit.core.executor import JobExecutor
+
+    store = SqliteJobStore(tmp_path / "mismatch.db")
+    elsewhere = MemoryJobStore()
+    monkeypatch.setattr(runner, "get_default_executor", lambda: JobExecutor(elsewhere))
+    try:
+        job = submit(store, source=MISSING_SOURCE, model="tiny")
+        assert elsewhere.get(job.id) is None, "job was queued, not run inline"
+        persisted = store.get(job.id)
+        assert persisted.state is JobState.ERROR
+        assert job.state is persisted.state
+        assert job.error == persisted.error
+    finally:
+        store.close()
 
 
 def test_submit_background_returns_pending_job():
@@ -611,3 +667,26 @@ def test_http_export_honours_requested_formats(tmp_path, monkeypatch):
     assert any(n.endswith(".srt") for n in names)
     assert any(n.endswith(".txt") for n in names)
     assert not any(n.endswith(".json") for n in names), "defaults were used instead"
+
+
+# --- default store isolation ----------------------------------------------
+
+def test_default_store_agrees_with_the_current_environment():
+    """No earlier test may leave a store built under a different environment cached.
+
+    The MCP and HTTP adapters call `get_default_store`/`get_default_executor`
+    directly, so a test that points `TEXTFLOWKIT_DB` at a temporary database and
+    never resets the process-wide store leaves that durable store - bound to a
+    directory pytest has deleted - in place for every later test file.
+    """
+    store = get_default_store()
+    configured = os.environ.get(ENV_DB)
+    if configured:
+        assert isinstance(store, SqliteJobStore)
+        assert Path(store.path).resolve() == Path(configured).resolve()
+    else:
+        assert not isinstance(store, SqliteJobStore), (
+            f"process-wide store is {store.path!r} from an earlier test's "
+            f"{ENV_DB}; the file that set it did not reset the default store"
+        )
+
