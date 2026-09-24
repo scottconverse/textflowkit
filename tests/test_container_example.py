@@ -40,6 +40,7 @@ DOCKERFILE = "Dockerfile"
 COMPOSE = "compose.yaml"
 DOCKERIGNORE = ".dockerignore"
 ENV_EXAMPLE = ".env.example"
+DOCS = "docs/adapters.md"
 
 # The one service this example ships. SQLite has a single owning process, so a
 # second service would reap the first one's live jobs.
@@ -546,3 +547,67 @@ def test_the_env_example_documents_the_requirement_without_supplying_one() -> No
     text = _read(ENV_EXAMPLE)
     assert "TEXTFLOWKIT_API_TOKEN=" in text, "the example must name the variable it needs"
     assert "openssl rand" in text, "it must say how to generate a value"
+
+
+# --- what the token's exposure claims are allowed to say ------------------
+#
+# An environment variable keeps the token out of process arguments. It does not
+# make the value secret: Docker records it in the container's configuration,
+# where `docker inspect` and `docker compose config` render it, and on Linux
+# `/proc/<pid>/environ` exposes it to anything running as the same user.
+# Documentation that stops at "not an argument" reads as though the token were
+# protected, which is how an operator ends up treating one shared value as a
+# secret store. The `ps` benefit and the inspection caveat travel together.
+#
+# (Documented Docker and Linux behaviour; not measured here, because no
+# container engine is installed on the machine these files were written on.)
+
+# Phrases asserting more privacy than an environment variable provides. The
+# first is the one this unit shipped before the audit return; the rest are the
+# obvious ways to write it again.
+TOKEN_PRIVACY_CLAIMS = (
+    "out of the container's inspect data",
+    "stays out of docker inspect",
+    "not visible to docker inspect",
+    "invisible to docker inspect",
+)
+
+
+def _normalised(name: str) -> str:
+    """The file's text, lowercased, backticks dropped, whitespace collapsed."""
+    return " ".join(_read(name).lower().replace("`", "").split())
+
+
+def test_no_shipped_file_claims_an_environment_variable_hides_the_token() -> None:
+    for name in (DOCKERFILE, COMPOSE, ENV_EXAMPLE, DOCS):
+        text = _normalised(name)
+        for claim in TOKEN_PRIVACY_CLAIMS:
+            assert claim not in text, (
+                f"{name} claims more privacy than an environment variable gives "
+                f"({claim!r}): the value sits in the container's configuration, where "
+                "`docker inspect` renders it"
+            )
+
+
+def test_every_ps_claim_carries_the_inspection_caveat() -> None:
+    for name in (DOCKERFILE, COMPOSE, ENV_EXAMPLE, DOCS):
+        raw = _read(name)
+        if "`ps`" not in raw:
+            continue
+        assert "inspect" in _normalised(name), (
+            f"{name} says the token stays out of `ps` and stops there. Docker records an "
+            "environment variable in the container's configuration, so say that too"
+        )
+
+
+def test_the_env_example_names_who_can_read_the_token() -> None:
+    text = _normalised(ENV_EXAMPLE)
+    for required, why in (
+        ("docker inspect", "the container's configuration carries the value"),
+        ("compose config", "the resolved Compose file carries the value"),
+        ("daemon", "access to the daemon is the exposure"),
+        ("proc", "`/proc/<pid>/environ` exposes it inside the container"),
+        ("git", "`.env` is ignored by git, which is not the same as secret"),
+        ("secret", "one shared token is not a secret store, and must not be read as one"),
+    ):
+        assert required in text, f".env.example must say it: {why} ({required!r} is missing)"
