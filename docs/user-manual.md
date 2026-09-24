@@ -59,9 +59,11 @@ on every release. See [sources and limitations](sources.md).
 `--engine` chooses the speech engine. The default is `whisper`
 (`openai-whisper` on the torch stack — ROCm on AMD, CUDA on NVIDIA, CPU
 otherwise) and is unchanged. `--engine faster-whisper` is an opt-in CPU/Mac
-engine; it needs `pip install 'textflowkit[faster-whisper]'`, is not a ROCm
-replacement, and fails with that install line before fetching anything if the
-extra is missing. See [install notes](install.md#optional-cpumac-engine-faster-whisper).
+engine; it needs `pip install "textflowkit[faster-whisper]"`, is not a ROCm
+replacement, and is rejected on the command line with that install line before
+fetching anything if the extra is missing. See
+[install notes](install.md#optional-cpumac-engine-faster-whisper), including how
+to keep an existing ROCm torch build.
 
 Decoding runs under a wall-clock limit that applies in every mode, not only
 production: `transcribe`, `batch`, the MCP server, and the HTTP adapter all

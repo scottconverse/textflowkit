@@ -268,9 +268,12 @@ CPU transcription is dramatically slower; prefer a smaller `--model`.
 Silicon. `faster-whisper` (CTranslate2) is an **opt-in** alternative engine:
 
 ```bash
-python -m pip install 'textflowkit[faster-whisper]'
+python -m pip install "textflowkit[faster-whisper]"
 textflowkit transcribe meeting.mp4 --engine faster-whisper
 ```
+
+The double quotes matter: CMD treats single quotes as literal characters, so a
+single-quoted extra name is passed to pip with the quotes still on it.
 
 - It is an extra, never a base dependency, and **the default engine does not
   change**: without `--engine` you still get `openai-whisper` on the
@@ -281,11 +284,28 @@ textflowkit transcribe meeting.mp4 --engine faster-whisper
   default engine. `--engine faster-whisper --device cuda` passes `cuda` straight
   to upstream; on an AMD box that fails there, and that failure is the point -
   the device is never silently rewritten into a CPU run.
-- CTranslate2 does not depend on torch, so this extra cannot replace a ROCm
-  torch build.
 - Its decoding defaults differ from `openai-whisper`, so the same audio can
   produce different text. No speed or accuracy comparison is claimed here;
   measure on your own machine.
 
-Selecting it without the extra installed fails with the install line above,
-before any media is fetched or model loaded.
+**If you already have a ROCm torch build,** do not let this install re-resolve
+your environment. CTranslate2 itself has no torch dependency, but `pip install`
+resolves the *whole project*, base `openai-whisper` included, and that resolution
+is what disturbs a working ROCm setup. Install the way the ROCm section above
+does - without allowing dependency resolution:
+
+```bash
+python -m pip install "textflowkit[faster-whisper]" --no-deps
+python -m pip install faster-whisper
+```
+
+Then re-check `python -c "import torch; print(torch.__version__, torch.version.hip)"`.
+A faster-whisper install alongside a ROCm torch build has **not** been measured
+here, so treat it as unverified on your machine rather than as a supported
+combination.
+
+**When the extra is missing:** on the command line it is checked before any media
+is fetched or anything is loaded, so you get the install line above instead of a
+download followed by a traceback. The Python API (`transcribe(engine="faster-whisper")`)
+checks at engine load instead, which happens after acquisition inside the
+pipeline.

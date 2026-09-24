@@ -42,10 +42,13 @@ diarize = ["pyannote.audio>=4.0"]
 # Opt-in second engine for CPU and Apple Silicon (CTranslate2, int8 on CPU).
 # Deliberately not a base dependency and deliberately not part of `all`:
 # installing it must never be a surprise, and on AMD Windows its GPU path is
-# CUDA-only, so it is not the ROCm choice (see docs/install.md). CTranslate2
-# does not depend on torch, so this extra cannot disturb a ROCm torch build.
-# Version range reflects the published 1.x line.
-faster-whisper = ["faster-whisper>=1.0,<2"]
+# CUDA-only, so it is not the ROCm choice (see docs/install.md). CTranslate2 has
+# no torch dependency, but installing this extra still resolves the whole project
+# - base `openai-whisper` included - so it can change an existing environment;
+# the ROCm install path in docs/install.md is how a working torch is preserved.
+# The floor is the release verified end to end (1.2.1 / CTranslate2 4.8.2,
+# native Windows CPU); releases below it are not claimed compatible.
+faster-whisper = ["faster-whisper>=1.2.1,<2"]
 export = ["python-docx>=1.1", "reportlab>=4.0", "textflowkit-fonts>=0.1.5,<0.2"]
 all = ["textflowkit[mcp,http,diarize,export]"]
 
