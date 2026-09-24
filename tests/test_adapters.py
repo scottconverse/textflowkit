@@ -22,6 +22,11 @@ from textflowkit.core.sqlite_store import SqliteJobStore
 
 MISSING_SOURCE = "C:/definitely/missing.mp4"
 
+# Developer HTTP refuses a peer it cannot judge, and `TestClient`'s default peer
+# is the non-address `testclient`. Every HTTP test here means "a local caller",
+# so it declares the loopback peer a real one has. No socket is opened.
+LOCAL_PEER = ("127.0.0.1", 50000)
+
 
 @pytest.fixture(autouse=True)
 def clean_store():
@@ -219,7 +224,7 @@ def test_http_health_and_sources():
 
     from textflowkit.adapters.http_server import app
 
-    c = TestClient(app, base_url="http://127.0.0.1")
+    c = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER)
     assert c.get("/health").json()["status"] == "ok"
     s = c.get("/sources").json()
     assert "youtube" in s["platforms"]
@@ -231,7 +236,7 @@ def test_http_404_for_unknown_job():
 
     from textflowkit.adapters.http_server import app
 
-    assert TestClient(app, base_url="http://127.0.0.1").get("/jobs/nope").status_code == 404
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs/nope").status_code == 404
 
 
 def test_http_status_omits_complete_transcript():
@@ -247,7 +252,7 @@ def test_http_status_omits_complete_transcript():
         transcript={"segments": [{"text": "private"}]},
         checkpoint={"transcript": {"segments": [{"text": "private"}]}},
     )
-    body = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}").json()
+    body = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}").json()
     assert body["state"] == "done"
     assert "transcript" not in body
     assert "checkpoint" not in body
@@ -265,7 +270,7 @@ def test_http_status_exposes_the_stage_in_flight():
     job = store.create("x")
     store.update(job.id, state=JobState.RUNNING, progress="transcribing")
 
-    body = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}").json()
+    body = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}").json()
     assert body["state"] == "running"
     assert body["progress"] == "transcribing"
 
@@ -279,7 +284,7 @@ def test_list_limits_are_rejected_by_both_adapters(limit):
     from textflowkit.adapters.http_server import app
     from textflowkit.adapters.mcp_server import list_jobs
 
-    assert TestClient(app, base_url="http://127.0.0.1").get("/jobs", params={"limit": limit}).status_code == 422
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs", params={"limit": limit}).status_code == 422
     assert "error" in list_jobs(limit=limit)
 
 
@@ -291,7 +296,7 @@ def test_list_zero_limit_is_empty_on_both_adapters():
     from textflowkit.adapters.http_server import app
     from textflowkit.adapters.mcp_server import list_jobs
 
-    assert TestClient(app, base_url="http://127.0.0.1").get("/jobs", params={"limit": 0}).json()["jobs"] == []
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get("/jobs", params={"limit": 0}).json()["jobs"] == []
     assert list_jobs(limit=0)["jobs"] == []
 
 
@@ -301,7 +306,7 @@ def test_http_422_for_bad_format():
 
     from textflowkit.adapters.http_server import app
 
-    r = TestClient(app, base_url="http://127.0.0.1").post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
     assert r.status_code == 422
 
 
@@ -316,7 +321,7 @@ def test_http_queue_full_returns_429(monkeypatch):
         raise QueueFullError("job queue is full")
 
     monkeypatch.setattr(http_server, "submit_request", full)
-    response = TestClient(http_server.app, base_url="http://127.0.0.1").post("/jobs", json={"source": "x"})
+    response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x"})
     assert response.status_code == 429
     assert "queue is full" in response.json()["detail"]
 
@@ -329,7 +334,7 @@ def test_http_transcript_conflict_before_done():
 
     store = get_default_store()
     job = store.create("x")  # stays PENDING
-    r = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}/transcript")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript")
     assert r.status_code == 409
 
 
@@ -400,7 +405,7 @@ def test_http_cancel_unknown_job_404():
 
     from textflowkit.adapters.http_server import app
 
-    assert TestClient(app, base_url="http://127.0.0.1").post("/jobs/nope/cancel").status_code == 404
+    assert TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs/nope/cancel").status_code == 404
 
 
 def test_http_cancel_terminal_job():
@@ -413,7 +418,7 @@ def test_http_cancel_terminal_job():
     job = store.create("x")
     store.update(job.id, state=JobState.ERROR)
 
-    r = TestClient(app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/cancel")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/cancel")
     assert r.status_code == 200
     assert r.json()["cancelled"] is False
     assert r.json()["state"] == "error"
@@ -428,7 +433,7 @@ def test_http_cancel_pending_job():
     store = get_default_store()
     job = store.create("x")
 
-    r = TestClient(app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/cancel")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/cancel")
     assert r.status_code == 200
     assert r.json()["cancelled"] is True
     assert r.json()["state"] == "cancelled"
@@ -512,7 +517,7 @@ def test_http_and_mcp_word_timings_are_opt_in_and_stored_data_is_unchanged():
         words=[WordTiming(0, 0.5, "source")],
     )])
     store.update(job.id, state=JobState.DONE, transcript=transcript.to_dict())
-    client = TestClient(app, base_url="http://127.0.0.1")
+    client = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER)
 
     http_default = client.get(f"/jobs/{job.id}/transcript").json()
     http_words = client.get(f"/jobs/{job.id}/transcript", params={"include_words": "true"}).json()
@@ -541,7 +546,7 @@ def test_http_and_mcp_reject_unavailable_pdf_before_creating_job(monkeypatch, tm
 
     monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
     store = get_default_store()
-    http = TestClient(app, base_url="http://127.0.0.1").post("/jobs", json={
+    http = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={
         "source": "media.wav", "formats": ["pdf"], "output_dir": str(tmp_path),
     })
     mcp = transcribe_media("media.wav", formats="pdf", output_dir=str(tmp_path))
@@ -588,7 +593,7 @@ def test_http_transcript_paging_and_metadata():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}/transcript", params={"format": "json", "limit": 3})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript", params={"format": "json", "limit": 3})
     assert r.status_code == 200
     body = r.json()
     assert body["returned"] == 3
@@ -603,7 +608,7 @@ def test_http_transcript_time_range_renders_srt():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app, base_url="http://127.0.0.1").get(
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(
         f"/jobs/{job.id}/transcript", params={"format": "srt", "start": 1.0, "end": 3.0}
     )
     assert r.status_code == 200
@@ -618,7 +623,7 @@ def test_http_transcript_bad_offset_422():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 5)
-    r = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}/transcript", params={"offset": -1})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/transcript", params={"offset": -1})
     assert r.status_code == 422
 
 
@@ -629,7 +634,7 @@ def test_http_search_endpoint():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 10)
-    r = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}/search", params={"q": "word7"})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/search", params={"q": "word7"})
     assert r.status_code == 200
     assert r.json()["match_count"] == 1
 
@@ -641,7 +646,7 @@ def test_http_search_empty_query_422():
     from textflowkit.adapters.http_server import app
 
     job = _seed_done_job(get_default_store(), 5)
-    r = TestClient(app, base_url="http://127.0.0.1").get(f"/jobs/{job.id}/search", params={"q": ""})
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).get(f"/jobs/{job.id}/search", params={"q": ""})
     assert r.status_code == 422
 
 
@@ -657,7 +662,7 @@ def test_http_export_honours_requested_formats(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_OUTPUT_ROOT, str(tmp_path))
     job = _seed_done_job(get_default_store(), 3)
 
-    r = TestClient(app, base_url="http://127.0.0.1").post(
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         f"/jobs/{job.id}/export",
         params={"formats": ["srt", "txt"], "output_dir": "out"},
     )

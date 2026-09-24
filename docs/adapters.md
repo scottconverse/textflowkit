@@ -171,9 +171,13 @@ runs. A developer-mode request is refused with `403` unless its `Host` header
 names loopback, any `Origin` header it carries names a loopback origin, and the
 client's own address (not `X-Forwarded-*`, which is not trusted) is loopback.
 That blocks a hostname that resolves to loopback (DNS rebinding) and cross-site
-browser requests. `--allow-remote` / `TEXTFLOWKIT_ALLOW_REMOTE=1` is the single
-opt-in for all three: behind a gateway the public `Host` arrives, so this
-allowlist cannot apply.
+browser requests. The peer test is fail-closed: a request whose peer the server
+does not report as an IP address - including one that reports no peer at all,
+as an in-process ASGI test harness does - is refused rather than assumed local,
+because headers a browser sends cannot stand in for the caller's address.
+`--allow-remote` / `TEXTFLOWKIT_ALLOW_REMOTE=1` is the single opt-in for all
+three: behind a gateway the public `Host` arrives, so this allowlist cannot
+apply.
 
 Do not expose developer mode to untrusted callers. For the JSON HTTP adapter,
 `TEXTFLOWKIT_PROFILE=production` fails closed unless a Bearer API token, explicit

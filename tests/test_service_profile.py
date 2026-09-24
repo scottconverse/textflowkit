@@ -22,6 +22,11 @@ from textflowkit.core.service import (
 )
 from textflowkit.render import atomic_write_bytes
 
+# Developer HTTP refuses a peer it cannot judge, and `TestClient`'s default peer
+# is the non-address `testclient`; the developer-mode test below declares the
+# loopback peer a real local caller has. No socket is opened.
+LOCAL_PEER = ("127.0.0.1", 50000)
+
 
 @pytest.fixture
 def production(monkeypatch, tmp_path):
@@ -305,7 +310,7 @@ def test_production_inline_transcript_obeys_output_cap(production, monkeypatch):
 
 def test_developer_mode_needs_no_token(monkeypatch):
     monkeypatch.delenv("TEXTFLOWKIT_PROFILE", raising=False)
-    client = TestClient(http_server.app, base_url="http://127.0.0.1")
+    client = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER)
     assert client.get("/health").status_code == 200
 
 

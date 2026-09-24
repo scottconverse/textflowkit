@@ -20,6 +20,9 @@ from textflowkit.core.submission import SubmissionRequest, resume_job
 
 TOKEN = "a-long-test-token-12345"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+# The developer-mode test below drives the app in process: declare the loopback
+# peer a real local caller has, since a peer that cannot be judged is refused.
+LOCAL_PEER = ("127.0.0.1", 50000)
 
 
 @pytest.fixture
@@ -214,7 +217,7 @@ def test_developer_mode_http_and_mcp_forward_browser_cookies(developer, monkeypa
     monkeypatch.setattr(http_server, "submit_request", fake_submit)
     monkeypatch.setattr(mcp_server, "submit_request", fake_submit)
 
-    response = TestClient(http_server.app, base_url="http://127.0.0.1").post(
+    response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         "/jobs", json={"source": "https://example.com/v", "cookies_from_browser": "firefox"},
     )
     assert response.status_code == 202

@@ -19,6 +19,11 @@ from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.sqlite_store import SqliteJobStore
 from textflowkit.sources.acquire import require_tool
 
+# Developer HTTP refuses a peer it cannot judge, and `TestClient`'s default peer
+# is the non-address `testclient`; the in-process callers below declare the
+# loopback peer a real local caller has. No socket is opened.
+LOCAL_PEER = ("127.0.0.1", 50000)
+
 
 @pytest.fixture(autouse=True)
 def _release_default_store():
@@ -206,11 +211,11 @@ def test_http_and_mcp_resume_share_local_identity_validation(
     monkeypatch.setattr(http_server, "get_default_store", lambda: store)
     monkeypatch.setattr(mcp_server, "get_default_store", lambda: store)
     assert mcp_server.resume_job(job.id)["state"] == "done"
-    assert TestClient(http_server.app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/resume").status_code == 202
+    assert TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/resume").status_code == 202
 
     _wav(media, seconds=2)
     assert "changed" in mcp_server.resume_job(job.id)["error"]
-    http = TestClient(http_server.app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/resume")
+    http = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(f"/jobs/{job.id}/resume")
     assert http.status_code == 409
     assert "changed" in http.json()["detail"]
     assert engine.calls == 1
@@ -269,7 +274,7 @@ def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
     assert "error" in mcp_result, mcp_result
     assert "outside the allowed input root" in mcp_result["error"]
 
-    http = TestClient(http_server.app, base_url="http://127.0.0.1").post(
+    http = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         f"/jobs/{saved.id}/resume"
     )
     assert http.status_code == 409
@@ -279,7 +284,7 @@ def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
     allowed = submission.submit_request(store, request_for(inside, narrow), background=False)
     assert engine.calls == 2
     assert mcp_server.resume_job(allowed.id)["state"] == "done"
-    assert TestClient(http_server.app, base_url="http://127.0.0.1").post(
+    assert TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         f"/jobs/{allowed.id}/resume"
     ).status_code == 202
     assert engine.calls == 2

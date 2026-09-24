@@ -14,10 +14,12 @@ cover an app started directly through an ASGI server (`uvicorn
 textflowkit.adapters.http_server:app --host 0.0.0.0`), and it cannot see the
 `Host` a browser was pointed at. `developer_request_refusal()` closes both: a
 loopback-only `Host` allowlist stops a DNS name that resolves to loopback
-(rebinding), and the peer address stops a remote client on a widened bind.
-Forwarded headers are deliberately not consulted there - they are
-attacker-controlled unless a trusted proxy is known, and developer mode never
-knows one.
+(rebinding), and the peer address stops a remote client on a widened bind. The
+peer test is fail-closed: `Host` and `Origin` are headers a browser sends, so
+they cannot prove the caller is local, and a peer that is missing or is not an
+IP literal is refused rather than assumed loopback. Forwarded headers are
+deliberately not consulted there - they are attacker-controlled unless a
+trusted proxy is known, and developer mode never knows one.
 
 `resolve_client_identity()` is the one place that may read them, and only for
 the production rate limit. It reads `X-Forwarded-For` only when the TCP peer is
@@ -155,9 +157,12 @@ def is_loopback_origin(origin: str) -> bool:
 def peer_locality(peer_host: str | None) -> bool | None:
     """True if the peer is loopback, False if not, None if it cannot be judged.
 
-    None covers a missing peer address and peers that are not IP literals
-    (in-process ASGI test clients). Real servers report the peer IP, so a remote
-    client on a widened bind is judged False and refused.
+    None covers a missing peer address and peers that are not IP literals. Real
+    TCP servers report the peer IP, so a remote client on a widened bind is
+    judged False; an ASGI server that reports nothing usable (a socket with no
+    peer, an in-process test harness) is judged None. Only True is local: the
+    caller decides what an unjudged peer means, and
+    `developer_request_refusal()` refuses it.
     """
     if not peer_host:
         return None
@@ -176,10 +181,15 @@ def developer_request_refusal(
 ) -> str | None:
     """Reason to refuse a developer-mode request, or None to allow it.
 
+    Fail-closed on the peer: loopback-looking `Host` and `Origin` headers are
+    what a browser sends, so they cannot establish that the caller is local -
+    only a peer address that is provably loopback can. A peer that is missing or
+    is not an IP literal is therefore refused, not assumed local.
+
     `remote_allowed()` is the single opt-in: with it set, an operator may front
-    the service with a gateway, so the loopback allowlist does not apply. The
-    production profile does not use this path at all - it authenticates with the
-    Bearer token.
+    the service with a gateway, so none of the allowlist applies. The production
+    profile does not use this path at all - it authenticates with the Bearer
+    token.
     """
     if remote_allowed():
         return None
@@ -194,7 +204,16 @@ def developer_request_refusal(
             "loopback names and loopback addresses are served (127.0.0.1, "
             "localhost, [::1]); this blocks a DNS name that resolves to loopback"
         )
-    if peer_locality(peer) is False:
+    locality = peer_locality(peer)
+    if locality is None:
+        return (
+            "refusing request whose client address cannot be determined (peer "
+            f"'{peer}'): developer mode is unauthenticated and loopback-only, so "
+            "only a peer address that is provably loopback is served. Bind to "
+            "127.0.0.1, or pass --allow-remote (or set "
+            f"{ENV_ALLOW_REMOTE}=1) if you have a gateway in front of it"
+        )
+    if locality is False:
         return (
             f"refusing request from non-loopback peer '{peer}': developer mode is "
             "unauthenticated and loopback-only. Bind to 127.0.0.1, or pass "
