@@ -573,9 +573,14 @@ TOKEN_PRIVACY_CLAIMS = (
 )
 
 
+def _normalised_text(value: str) -> str:
+    """Text lowercased, backticks dropped, whitespace collapsed, for claim checks."""
+    return " ".join(value.lower().replace("`", "").split())
+
+
 def _normalised(name: str) -> str:
-    """The file's text, lowercased, backticks dropped, whitespace collapsed."""
-    return " ".join(_read(name).lower().replace("`", "").split())
+    """`_normalised_text` over a shipped file."""
+    return _normalised_text(_read(name))
 
 
 def test_no_shipped_file_claims_an_environment_variable_hides_the_token() -> None:
@@ -611,3 +616,101 @@ def test_the_env_example_names_who_can_read_the_token() -> None:
         ("secret", "one shared token is not a secret store, and must not be read as one"),
     ):
         assert required in text, f".env.example must say it: {why} ({required!r} is missing)"
+
+
+# --- how the example tells an operator to check it ------------------------
+#
+# `docker compose` reads `.env` to interpolate the Compose file; it does not
+# export those values into the caller's shell. A documented
+# `curl -H "Authorization: Bearer $TEXTFLOWKIT_API_TOKEN"` therefore sends an
+# empty bearer, and the obvious way to make it work - exporting the variable -
+# puts the value into curl's argv, which is the exposure the token note promises
+# to keep out of a command line. Every documented check has to run inside
+# Compose, where the token is already an environment variable of the process
+# that owns it.
+
+CONTAINER_SECTION = "### Container example (Dockerfile and Compose)"
+
+SHELL_TOKEN_BEARER = re.compile(r"Bearer\s+\$\{?TEXTFLOWKIT_API_TOKEN")
+
+EXEC_PROBE = re.compile(r'docker compose exec textflowkit-http python -c "(?P<script>[^"]+)"')
+
+# A host HTTP client *invoked* in the example's own instructions - a command line
+# that starts with the client, not a mention of one in prose. `curl` from the host
+# is what cannot work here: the token is in `.env`, not in the caller's shell.
+HOST_HTTP_CALL = re.compile(
+    r"(?im)^[\s#$>]*(?:curl|wget|invoke-webrequest|invoke-restmethod)\b"
+)
+
+# What the operator-visible check actually reports. `docker compose ps` shows the
+# container's own health, which is not a call from the host; the example has to
+# say so, in one of these forms.
+PROBE_SCOPES = (
+    "container's health status",
+    "container health status",
+    "container's own healthcheck",
+    "container's own probe",
+    "probe the container runs",
+    "runs in the container",
+    "not a call from the host",
+    "not a host http call",
+)
+
+
+def _container_docs() -> str:
+    """The `### Container example` section of docs/adapters.md, up to the next heading."""
+    text = _read(DOCS)
+    start = text.index(CONTAINER_SECTION)
+    rest = text[start + len(CONTAINER_SECTION):]
+    end = rest.find("\n### ")
+    return rest if end == -1 else rest[:end]
+
+
+def test_no_documented_command_expands_the_token_from_the_callers_shell() -> None:
+    for name, text in ((COMPOSE, _read(COMPOSE)), (DOCS, _container_docs())):
+        match = SHELL_TOKEN_BEARER.search(text)
+        assert match is None, (
+            f"{name} documents a bearer token expanded by the caller's shell "
+            f"({match.group(0)!r}): Compose does not export `.env` into that shell, so "
+            "the token would be empty - and exporting it puts the value in the client's "
+            "argv. Run the probe inside the container instead"
+        )
+
+
+def test_the_documented_check_runs_through_compose() -> None:
+    for name, text in ((COMPOSE, _read(COMPOSE)), (DOCS, _container_docs())):
+        assert "docker compose ps" in text or "docker compose exec" in text, (
+            f"{name} must show a check that works with only `.env` filled: the "
+            "container's health status, or a probe executed inside the container"
+        )
+
+
+def test_the_documented_probe_is_the_one_the_container_runs() -> None:
+    documented = EXEC_PROBE.search(_container_docs())
+    assert documented is not None, (
+        "docs/adapters.md must show the on-demand probe verbatim, not a paraphrase"
+    )
+    shipped = _sequence(_mapping(_service().get("healthcheck"), "service healthcheck").get("test"),
+                        "healthcheck test")[-1]
+    assert documented.group("script") == shipped, (
+        "the probe the operator is told to run must be the probe the container runs; "
+        "a copy that drifts is a command nobody has exercised"
+    )
+
+
+def test_no_host_http_call_is_documented_for_the_example() -> None:
+    for name, text in ((COMPOSE, _read(COMPOSE)), (DOCS, _container_docs())):
+        match = HOST_HTTP_CALL.search(text)
+        assert match is None, (
+            f"{name} tells the operator to call the API from the host ({match.group(0).strip()!r}). "
+            "The token lives in `.env`, which Compose interpolates and does not export, so the "
+            "call would carry an empty token - and exporting it puts the value in that client's argv"
+        )
+
+
+def test_the_example_says_what_the_check_reports() -> None:
+    text = _normalised_text(_container_docs())
+    assert any(scope in text for scope in PROBE_SCOPES), (
+        "say that `docker compose ps` reports the container's health status rather than "
+        "making a call from the host, so the operator knows what was and was not exercised"
+    )
