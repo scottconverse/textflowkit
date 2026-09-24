@@ -26,6 +26,7 @@ long video returns a job id immediately rather than blocking the call.
 from __future__ import annotations
 
 import sys
+from contextvars import ContextVar
 from typing import Any
 
 from textflowkit import __version__
@@ -157,6 +158,16 @@ class LoopbackPeerGuard:
         await JSONResponse({"error": refusal}, status_code=403)(scope, receive, send)
 
 
+# The per-app form of `--allow-remote`. It is a ContextVar, not an attribute on
+# the server, because the server is process-wide: a plain attribute would be
+# visible to every thread that builds an app while an opted-in server is
+# starting, quietly widening an app that was never granted the opt-in. A
+# ContextVar is per-context (per thread, per task), so the opt-in is visible
+# only to the call that set it - the server start - and the app built there
+# captures it. `run_http` sets and resets it around that one call.
+_REMOTE_OPT_IN: ContextVar[bool | None] = ContextVar("textflowkit_mcp_remote_opt_in", default=None)
+
+
 class GuardedMCPServer(MCPServer):
     """`MCPServer` whose Streamable-HTTP app carries the loopback peer guard.
 
@@ -164,18 +175,15 @@ class GuardedMCPServer(MCPServer):
     `run(transport='streamable-http')` (which `run_http` uses) go through it, so
     building the app here covers every way this module reaches Streamable HTTP.
 
-    `remote_opt_in` is the per-app form of `--allow-remote`, set by `run_http`
-    for the duration of one run. It is deliberately not a process-global env
-    write: an opt-in for one server must not silently widen another, and an
-    operator starting the app directly can still use `TEXTFLOWKIT_ALLOW_REMOTE`,
-    which the guard reads per request.
+    The app captures the opt-in in force where it is built. Every other context
+    - another thread, another task, a later call - gets the fail-closed default,
+    and an operator starting the app directly can still use
+    `TEXTFLOWKIT_ALLOW_REMOTE`, which the guard reads per request.
     """
-
-    remote_opt_in: bool | None = None
 
     def streamable_http_app(self, **kwargs: Any) -> Starlette:
         app = super().streamable_http_app(**kwargs)
-        app.add_middleware(LoopbackPeerGuard, allow_remote=self.remote_opt_in)
+        app.add_middleware(LoopbackPeerGuard, allow_remote=_REMOTE_OPT_IN.get())
         return app
 
 
@@ -629,14 +637,16 @@ def run_http(
     does. `allow_remote=True` is the per-app opt-in (the CLI flag); left unset,
     `TEXTFLOWKIT_ALLOW_REMOTE=1` still permits a wide bind, and the app it
     builds keeps refusing a remote peer unless one of the two is set.
+
+    The flag is carried in this call's context, so the app this server builds
+    captures it and an app any other caller builds meanwhile does not.
     """
     check_bind_safety(host, allow_remote=allow_remote)
-    previous = mcp.remote_opt_in
-    mcp.remote_opt_in = allow_remote
+    token = _REMOTE_OPT_IN.set(allow_remote)
     try:
         mcp.run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
     finally:
-        mcp.remote_opt_in = previous
+        _REMOTE_OPT_IN.reset(token)
 
 
 def main(argv: list[str] | None = None) -> int:
