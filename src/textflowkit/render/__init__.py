@@ -67,6 +67,19 @@ _IS_LINUX = sys.platform.startswith("linux")
 # volume without it and the export then fails closed.
 _IS_MACOS = sys.platform == "darwin"
 
+# Formats whose rendering is not byte-reproducible, so a published file can
+# never be compared with a fresh rendering of the same transcript.
+#
+# PDF: reportlab stamps a random document identifier into the trailer of every
+# file it writes (`/ID [<32 hex><32 hex>]`). Measured on this unit's host
+# (reportlab 5.0.1): two `render_bytes(transcript, "pdf")` calls over one
+# transcript differ in exactly those 64 bytes and in nothing else, at the same
+# length. Reuse of a PDF is therefore checked by name, location and size - the
+# length is stable for identical content - because a byte comparison would
+# refuse a PDF this tool had itself just published. Every other format renders
+# byte-identically (measured the same way).
+_NON_REPRODUCIBLE_FORMATS = frozenset({"pdf"})
+
 
 def validate_export_requirements(formats: list[str]) -> None:
     """Fail before acquisition or inference when a requested export is unavailable."""
@@ -100,11 +113,42 @@ def _render_requested(
     return rendered
 
 
-def _holds_exactly(path: Path, data: bytes) -> bool:
-    """Whether `path` is a file whose bytes are exactly `data`."""
+def _is_regular_file(path: Path) -> bool:
+    """Whether `path` names a regular file, without following a link.
+
+    Publication here only ever links or renames a staged *regular* file into
+    place, so a symlink or a directory at a destination name was not put there
+    by this module. `lstat` is deliberate: a link must be refused, never read
+    through - adopting one would return a path that resolves somewhere else
+    (outside a confined output root, in the symlink case) as this job's output.
+    """
     try:
-        if path.stat().st_size != len(data):
-            return False
+        return stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def _has_length(path: Path, data: bytes) -> bool:
+    """Whether `path` is a regular file of exactly `len(data)` bytes."""
+    if not _is_regular_file(path):
+        return False
+    try:
+        return path.stat().st_size == len(data)
+    except OSError:
+        return False
+
+
+def _holds_exactly(path: Path, data: bytes) -> bool:
+    """Whether `path` is a regular file whose bytes are exactly `data`.
+
+    The bytes are read through the name rather than from a held handle, so this
+    is a verdict about this moment and not a promise that the name still means
+    the same file when the publish below runs - the no-clobber link below is
+    what decides that.
+    """
+    if not _has_length(path, data):
+        return False
+    try:
         with path.open("rb") as handle:
             return handle.read() == data
     except OSError:
@@ -298,6 +342,23 @@ def render_bytes(transcript: Transcript, fmt: str, *, title: str | None = None) 
     return render(transcript, fmt, title=title).encode("utf-8")
 
 
+def _reusable_prior(prior: Path, expected: Path, data: bytes, norm: str) -> bool:
+    """Whether a recorded path is this job's own rendering for `norm`.
+
+    The name must be exactly the one this job's stem produces, so a
+    same-suffix neighbour in the output directory is never handed back as the
+    requested output; and the file must hold what this call would write. A
+    format whose rendering cannot be reproduced (`_NON_REPRODUCIBLE_FORMATS`)
+    is matched on length instead of content - the strongest check available,
+    and one that still refuses a truncated or replaced file.
+    """
+    if prior.name != expected.name:
+        return False
+    if norm in _NON_REPRODUCIBLE_FORMATS:
+        return _has_length(prior, data)
+    return _holds_exactly(prior, data)
+
+
 def ensure_outputs(
     transcript: Transcript,
     *,
@@ -312,6 +373,14 @@ def ensure_outputs(
     Resume must not redo transcription. Rendering missing files is cheap and
     keeps the checkpoint contract true even when the original output directory
     was removed between runs.
+
+    A recorded output is reused only when it is the file this job published:
+    inside the requested output directory, named exactly `{stem}.{format}`, a
+    regular file, and holding what this call would write (see
+    `_reusable_prior`). Nothing else is adopted. A missing output is rendered
+    again from the transcript in hand, and an expected name already taken by
+    other bytes fails closed through the no-clobber publish rather than being
+    overwritten or returned in place of the transcript.
     """
     if output_dir is None:
         return []
@@ -326,13 +395,13 @@ def ensure_outputs(
             by_suffix[path.suffix.lower().lstrip(".")] = path
     written: list[Path] = []
     for norm, data in rendered:
+        expected = out_dir / f"{stem}.{norm}"
         prior = by_suffix.get(norm)
-        if prior is not None and prior.exists():
+        if prior is not None and _reusable_prior(prior, expected, data, norm):
             written.append(prior)
             continue
-        path = out_dir / f"{stem}.{norm}"
-        atomic_write_bytes(path, data)
-        written.append(path)
+        atomic_write_bytes(expected, data)
+        written.append(expected)
     return written
 
 
