@@ -48,12 +48,16 @@ SHELL_HOSTILE = {
 
 
 def _non_selectable_classes() -> set[str]:
-    """Classes the page's own stylesheet declares unselectable, so they cannot be copied."""
+    """Classes the page's own stylesheet declares unselectable, so they cannot be copied.
+
+    Only the subject of each selector counts: in ``.terminal .prompt`` it is ``prompt``.
+    """
     found: set[str] = set()
     for rule in RULE.finditer(STYLE.group("css")):
         if USER_SELECT_NONE.search(rule.group("declarations")):
             for selector in rule.group("selectors").split(","):
-                found.update(re.findall(r"\.([A-Za-z][\w-]*)", selector))
+                subject = selector.split()[-1] if selector.split() else ""
+                found.update(re.findall(r"\.([A-Za-z][\w-]*)", subject))
     return found
 
 

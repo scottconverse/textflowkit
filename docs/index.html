@@ -87,6 +87,9 @@
     .terminal .prompt { color: var(--mint); }
     .terminal .comment { color: #95aeb7; }
     .terminal .result { color: var(--amber); }
+    /* Prompts, comments and sample output are decoration. Selecting a block must copy only
+       the commands, so that a paste runs in CMD, PowerShell and POSIX shells alike. */
+    .terminal .prompt, .terminal .comment, .terminal .result, .terminal .out, .codebox .prompt { user-select: none; -webkit-user-select: none; }
     .terminal-foot { display: flex; flex-wrap: wrap; gap: .55rem; padding: .8rem 1rem; border-top: 1px solid #ffffff16; color: var(--muted); font-family: var(--mono); font-size: .7rem; }
     .terminal-foot span { padding: .15rem .45rem; border: 1px solid #ffffff22; border-radius: 4px; }
 
@@ -198,15 +201,14 @@
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
         <pre><span class="comment"># A URL or a file. Your machine does the work.</span>
-<span class="prompt">$</span> textflowkit transcribe talk.mp4 \
-    --formats json,srt,txt
+<span class="prompt">$ </span>textflowkit transcribe talk.mp4 --formats json,srt,txt
 
-<span class="result">✓</span> talk-&lt;job-id&gt;.json
-<span class="result">✓</span> talk-&lt;job-id&gt;.srt
-<span class="result">✓</span> talk-&lt;job-id&gt;.txt
+<span class="result">✓</span><span class="out"> talk-&lt;job-id&gt;.json</span>
+<span class="result">✓</span><span class="out"> talk-&lt;job-id&gt;.srt</span>
+<span class="result">✓</span><span class="out"> talk-&lt;job-id&gt;.txt</span>
 
 <span class="comment"># Or run it under an AI harness</span>
-<span class="prompt">$</span> textflowkit-mcp</pre>
+<span class="prompt">$ </span>textflowkit-mcp</pre>
         <div class="terminal-foot"><span>CLI</span><span>MCP stdio + HTTP</span><span>JSON API</span></div>
       </div>
     </div>
@@ -277,8 +279,8 @@
         <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.5 user manual</a> for CLI, MCP, HTTP, export, and troubleshooting examples.</p>
       </div>
       <div>
-        <pre class="codebox"><span class="prompt">$</span> python -m pip install 'textflowkit[mcp,http]'
-<span class="prompt">$</span> textflowkit doctor</pre>
+        <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[mcp,http]"
+<span class="prompt">$ </span>textflowkit doctor</pre>
         <p class="note">For a GPU-specific or Windows-native ROCm setup, follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">install guide</a> instead of using this generic CPU-oriented quickstart.</p>
       </div>
     </section>
