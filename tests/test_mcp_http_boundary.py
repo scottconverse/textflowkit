@@ -19,7 +19,10 @@ boundary let the request through rather than a boundary verdict of its own.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import threading
 
 import pytest
 
@@ -43,15 +46,38 @@ LOOPBACK_HOST = "127.0.0.1:8766"
 
 @pytest.fixture(autouse=True)
 def developer_mode(monkeypatch):
-    """Plain developer mode and no per-app remote opt-in left over."""
+    """Plain developer mode, with no remote opt-in from the environment."""
     monkeypatch.delenv("TEXTFLOWKIT_PROFILE", raising=False)
     monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
-    monkeypatch.setattr(mcp, "remote_opt_in", None, raising=False)
 
 
 def streamable_app(host: str = "127.0.0.1"):
     """A fresh app per call: the SDK's session manager refuses to be entered twice."""
     return mcp.streamable_http_app(host=host)
+
+
+@contextlib.contextmanager
+def sdk_transport(monkeypatch):
+    """Let the SDK's real transport path run, without opening a socket.
+
+    `run_streamable_http_async` builds the app, wraps it in `uvicorn.Config`, and
+    awaits `Server.serve()`. Replacing `serve` records the config the SDK really
+    produced and returns at once: the app construction, the context it ran in,
+    and the config are all the SDK's; only the bind is not. This is what proves
+    an opt-in reaches the app the server actually serves, rather than an app a
+    test built itself.
+    """
+    import uvicorn
+
+    captured: dict = {}
+
+    async def no_serve(self):
+        captured["app"] = self.config.app
+        captured["host"] = self.config.host
+        captured["port"] = self.config.port
+
+    monkeypatch.setattr(uvicorn.Server, "serve", no_serve)
+    yield captured
 
 
 def request_mcp(app, peer, headers=None, *, base_url: str = LOOPBACK_BASE):
@@ -330,42 +356,65 @@ def test_run_http_allows_a_non_loopback_bind_with_the_env(monkeypatch):
     assert calls and calls[0]["host"] == "0.0.0.0"
 
 
-def test_allow_remote_is_captured_by_the_app_run_http_builds(monkeypatch):
+def test_allow_remote_is_captured_by_the_app_the_sdk_builds(monkeypatch):
     """The flag reaches the per-request guard without a process-global env write."""
-    built = []
-
-    def fake_transport(*, transport, host, port, streamable_http_path):
-        built.append(mcp.streamable_http_app(host=host, streamable_http_path=streamable_http_path))
-
-    monkeypatch.setattr(mcp, "run", fake_transport)
-    mcp_server.run_http(host="10.0.0.5", allow_remote=True)
-    assert built, "run_http did not reach the transport"
-    response = request_mcp(built[0], FOREIGN_PEER, {"Host": "10.0.0.5:8766"}, base_url="http://10.0.0.5:8766")
-    assert response.status_code == 400, response.text
+    with sdk_transport(monkeypatch) as captured:
+        mcp_server.run_http(host="127.0.0.1", allow_remote=True)
+    app = captured["app"]
+    assert captured["host"] == "127.0.0.1", "the SDK never built the app"
+    assert request_mcp(app, FOREIGN_PEER, {"Host": LOOPBACK_HOST}).status_code == 400
 
 
-def test_the_app_run_http_builds_refuses_a_remote_peer_without_the_flag(monkeypatch):
-    built = []
-
-    def fake_transport(*, transport, host, port, streamable_http_path):
-        built.append(mcp.streamable_http_app(host=host, streamable_http_path=streamable_http_path))
-
-    monkeypatch.setattr(mcp, "run", fake_transport)
-    mcp_server.run_http(host="127.0.0.1")
-    assert built, "run_http did not reach the transport"
-    response = request_mcp(built[0], FOREIGN_PEER, {"Host": LOOPBACK_HOST})
-    assert response.status_code == 403
+def test_the_app_the_sdk_builds_refuses_a_remote_peer_without_the_flag(monkeypatch):
+    with sdk_transport(monkeypatch) as captured:
+        mcp_server.run_http(host="127.0.0.1")
+    app = captured["app"]
+    assert captured["host"] == "127.0.0.1", "the SDK never built the app"
+    assert request_mcp(app, FOREIGN_PEER, {"Host": LOOPBACK_HOST}).status_code == 403
 
 
-def test_remote_opt_in_is_scoped_to_its_run(monkeypatch):
-    """An opt-in for one run must not quietly widen the next one."""
-    seen = []
-    monkeypatch.setattr(mcp, "run", lambda **kwargs: seen.append(mcp.remote_opt_in))
-    mcp_server.run_http(host="10.0.0.5", allow_remote=True)
-    mcp_server.run_http(host="127.0.0.1")
-    assert seen == [True, None]
-    assert mcp.remote_opt_in is None
+def test_an_opted_in_server_does_not_widen_a_concurrent_app(monkeypatch):
+    """Audit regression: the opt-in must not reach an app it was not granted to.
+
+    `remote_opt_in` was one mutable attribute on the process-wide `mcp`, so any
+    thread that built a direct app while an opted-in server was starting captured
+    the opt-in and lost the boundary. Recorded red: 400, where 403 is required.
+    """
+    entered = threading.Event()
+    release = threading.Event()
+
+    def hold(**kwargs):
+        entered.set()
+        assert release.wait(10), "the holder was never released"
+
+    monkeypatch.setattr(mcp, "run", hold)
+    worker = threading.Thread(
+        target=lambda: mcp_server.run_http(host="127.0.0.1", allow_remote=True), daemon=True
+    )
+    worker.start()
+    try:
+        assert entered.wait(10), "run_http never reached the transport"
+        assert get_mcp(FOREIGN_PEER, {"Host": LOOPBACK_HOST}).status_code == 403
+    finally:
+        release.set()
+        worker.join(10)
+    assert not worker.is_alive()
+
+
+def test_the_optin_ends_with_the_run_that_was_granted_it(monkeypatch):
+    """The app the run built opts in; an app built afterwards does not."""
+    with sdk_transport(monkeypatch) as captured:
+        mcp_server.run_http(host="127.0.0.1", allow_remote=True)
+    assert request_mcp(captured["app"], FOREIGN_PEER, {"Host": LOOPBACK_HOST}).status_code == 400
     assert get_mcp(FOREIGN_PEER, {"Host": LOOPBACK_HOST}).status_code == 403
+
+
+def test_the_flag_is_not_applied_as_a_process_global(monkeypatch):
+    """No env write: an opt-in for one server must not widen another process-wide."""
+    monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
+    with sdk_transport(monkeypatch):
+        mcp_server.run_http(host="127.0.0.1", allow_remote=True)
+    assert ENV_ALLOW_REMOTE not in os.environ
 
 
 # --- the CLI keeps its flag and env behaviour -----------------------------
