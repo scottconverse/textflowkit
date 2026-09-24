@@ -73,10 +73,16 @@ transcription service.
 - [x] Prepare v0.1.4 with a PyPI-first package description and install guide
 - [x] Make PyPI the default developer install path while keeping GitHub
   releases and the native-Windows ROCm dependency instructions
-- [ ] Ship v0.1.5 review follow-ups: speech-bearing self-test, full media
+- [x] Ship v0.1.5 review follow-ups: speech-bearing self-test, full media
   duration, retained word timings, Python API documentation, richer PyPI
   project links, a small core wheel with optional offline fonts, and a
   tokenless Trusted Publishing release workflow for both packages
+
+The [v0.1.5 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.5)
+and both [core](https://pypi.org/project/textflowkit/0.1.5/) and
+[fonts](https://pypi.org/project/textflowkit-fonts/0.1.5/) PyPI projects are live.
+The first Trusted Publishing run succeeded; all four GitHub/PyPI artifact hashes
+matched, and a fresh install passed self-test, transcription, and PDF export.
 - [ ] Follow-up: normalize exported file permissions on POSIX to respect the
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading
