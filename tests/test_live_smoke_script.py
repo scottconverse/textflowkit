@@ -108,6 +108,25 @@ def test_live_smoke_refuses_receipt_inside_checkout(monkeypatch, capsys):
 
 OTHER_URL = "https://www.youtube.com/watch?v=OVERRIDE0000"
 
+# The default word is an observation, not a guess. This is the coordinator's
+# baseline transcript of the default clip (2026-09-24, `--model tiny --device
+# cpu`), copied in so a later edit cannot quietly swap the default expectation
+# for a word the clip was never heard to say. The live re-run stays a
+# maintainer step; this test only pins the premise the gate rests on.
+OBSERVED_DEFAULT_CLIP_SEGMENTS = [
+    "Alright so here we are one of the elephants.",
+    "Cool thing for these guys is that they have really really long prompts and that's cool.",
+    "And that's pretty much all it is to say.",
+]
+
+
+def test_the_default_word_is_one_the_default_clip_is_observed_to_say() -> None:
+    spoken = smoke_live_youtube._normalize_words(" ".join(OBSERVED_DEFAULT_CLIP_SEGMENTS))
+    assert smoke_live_youtube.DEFAULT_EXPECT_TEXT == "elephants"
+    assert smoke_live_youtube._contains_whole_phrase(
+        spoken, smoke_live_youtube._normalize_words(smoke_live_youtube.DEFAULT_EXPECT_TEXT)
+    )
+
 
 def _transcript_run(texts: list[str]):
     """Fake subprocess.run: a clean candidate plus one JSON transcript."""
