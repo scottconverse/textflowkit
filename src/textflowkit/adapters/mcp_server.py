@@ -132,7 +132,8 @@ def transcribe_media(
             direct media link) or a path to a local file.
         language: Optional ISO language code (e.g. 'en'). Auto-detected if omitted.
         formats: Comma-separated outputs to write when output_dir is set.
-            Available: txt, srt, vtt, md, json.
+            Available: txt, srt, vtt, md, json, docx, pdf. The binary formats
+            (docx, pdf) are written to disk and require the export extra.
         output_dir: Directory to write rendered files into. Omit to keep the
             transcript in memory only.
         model: Whisper model size - tiny, base, small, medium, or large.
@@ -341,9 +342,9 @@ def search_transcript(
 ) -> dict[str, Any]:
     """Search a completed transcript for a phrase.
 
-    Returns matching segments with their timestamps, newest-first order
-    preserved from the transcript. Use this instead of paging through a long
-    transcript looking for a topic.
+    Returns matching segments with their timestamps, in the order they appear in
+    the transcript - not sorted by relevance or recency. Use this instead of
+    paging through a long transcript looking for a topic.
 
     Args:
         job_id: The id returned by transcribe_media.
@@ -401,7 +402,8 @@ def export_transcript(
     Args:
         job_id: The id returned by transcribe_media.
         output_dir: Directory to write into. Created if missing.
-        formats: Comma-separated formats to write - txt, srt, vtt, md, json.
+        formats: Comma-separated formats to write - txt, srt, vtt, md, json,
+            docx, pdf. The binary formats (docx, pdf) require the export extra.
     """
     job, err = _resolve_job(job_id)
     if err:
