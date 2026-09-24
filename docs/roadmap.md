@@ -87,6 +87,9 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading
   exported subtitles or documents. Fix and regression-test separately.
+  The mode is now measured and applied before publication, with regression
+  tests for it, but the POSIX behaviour has not been verified on a live POSIX
+  host yet, so this stays open until CI or a POSIX machine confirms it.
 - [ ] Follow-up: decouple the fonts package's version from core releases so
   unchanged font wheels are not rebuilt/uploaded every patch. Keep duplicate
   PyPI uploads visible rather than relying on `skip-existing`.
