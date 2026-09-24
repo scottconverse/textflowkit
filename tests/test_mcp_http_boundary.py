@@ -65,6 +65,38 @@ def get_mcp(peer, headers=None, *, base_url: str = LOOPBACK_BASE, app_host: str 
     return request_mcp(streamable_app(app_host), peer, headers, base_url=base_url)
 
 
+# A real protocol exchange, not a tool call: `initialize` negotiates capabilities
+# and reaches no tool, model, or network. It is the one request whose *streamed*
+# answer the guard has to leave intact, since it is middleware over a transport
+# that streams.
+INITIALIZE = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "textflowkit-boundary-test", "version": "0"},
+    },
+}
+
+
+def post_mcp(app, peer, payload, headers=None, *, base_url: str = LOOPBACK_BASE):
+    """One JSON-RPC POST to /mcp from an explicitly declared peer, in-process."""
+    body = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        **(headers or {}),
+    }
+    with TestClient(app, base_url=base_url, client=peer) as client:
+        return client.post("/mcp", json=payload, headers=body)
+
+
+def sse_messages(text: str) -> list:
+    """The JSON-RPC messages an event-stream body carries."""
+    return [json.loads(line[len("data: ") :]) for line in text.splitlines() if line.startswith("data: ")]
+
+
 def refusal_reason(response) -> str:
     """The guard's refusal text, asserting the refusal is a readable JSON body."""
     assert response.status_code == 403, response.text
@@ -204,6 +236,20 @@ def test_loopback_origin_reaches_the_mcp_handler():
         LOOPBACK_PEER, {"Host": LOOPBACK_HOST, "Origin": "http://127.0.0.1:3000"}
     )
     assert response.status_code == 400, response.text
+
+
+def test_local_initialize_round_trip_survives_the_guard():
+    """The answer streams, so the guard must pass `send` through unbuffered."""
+    response = post_mcp(streamable_app(), LOOPBACK_PEER, INITIALIZE, {"Host": LOOPBACK_HOST})
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    (message,) = sse_messages(response.text)
+    assert message["result"]["serverInfo"]["name"] == "textflowkit"
+
+
+def test_remote_initialize_is_refused_before_it_is_answered():
+    response = post_mcp(streamable_app(), FOREIGN_PEER, INITIALIZE, {"Host": LOOPBACK_HOST})
+    assert "loopback" in refusal_reason(response).lower()
 
 
 # --- direct ASGI use: a widened bind cannot serve a remote peer -----------
