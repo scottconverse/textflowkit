@@ -309,6 +309,6 @@ fetched, so you get the install line above instead of a download followed by a
 traceback. The command line and the Python API (`transcribe(engine="faster-whisper")`)
 both refuse up front, and so do the MCP and HTTP adapters - an unknown engine name
 or a missing extra is reported there as `{"error": ...}` or HTTP 422 before a job
-record is written. A saved request is checked the same way when it is resumed -
-unless the resume is only reusing a completed transcript, which needs no engine
-at all.
+record is written. A saved request is checked the same way when it is resumed; a
+job that already finished is the exception - it is answered from its stored
+transcript and needs no engine.

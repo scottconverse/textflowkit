@@ -161,8 +161,10 @@ speed or accuracy comparison between the engines is claimed. An unknown engine
 name, or a missing extra, is answered with **422 before a job record is written**;
 on `/jobs/batch` that refusal covers the whole request, so a fresh batch is never
 partly queued for one unusable engine. The choice is stored on the durable
-request and checked again when the job is resumed, except when that resume only
-reuses a completed transcript, which needs no engine.
+request and checked again when the job is resumed - except for a job that already
+finished, which is answered from its stored transcript and needs no engine. A
+resume refused for an unusable engine leaves the job's terminal state, error, and
+cancellation flag untouched, so nothing is left queued-less in `pending`.
 
 ### Developer mode and production profile
 
