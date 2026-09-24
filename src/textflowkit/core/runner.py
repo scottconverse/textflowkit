@@ -137,11 +137,16 @@ def submit(
     `background=False` runs inline (used by tests and by callers that want a
     blocking call). Otherwise the job goes to the process-wide executor, which
     bounds concurrency and can cancel it.
+
+    Both inline routes read the job back from the store afterwards: a durable
+    store persists the terminal state and returns a freshly read Job, so the
+    object `create` returned would still say PENDING. `MemoryJobStore.update`
+    mutates in place, which is why returning that object looks right there.
     """
     if not background:
         job = store.create(source)
         run_job(job, store, source=source, **kwargs)
-        return job
+        return store.get(job.id) or job
 
     executor = get_default_executor()
     if executor.store is not store:
@@ -149,7 +154,7 @@ def submit(
         # routing the job to a different store than the one they hold.
         job = store.create(source)
         run_job(job, store, source=source, **kwargs)
-        return job
+        return store.get(job.id) or job
     return executor.submit(source=source, **kwargs)
 
 
