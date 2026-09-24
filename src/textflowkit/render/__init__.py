@@ -15,6 +15,7 @@ Two paths, because two kinds of output:
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -35,6 +36,11 @@ RENDERERS = {
 TEXT_FORMATS = tuple(RENDERERS) + ("json",)
 BINARY_FORMATS = ("docx", "pdf")
 SUPPORTED_FORMATS = TEXT_FORMATS + BINARY_FORMATS
+
+# Whether created files carry umask-derived permission bits. Windows reports
+# the same synthetic mode for every file, so there is nothing to normalize
+# there and `_ordinary_file_mode` is a no-op.
+_HAS_UMASK = os.name == "posix"
 
 
 def validate_export_requirements(formats: list[str]) -> None:
@@ -80,6 +86,37 @@ def _holds_exactly(path: Path, data: bytes) -> bool:
         return False
 
 
+def _ordinary_file_mode(directory: Path) -> int | None:
+    """The mode an ordinary newly created file gets in `directory`, or None.
+
+    `tempfile` always creates its staging file 0600, so publication through it
+    would hand the destination that private mode; a published transcript should
+    instead carry whatever mode a plainly created file would have had.
+
+    The umask cannot be read without setting it, and setting it is
+    process-global - unsafe when threads share the process - so it is measured
+    rather than computed. The probe is created exactly the way an ordinary file
+    is (`open` asks for 0o666 and the kernel applies the umask), and it is made
+    in the same directory as the file being published, so it sees the same
+    filesystem and the same umask.
+
+    Returns None when the mode cannot be measured, which includes Windows,
+    where files carry no umask-derived bits. This is metadata rather than a
+    safety property, so a filesystem that refuses the probe must not fail an
+    export that would otherwise succeed.
+    """
+    if not _HAS_UMASK:
+        return None
+    probe = directory / f".{os.urandom(8).hex()}.textflowkit-mode"
+    try:
+        with open(probe, "xb") as handle:
+            return stat.S_IMODE(os.fstat(handle.fileno()).st_mode)
+    except OSError:
+        return None
+    finally:
+        probe.unlink(missing_ok=True)
+
+
 def atomic_write_bytes(
     path: Path, data: bytes, *, replace: bool = False, reuse_identical: bool = False
 ) -> None:
@@ -92,6 +129,12 @@ def atomic_write_bytes(
     the ones being written is adopted. A differing file still fails closed
     through the no-clobber link below, and the default (`False`) keeps a fresh
     attempt from taking over an existing file even when its bytes match.
+
+    On POSIX the staging file is given the mode an ordinary file gets here
+    before it is published, so the destination does not inherit the private
+    0600 `tempfile` gave it. The staged bytes stay 0600 until they are fully
+    written and fsynced, and nothing becomes visible under the destination name
+    until the link or replace below.
     """
     from textflowkit.core.paths import verify_output_file_target
 
@@ -107,9 +150,19 @@ def atomic_write_bytes(
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        verify_output_file_target(path)
+        # The destination inherits its mode from this inode on both publication
+        # paths below, so the mode is set here: the bytes are already written
+        # and fsynced, and neither name exposes them yet. The probe the mode
+        # comes from lands in this same, just-verified directory.
+        mode = _ordinary_file_mode(path.parent)
+        if mode is not None:
+            try:
+                os.chmod(temp, mode)
+            except OSError:
+                pass  # a filesystem that cannot carry a mode must not fail the export
         # A hard link commits the fully-written temp file atomically and fails
         # if the destination already exists, unlike os.replace().
-        verify_output_file_target(path)
         if replace:
             os.replace(temp, path)
             temp = None

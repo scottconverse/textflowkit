@@ -33,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+import textflowkit.render as render_mod
 from textflowkit.render import atomic_write_bytes
 
 POSIX_ONLY = pytest.mark.skipif(
@@ -58,16 +59,23 @@ def _control_mode(directory: Path) -> int:
 
 
 def _run_posix_branch(monkeypatch) -> None:
-    """Make the POSIX permission path run on any host.
+    """Make the permission path run on any host.
 
-    The permission normalization is deliberately skipped on Windows, so a
-    Windows run of this suite would otherwise never execute it. Faking
-    `os.name` for the duration of one test runs the real POSIX branch - the
-    probe really creates and stats a file, only its answer is degenerate there.
-    `tempfile`'s open flags are computed once at import, so nothing about how
-    staging files (or the fake) are opened changes underneath this.
+    Normalization is a no-op on Windows, where every created file reports the
+    same synthetic mode, so a Windows run of this suite would otherwise never
+    execute it. Flipping the module's own platform flag runs the real code: the
+    probe really creates and stats a file, and the real `os.chmod` is called.
+    Only the *answer* is degenerate on Windows, which is why the assertion
+    compares against a control file rather than a literal. `os.name` is left
+    alone on purpose - pathlib derives its flavour from it, so changing it
+    mid-process breaks unrelated path handling.
+
+    `raising=False` because the flag is part of the fix: against the pre-fix
+    module the test must fail on the missing adjustment, not on the missing
+    name. If the flag were renamed the implementation would find nothing to
+    measure and the mode assertion would still fail, so this hides nothing.
     """
-    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(render_mod, "_HAS_UMASK", True, raising=False)
 
 
 def test_staging_file_is_made_ordinary_before_the_destination_appears(tmp_path, monkeypatch):
