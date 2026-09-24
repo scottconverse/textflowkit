@@ -79,9 +79,10 @@ version tag (for example `v0.1.6` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the
-tag, both package versions, and ancestry on `main`, and it requires the README's
-primary **Current release** line to name the version being published (see
-below); it then requires a completed, successful `push` run of
+tag, both package versions, and ancestry on `main`, and it requires both of the
+README's release claims — the displayed **Current release** link and the
+`## Status` opening claim — to name the version being published (see below); it
+then requires a completed, successful `push` run of
 [`ci.yml`](../.github/workflows/ci.yml) on `main` whose `head_sha` is the
 exact tagged commit, using
 [`scripts/verify_release_ci.py`](../scripts/verify_release_ci.py) with the
@@ -106,30 +107,40 @@ for owner `scottconverse`, repository `textflowkit`, workflow
 `publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
 should require maintainer approval before an upload job can proceed.
 
-### The README current-release guard
+### The README release-claim guard
 
 A distribution's long description is built from the README **at the tagged
 commit** and frozen when PyPI accepts the upload. v0.1.5 was published with a
-long description whose status line still said "v0.1.4 release"; PyPI cannot
-rewrite an uploaded release's metadata, so that text is immutable and the
-erratum in the [user manual](user-manual.md) stands. It cannot be fixed
-retroactively — only a later version carries a corrected description.
+long description that still said "v0.1.4 release"; PyPI cannot rewrite an
+uploaded release's metadata, so that text is immutable and the erratum in the
+[user manual](user-manual.md) stands. It cannot be fixed retroactively — only a
+later version carries a corrected description.
 
-Before the tag is pushed, update the README's one primary
-`**Current release: [vX.Y.Z](https://github.com/scottconverse/textflowkit/releases/tag/vX.Y.Z).**`
-line so its displayed label and its target URL both name the new version. The
-publish workflow's build job runs
+That bad text is the `## Status` section's opening paragraph
+(`git show v0.1.5:README.md`), **not** the displayed release link: the README
+makes the same version claim in two places, and they can disagree. Before the
+tag is pushed, update both to the new version:
+
+- the one primary
+  `**Current release: [vX.Y.Z](https://github.com/scottconverse/textflowkit/releases/tag/vX.Y.Z).**`
+  line — its displayed label **and** its target URL; and
+- the `## Status` section's opening claim, `**vX.Y.Z release.** ...`, which must
+  be that section's first paragraph and must be the only release claim in it.
+
+The publish workflow's build job runs
 [`scripts/verify_readme_release.py`](../scripts/verify_readme_release.py) with
 the tag before it builds or uploads anything. It fails closed:
 
-- a missing, duplicated, or malformed **Current release** line stops the
-  release, as does an unreadable README;
-- the label **and** the release URL must name the version being published, so
-  changing the wording in one place while the status line still points at the
-  old tag is a failure, which is exactly the v0.1.5 defect;
-- naming the new version somewhere else in the README is not enough. The
-  release-surface test in `tests/test_release_surfaces.py` stays green on a
-  page like that, so this guard — not that substring check — is the gate.
+- a missing, duplicated, or malformed line or claim stops the release, as does a
+  missing or duplicated `## Status` section, an empty one, a claim that is not
+  its opening paragraph, and an unreadable README;
+- each claim is checked against the version being published on its own. Getting
+  the link right while `## Status` still names the old tag is the v0.1.5 defect
+  and is a failure, and so is the reverse;
+- naming the new version somewhere else in the README is not enough, and it
+  never was: `v0.1.5` appears in several places on the page that must not ship.
+  The release-surface test in `tests/test_release_surfaces.py` stays green on
+  such a page, so this guard — not that substring check — is the gate.
 
 The guard runs only in `publish-pypi.yml`. Ordinary pull-request CI must keep
 passing before a release, and until a new version is staged the README

@@ -1,19 +1,26 @@
-"""Refuse to build a release while the README's primary release line is stale.
+"""Refuse to build a release while the README still claims an older one.
 
 A distribution's long description is built from the README at the tagged commit
 and frozen on upload. v0.1.5 was published with a long description that still
 said "v0.1.4 release", and PyPI cannot rewrite an uploaded release's metadata in
 place, so the mistake is permanent for that version (see the erratum in
-`docs/user-manual.md`). The README's own status line is the only part of the
-long description that makes a version claim, so this gate reads exactly that
-line - the label a reader sees and the release URL it links to - and requires
-both to name the version the tag publishes.
+`docs/user-manual.md`). That bad text is the `## Status` section's opening
+paragraph (`git show v0.1.5:README.md` line 247), not the displayed release
+link, and the two are separate claims, so this gate checks both:
 
-It fails closed. A missing line, a second one, an unreadable or non-UTF-8
-README, or a line in any shape other than the documented one stops the release
-instead of building a distribution with an unverifiable claim. A page that
-mentions the new version somewhere else is not a pass: that is precisely the
-state that published v0.1.5.
+- the one primary `**Current release: [vX.Y.Z](...).**` line, label and target
+  URL together;
+- the `## Status` section's opening `**vX.Y.Z release.**` claim.
+
+Both must name the version the tag publishes. A guard that reads only the link
+accepts exactly the page that was published as v0.1.5, whose link was right and
+whose Status paragraph was stale.
+
+It fails closed. A missing claim, a second one, an ambiguous or malformed one, an
+unreadable or non-UTF-8 README, or a section that is absent or duplicated stops
+the release instead of building a distribution with an unverifiable claim. A
+page that mentions the new version somewhere else is not a pass: `v0.1.5` is
+named in several places on the page that must not ship.
 """
 
 from __future__ import annotations
@@ -27,17 +34,31 @@ from pathlib import Path
 DEFAULT_README = "README.md"
 RELEASE_TAG_URL = "https://github.com/scottconverse/textflowkit/releases/tag/v{version}"
 STATUS_PREFIX = "Current release"
+STATUS_SECTION = "## Status"
 
-# The one line this gate accepts, in the shape the README documents:
+# The one release-link line this gate accepts, in the shape the README documents:
 #     **Current release: [v0.1.6](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6).**
-# Anything else that presents itself as the status line is a defect to fix, not
-# a line to skip, so the match is anchored to the whole stripped line.
+# Anything else that presents itself as that line is a defect to fix, not a line
+# to skip, so the match is anchored to the whole stripped line.
 STATUS_LINE = re.compile(
     r"\A\*\*Current release: \[(?P<label>[^\]]+)\]\((?P<href>[^\s()]+)\)\.\*\*\Z"
 )
 # Case-insensitive so a near-miss (`**Current Release: ...**`) is caught as a
-# malformed status line rather than ignored as prose.
+# malformed link line rather than ignored as prose.
 STATUS_CANDIDATE = re.compile(r"\A[*_>\s]*Current release\b", re.IGNORECASE)
+
+# The `## Status` section's opening claim, in the shape the README documents:
+#     **v0.1.6 release.** Core, CLI, MCP, and HTTP have automated coverage.
+# This is the claim the published v0.1.5 long description got wrong. The rest of
+# the opening sentence follows on the same line, so only the bold lead-in is
+# matched; an exact `## Status` heading delimits the section.
+SECTION_HEADING = re.compile(r"\A#{1,2}[ \t]")
+STATUS_HEADING = re.compile(r"\A##[ \t]+Status[ \t]*\Z")
+RELEASE_CLAIM = re.compile(r"\A\*\*v(?P<version>[0-9][0-9A-Za-z.+-]*) release\.\*\*")
+# What a reader would read as a release claim, whether or not it is well formed:
+# a line opening a bold span that mentions "release". A bold-only lead-in that
+# does not match RELEASE_CLAIM is a malformed claim to fix, not prose to skip.
+CLAIM_CANDIDATE = re.compile(r"\A\*\*[^*]*\brelease\b", re.IGNORECASE)
 # A version that can be spelled inside the release URL. The publish workflow has
 # already normalized the tag with `packaging`; this only keeps a malformed or
 # empty version from being compared as if it were one.
@@ -49,12 +70,72 @@ class ReadmeReleaseError(Exception):
 
 
 def _status_lines(readme_text: str) -> list[str]:
-    """Return every line that presents itself as the primary status line."""
+    """Return every line that presents itself as the primary release link."""
     return [line.strip() for line in readme_text.splitlines() if STATUS_CANDIDATE.match(line.strip())]
 
 
+def _status_section(readme_text: str) -> list[str]:
+    """Return the stripped body lines of the one `## Status` section."""
+    lines = readme_text.splitlines()
+    headings = [index for index, line in enumerate(lines) if STATUS_HEADING.match(line.strip())]
+    if not headings:
+        raise ReadmeReleaseError(
+            f"no '{STATUS_SECTION}' section in the README; its opening paragraph must "
+            "claim the release being published"
+        )
+    if len(headings) != 1:
+        raise ReadmeReleaseError(
+            f"expected one '{STATUS_SECTION}' section in the README, found "
+            f"{len(headings)}; the displayed release claim is ambiguous"
+        )
+    start = headings[0] + 1
+    for index in range(start, len(lines)):
+        if SECTION_HEADING.match(lines[index].strip()):
+            return [line.strip() for line in lines[start:index]]
+    return [line.strip() for line in lines[start:]]
+
+
+def _verify_status_claim(readme_text: str, expected_version: str) -> None:
+    """Raise unless the `## Status` opening claim names `expected_version`."""
+    expected_claim = f"v{expected_version} release."
+    body = [line for line in _status_section(readme_text) if line]
+    if not body:
+        raise ReadmeReleaseError(
+            f"the '{STATUS_SECTION}' section is empty; its opening paragraph must claim "
+            f"the release being published, as '**{expected_claim}** ...'"
+        )
+    claims = [line for line in body if CLAIM_CANDIDATE.match(line)]
+    if not claims:
+        raise ReadmeReleaseError(
+            f"no release claim in the '{STATUS_SECTION}' section; it must open with "
+            f"'**{expected_claim}** ...'"
+        )
+    if len(claims) != 1:
+        raise ReadmeReleaseError(
+            f"expected one release claim in the '{STATUS_SECTION}' section, found "
+            f"{len(claims)}: {claims}"
+        )
+    if claims[0] != body[0]:
+        raise ReadmeReleaseError(
+            f"the release claim in the '{STATUS_SECTION}' section is not its opening "
+            f"paragraph: {claims[0]!r}; expected '**{expected_claim}** ...' first"
+        )
+    match = RELEASE_CLAIM.match(claims[0])
+    if match is None:
+        raise ReadmeReleaseError(
+            f"the '{STATUS_SECTION}' opening claim is not in the documented shape: "
+            f"{claims[0]!r}; expected '**{expected_claim}** ...'"
+        )
+    claimed = match.group("version")
+    if claimed != expected_version:
+        raise ReadmeReleaseError(
+            f"the '{STATUS_SECTION}' section still claims v{claimed}, not the release "
+            f"being published (v{expected_version})"
+        )
+
+
 def verify_readme_release(readme_text: str, version: str) -> None:
-    """Raise unless the README's primary status line and its target name `version`.
+    """Raise unless both README release claims name `version`.
 
     `version` is the release version; the tag form (`v0.1.6`) is accepted too.
     """
@@ -99,6 +180,10 @@ def verify_readme_release(readme_text: str, version: str) -> None:
             f"the README's '{STATUS_PREFIX}' line does not name the release being "
             f"published (v{expected_version}): " + "; ".join(stale)
         )
+    # The link is one claim; the section a reader scrolls to is another, and the
+    # published v0.1.5 long description got that one wrong while its link was
+    # right, so checking the link alone would not have stopped it.
+    _verify_status_claim(readme_text, expected_version)
 
 
 def check_readme_release(path: Path, version: str) -> None:
@@ -113,7 +198,7 @@ def check_readme_release(path: Path, version: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--readme", default=DEFAULT_README,
-                        help="README whose current-release line must name the release")
+                        help="README whose release claims must name the release")
     parser.add_argument("--version", default=os.environ.get("RELEASE_TAG", ""),
                         help="release version or tag, defaults to $RELEASE_TAG")
     args = parser.parse_args(argv)
