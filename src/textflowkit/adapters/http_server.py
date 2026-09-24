@@ -5,8 +5,10 @@ the door for software products and for the eventual website: it is deliberately
 job-based so a long video never blocks a request.
 
 Not started by default. Developer mode is unauthenticated and loopback-only by
-default. The opt-in JSON HTTP production profile requires Bearer authentication
-and a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
+default: each request must carry a loopback Host and, if present, a loopback
+Origin, and must arrive from a loopback peer unless TEXTFLOWKIT_ALLOW_REMOTE is
+set. The opt-in JSON HTTP production profile requires Bearer authentication and
+a trusted egress proxy for URL jobs; Streamable-HTTP MCP is separate.
 """
 
 from __future__ import annotations
@@ -20,7 +22,12 @@ import time
 from typing import Annotated, Any
 
 from textflowkit import __version__
-from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
+from textflowkit.core.bind import (
+    ENV_ALLOW_REMOTE,
+    UnsafeBindError,
+    check_bind_safety,
+    developer_request_refusal,
+)
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
@@ -81,6 +88,16 @@ _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
 async def production_guard(request: Request, call_next):
     try:
         if not production_enabled():
+            # Developer mode: loopback-only by Host, Origin, and peer address.
+            # This also covers an app started directly through an ASGI server,
+            # where main()'s bind check never runs.
+            refusal = developer_request_refusal(
+                host=request.headers.get("host"),
+                origin=request.headers.get("origin"),
+                peer=request.client.host if request.client else None,
+            )
+            if refusal is not None:
+                return JSONResponse({"error": refusal}, status_code=403)
             return await call_next(request)
         validate_production_config()
     except ServiceConfigurationError as exc:

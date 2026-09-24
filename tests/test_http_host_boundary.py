@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from textflowkit.adapters import http_server
 from textflowkit.core.bind import ENV_ALLOW_REMOTE
+from textflowkit.core.executor import reset_default_executor
 from textflowkit.core.jobs import reset_default_store
 
 LOOPBACK_BASE = "http://127.0.0.1"
@@ -28,13 +29,16 @@ FOREIGN_PEER = ("203.0.113.9", 4444)  # TEST-NET-3; documentation range, not rou
 
 @pytest.fixture(autouse=True)
 def developer_mode(monkeypatch):
-    """Plain developer mode: no profile, no remote opt-in, no token."""
+    """Plain developer mode: no profile, no remote opt-in, no token.
+
+    Deliberately does not reset the job store or executor: no test here touches
+    either (every request is refused before the route, or goes to /sources or
+    /health), and resetting the default store would re-bind the cached executor
+    to a stale store for later tests.
+    """
     monkeypatch.delenv("TEXTFLOWKIT_PROFILE", raising=False)
     monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
     monkeypatch.delenv("TEXTFLOWKIT_API_TOKEN", raising=False)
-    reset_default_store()
-    yield
-    reset_default_store()
 
 
 def client(**kwargs) -> TestClient:
@@ -179,6 +183,11 @@ def test_remote_optin_allows_gateway_host_header(monkeypatch):
 # --- production profile keeps its own (Bearer) policy --------------------
 
 def test_production_profile_uses_bearer_not_host_allowlist(monkeypatch, tmp_path):
+    # Production validates that the cached store and executor point at
+    # TEXTFLOWKIT_DB, so they must be re-bound here; without this the check runs
+    # against whatever store an earlier test cached.
+    reset_default_executor()
+    reset_default_store()
     monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "production")
     monkeypatch.setenv("TEXTFLOWKIT_API_TOKEN", "a-long-test-token-12345")
     monkeypatch.setenv("TEXTFLOWKIT_INPUT_ROOT", str(tmp_path / "input"))
@@ -187,7 +196,13 @@ def test_production_profile_uses_bearer_not_host_allowlist(monkeypatch, tmp_path
     monkeypatch.setenv("TEXTFLOWKIT_DB", str(tmp_path / "jobs.db"))
     (tmp_path / "input").mkdir()
     headers = {"Authorization": "Bearer a-long-test-token-12345"}
-    # A public Host behind a real domain is normal for production, with a token.
-    assert client().get("/health", headers={**headers, "Host": "api.example"}).status_code == 200
-    # Without the token it is still unauthorized, regardless of Host.
-    assert client().get("/health", headers={"Host": "127.0.0.1"}).status_code == 401
+    try:
+        # A public Host behind a real domain is normal for production, with a token.
+        assert client().get(
+            "/health", headers={**headers, "Host": "api.example"}
+        ).status_code == 200
+        # Without the token it is still unauthorized, regardless of Host.
+        assert client().get("/health", headers={"Host": "127.0.0.1"}).status_code == 401
+    finally:
+        reset_default_executor()
+        reset_default_store()

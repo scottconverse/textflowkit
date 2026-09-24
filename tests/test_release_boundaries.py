@@ -188,11 +188,11 @@ def test_http_and_mcp_resume_share_local_identity_validation(
     monkeypatch.setattr(http_server, "get_default_store", lambda: store)
     monkeypatch.setattr(mcp_server, "get_default_store", lambda: store)
     assert mcp_server.resume_job(job.id)["state"] == "done"
-    assert TestClient(http_server.app).post(f"/jobs/{job.id}/resume").status_code == 202
+    assert TestClient(http_server.app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/resume").status_code == 202
 
     _wav(media, seconds=2)
     assert "changed" in mcp_server.resume_job(job.id)["error"]
-    http = TestClient(http_server.app).post(f"/jobs/{job.id}/resume")
+    http = TestClient(http_server.app, base_url="http://127.0.0.1").post(f"/jobs/{job.id}/resume")
     assert http.status_code == 409
     assert "changed" in http.json()["detail"]
     assert engine.calls == 1

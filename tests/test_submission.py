@@ -153,7 +153,7 @@ def test_cli_mcp_http_submit_the_same_core_request(monkeypatch, capsys):
                      "--stdout", "--quiet"]) == 0
     capsys.readouterr()
     assert "job_id" in mcp_server.transcribe_media("media.wav", formats="json")
-    response = TestClient(http_server.app).post(
+    response = TestClient(http_server.app, base_url="http://127.0.0.1").post(
         "/jobs", json={"source": "media.wav", "formats": ["json"]},
     )
     assert response.status_code == 202
@@ -188,7 +188,7 @@ def test_mcp_http_batch_forward_identical_requests(monkeypatch):
     monkeypatch.setattr(mcp_server, "submit_batch", fake_batch)
     monkeypatch.setattr(http_server, "submit_batch", fake_batch)
     mcp_result = mcp_server.submit_batch_media(["one", "two"], formats="json", resume=True)
-    http_response = TestClient(http_server.app).post(
+    http_response = TestClient(http_server.app, base_url="http://127.0.0.1").post(
         "/jobs/batch", json={"jobs": [
             {"source": "one", "formats": ["json"]},
             {"source": "two", "formats": ["json"]},
@@ -214,5 +214,5 @@ def test_mcp_http_resume_forward_job_id(monkeypatch):
     monkeypatch.setattr(mcp_server, "core_resume_job", fake_resume)
     monkeypatch.setattr(http_server, "core_resume_job", fake_resume)
     assert "job_id" in mcp_server.resume_job("saved-id")
-    assert TestClient(http_server.app).post("/jobs/saved-id/resume").status_code == 202
+    assert TestClient(http_server.app, base_url="http://127.0.0.1").post("/jobs/saved-id/resume").status_code == 202
     assert seen == ["saved-id", "saved-id"]

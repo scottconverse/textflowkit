@@ -127,7 +127,8 @@ def test_production_inline_transcript_obeys_output_cap(production, monkeypatch):
 
 def test_developer_mode_needs_no_token(monkeypatch):
     monkeypatch.delenv("TEXTFLOWKIT_PROFILE", raising=False)
-    assert TestClient(http_server.app).get("/health").status_code == 200
+    client = TestClient(http_server.app, base_url="http://127.0.0.1")
+    assert client.get("/health").status_code == 200
 
 
 def test_misspelled_production_profile_fails_closed(monkeypatch):
