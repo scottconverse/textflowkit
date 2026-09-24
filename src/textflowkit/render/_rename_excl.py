@@ -27,13 +27,15 @@ Three things this module deliberately does not do:
   clobber.
 - **No retry on a collision.** `EEXIST` is the no-clobber verdict; it becomes
   `FileExistsError` and is left to the caller.
-- **No degradation when the flag is unsupported.** The capability is per
-  *volume*, not per OS version: `rename(2)` documents `EEXIST` "on file systems
-  that support it", and the volume bit behind that is `VOL_CAP_INT_RENAME_EXCL`
+- **No degradation when the flag is unsupported.** `rename(2)` documents the
+  `EEXIST` above as applying "on file systems that support it", and that
+  support is a per *volume* property - the bit is `VOL_CAP_INT_RENAME_EXCL`
   (`getattrlist(2)`, surfaced to Cocoa as
-  `URLResourceKey.volumeSupportsExclusiveRenaming`). A volume without it cannot
-  publish safely at all, so that answer is `ExclusiveRenameUnsupported` and the
-  export fails closed with nothing visible under the destination name.
+  `URLResourceKey.volumeSupportsExclusiveRenaming`) - so this wrapper treats any
+  non-`EEXIST` refusal as "this volume cannot publish safely" and raises
+  `ExclusiveRenameUnsupported`. What makes that fail-closed choice safe rather
+  than merely cautious is that the refusal cannot also be a silent replacement:
+  see the `EEXIST` note below.
 
 ABI facts, read from Apple's published headers rather than guessed:
 
@@ -41,13 +43,17 @@ ABI facts, read from Apple's published headers rather than guessed:
   `int renamex_np(const char *, const char *, unsigned int) __OSX_AVAILABLE(10.12)`.
 - `bsd/sys/vnode_if.h`: `VFS_RENAME_EXCL = 0x00000004` - the same value on the
   kernel side, which is why the flag can be spelled out at all.
-- `bsd/vfs/vfs_syscalls.c`: `renameatx_np` answers `EINVAL` for an unknown flag
-  bit or for `RENAME_EXCL | RENAME_SWAP`; the existing-destination `EEXIST`
-  above is raised by the shared `rename_internal`, not by each filesystem's own
-  rename, so it is not a per-filesystem courtesy. The one exception there is a
-  same-file rename differing only in case on a case-insensitive volume, which
-  proceeds; for this module the two paths are always different files, so
-  `EEXIST` can only ever mean "the destination is taken".
+- `bsd/vfs/vfs_syscalls.c`: the existing-destination `EEXIST` is not raised by
+  an individual filesystem's rename. It is raised by the *shared* rename path
+  in the VFS layer, before any filesystem is called: read it in the releases
+  for 10.12, 10.15, 12 and the current tree, and each has the same
+  `if (tvp && ISSET(flags, VFS_RENAME_EXCL)) { error = EEXIST; }` with only a
+  case-insensitive same-file rename exempted (10.12's form is the bare check;
+  12 and later add that exemption, which cannot apply here because the two
+  paths are always different files). So a filesystem that does not implement
+  the flag cannot turn `RENAME_EXCL` into a replacement - it meets the same
+  kernel check first. `renameatx_np` separately answers `EINVAL` for an unknown
+  flag bit or for `RENAME_EXCL | RENAME_SWAP`.
 """
 
 from __future__ import annotations

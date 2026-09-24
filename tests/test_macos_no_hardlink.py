@@ -16,7 +16,10 @@ file systems that support it", and the capability behind that is the volume bit
 of the OS version, and a volume without it must fail closed rather than degrade
 - plain POSIX `rename(2)` replaces silently, `open(dst, "xb")` exposes a partly
 written file under the destination name, and a check followed by `os.replace`
-loses to whoever creates the file between the two calls.
+loses to whoever creates the file between the two calls. The refusal cannot
+also be a silent replacement: in the XNU releases read for this unit the
+existing-destination `EEXIST` is raised by the shared VFS rename path before
+any filesystem is called (see `_rename_excl.py`).
 
 **What this file does not prove.** It was written on Windows, so the tests that
 reach the macOS branch set the module's platform flags and hand it a *double*
