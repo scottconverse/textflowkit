@@ -33,6 +33,13 @@ services:
       TEXTFLOWKIT_PROFILE: production
       # No default and no stored value: Compose refuses to start without this,
       # which matches the server's own fail-closed startup check.
+      #
+      # An environment variable here is an argument-free way to hand over the
+      # token, not a secret store: the value lands in the container's
+      # configuration, so `docker inspect` and `docker compose config` render it
+      # to anyone who can reach the daemon, and `/proc/<pid>/environ` exposes it
+      # inside the container. Restrict access to the daemon, this file, and `.env`
+      # (`.env.example` says the same).
       TEXTFLOWKIT_API_TOKEN: "${TEXTFLOWKIT_API_TOKEN:?set TEXTFLOWKIT_API_TOKEN in .env or the environment}"
       TEXTFLOWKIT_INPUT_ROOT: /srv/textflowkit/input
       TEXTFLOWKIT_OUTPUT_ROOT: /srv/textflowkit/output

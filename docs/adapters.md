@@ -269,6 +269,15 @@ The image carries ffmpeg and a JavaScript runtime, installs the package with the
 operator's environment (`${TEXTFLOWKIT_API_TOKEN:?...}`), and the server refuses
 to start without one; nothing in the repository carries a working token.
 
+That is one shared token in an environment variable, and it is **not**
+secret-store isolation. It stays out of the command line, so `ps` cannot show it,
+but Docker records the value in the container's configuration, where
+`docker inspect` and `docker compose config` render it to anyone who can reach
+the daemon, and `/proc/<pid>/environ` exposes it inside the container to anything
+running as the same user. `.env` is ignored by git, not encrypted. Restrict
+access to the daemon, the Compose file, and the env file, and treat a stronger
+secret store as a separate decision rather than something this example provides.
+
 Four things the example deliberately does not claim to solve:
 
 - **No TLS, no gateway, no independent rate or quota policy.** Put a trusted

@@ -100,9 +100,11 @@ USER 10001:10001
 
 # Liveness only, and it has to carry the Bearer token: the production middleware
 # covers /health like every other route. The token is read from the process
-# environment, never passed as an argument, so it does not appear in `ps` inside
-# the container. A missing token makes this probe fail rather than pass - the
-# same fail-closed direction as the server itself.
+# environment, never passed as an argument, so `ps` cannot show it. That is not
+# secrecy: Docker records an environment variable in the container's
+# configuration (`docker inspect`), and `/proc/<pid>/environ` exposes it inside
+# the container to anything running as the same user. A missing token makes this
+# probe fail rather than pass - the same fail-closed direction as the server.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD ["python", "-c", "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8767/health', headers={'Authorization': 'Bearer ' + os.environ['TEXTFLOWKIT_API_TOKEN']}); body = urllib.request.urlopen(request, timeout=3).read(); assert b'status' in body, body"]
 
