@@ -7,6 +7,114 @@ from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.timeutil import srt_timestamp, vtt_timestamp
 from textflowkit.render import SUPPORTED_FORMATS, render, render_bytes, write_all
 
+HOSTILE_TEXT = "line one\n\nline two with --> arrow & <tag>"
+
+
+def hostile() -> Transcript:
+    """A translation carrying every character that can escape a cue (A11)."""
+    return Transcript(
+        source="https://example.com/x",
+        language="en",
+        segments=[
+            Segment(0.0, 2.5, "source", speaker="A", translated_text=HOSTILE_TEXT),
+            Segment(2.5, 6.0, "second cue"),
+        ],
+    )
+
+
+def _srt_cues(out: str) -> list[tuple[str, str]]:
+    """Read SRT back the way a player does: blank-line-separated blocks."""
+    cues: list[tuple[str, str]] = []
+    for block in out.strip().split("\n\n"):
+        lines = block.split("\n")
+        assert len(lines) >= 2, f"block without a timing line: {block!r}"
+        cues.append((lines[1], "\n".join(lines[2:])))
+    return cues
+
+
+def _vtt_cues(out: str) -> list[tuple[str, str]]:
+    """Read VTT back the way a player does: header, then blank-line blocks."""
+    blocks = out.split("\n\n")
+    assert blocks[0] == "WEBVTT"
+    cues: list[tuple[str, str]] = []
+    for block in blocks[1:]:
+        block = block.strip("\n")
+        if not block:
+            continue
+        lines = block.split("\n")
+        assert len(lines) >= 2, f"block without a timing line: {block!r}"
+        cues.append((lines[0], "\n".join(lines[1:])))
+    return cues
+
+
+def test_srt_keeps_hostile_payload_inside_one_cue():
+    """A11: an interior blank line or "-->"/"&"/"<" must not break the cue."""
+    out = render(hostile(), "srt")
+    cues = _srt_cues(out)
+    assert len(cues) == 2
+    assert cues[0][0] == "00:00:00,000 --> 00:00:02,500"
+    assert cues[1][0] == "00:00:02,500 --> 00:00:06,000"
+    # The only arrows left are the two timing lines' own.
+    assert out.count("-->") == 2
+    assert cues[0][1] == "A: line one\nline two with -> arrow & <tag>"
+    assert cues[1][1] == "second cue"
+
+
+def test_srt_arrow_run_does_not_survive_as_an_arrow():
+    """A longer run such as "---->" must not keep the arrow in the payload."""
+    tr = Transcript(
+        source="x",
+        segments=[Segment(0.0, 2.5, "a ---> b -----> c")],
+    )
+    out = render(tr, "srt")
+    assert out.count("-->") == 1
+    assert _srt_cues(out) == [("00:00:00,000 --> 00:00:02,500", "a -> b -> c")]
+
+
+def test_vtt_escapes_hostile_payload_and_keeps_both_cues():
+    """A11: WebVTT cue text is parsed, so reserved characters get references."""
+    out = render(hostile(), "vtt")
+    cues = _vtt_cues(out)
+    assert len(cues) == 2
+    assert cues[0][0] == "00:00:00.000 --> 00:00:02.500"
+    assert cues[1][0] == "00:00:02.500 --> 00:00:06.000"
+    assert out.count("-->") == 2
+    assert cues[0][1] == "<v A>line one\nline two with --&gt; arrow &amp; &lt;tag&gt;"
+    assert cues[1][1] == "second cue"
+
+
+def test_vtt_timing_arrow_and_voice_markup_survive_escaping():
+    """The fix must not escape the format's own arrow or <v ...> span."""
+    out = render(hostile(), "vtt")
+    assert "00:00:00.000 --> 00:00:02.500" in out
+    assert "<v A>" in out
+
+
+def test_vtt_speaker_annotation_cannot_close_the_tag_early():
+    """A speaker label comes from the model, so it is sanitized too."""
+    tr = Transcript(source="x", segments=[Segment(0.0, 2.5, "hi", speaker="A>B")])
+    out = render(tr, "vtt")
+    assert "<v A&gt;B>hi" in out
+    assert _vtt_cues(out)[0][1] == "<v A&gt;B>hi"
+
+
+def test_vtt_speaker_label_cannot_span_lines():
+    tr = Transcript(source="x", segments=[Segment(0.0, 2.5, "hi", speaker="A\nB")])
+    assert _vtt_cues(render(tr, "vtt"))[0][1] == "<v A B>hi"
+
+
+def test_vtt_blank_speaker_label_emits_no_voice_span():
+    """A whitespace-only label would make "<v >", an annotation-less tag."""
+    tr = Transcript(source="x", segments=[Segment(0.0, 2.5, "hi", speaker="   ")])
+    assert _vtt_cues(render(tr, "vtt"))[0][1] == "hi"
+
+
+def test_srt_speaker_label_cannot_split_the_cue():
+    tr = Transcript(source="x", segments=[Segment(0.0, 2.5, "hi", speaker="A\n\nB")])
+    cues = _srt_cues(render(tr, "srt"))
+    assert len(cues) == 1
+    assert cues[0][1] == "A\nB: hi"
+
 
 def test_srt_timestamp_format():
     assert srt_timestamp(0) == "00:00:00,000"
