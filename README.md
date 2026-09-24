@@ -257,6 +257,9 @@ web frontend share the job contract without blocking a request.
 coverage. The release added a speech-bearing self-test, full-media duration,
 retained word timings, optional PDF fonts, and tokenless PyPI publishing.
 Windows-native ROCm and a local Windows YouTube run on the release commit were verified.
+That run's receipt records the clip, timestamps, and hashes; the checklist's
+recognized-speech assertion was added after it, so treat it as shape evidence for
+that commit rather than proof of what was said.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
 live transcription is not verified.
 This does not imply that all 13 platforms or every harness workflow has been

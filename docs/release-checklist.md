@@ -27,17 +27,40 @@ neither result verifies the other 12 recognized sites.
 
    The script runs the candidate checkout's source through the real CLI, URL
    acquisition, ffmpeg, Whisper, and JSON rendering. It requires
-   `platform=youtube` and at least one nonempty
-   timestamped segment. The receipt records UTC time, candidate Git commit,
-   Windows/Python runtime, URL, model/device, segment count, and transcript
-   SHA-256. Its default timeout is 300 seconds; `--url`, `--model`, `--device`,
-   and `--timeout` may be overridden deliberately and are reflected in the
-   receipt. No success receipt is written on failure.
+   `platform=youtube`, at least one nonempty
+   timestamped segment, **and recognizable spoken content**. By default it
+   requires the whole word `elephants`, which the documented default clip is
+   observed to say in its first segment with `--model tiny`. Pointing `--url`
+   at any other clip requires
+   `--expect-text "<a word or short phrase you expect to hear>"`: the run is
+   refused, before it touches Git, the network, or a model, because a word from
+   the default clip proves nothing about a different one. The expected text is
+   matched against the concatenated segment text as whole words; case,
+   punctuation, and segment boundaries are ignored, but word boundaries are
+   not, so `elephant` does not match `elephants` and neither matches
+   `elephantiasis`. This asserts that this one URL yielded speech a human
+   recognizes — it is not a transcript-accuracy certification, and it is not
+   evidence about the other 12 recognized sites. The receipt records UTC time,
+   candidate Git commit, Windows/Python runtime, URL, model/device, the
+   expected text and whether it came from the default clip or the caller, the
+   assertion's scope and result, segment count, and transcript SHA-256. It does
+   **not** record the transcript. Its default timeout is 300 seconds; `--url`,
+   `--model`, `--device`, `--expect-text`, and `--timeout` may be overridden
+   deliberately and are reflected in the receipt. No success receipt is written
+   on failure, including a content mismatch.
 4. Keep the receipt with the release evidence, not in the public repository.
    If YouTube blocks access, the video changes, or transcription drifts, record
    the failure and investigate. Do **not** replace a failed live run with a
    green mocked URL test, an old receipt, or the blocked GitHub-hosted attempt.
-   A new public fixture URL requires review and an updated script/checklist.
+   A new public fixture URL requires review and an updated script/checklist —
+   in particular a new default URL needs a new observed default word, since
+   `elephants` belongs to the current one.
+   Receipts written before the content assertion existed — the v0.1.5 receipt
+   among them — record platform, timestamps, and hashes only: a nonempty timed
+   segment was accepted then. Read one as shape evidence for that commit, never
+   as evidence of recognized speech, and do not carry it forward as a
+   content-verified receipt for a later release. Only receipts that contain
+   `content_assertion` make the content claim.
 5. After merging, re-run the local check on the **merged, clean `main` commit**;
    a pre-merge branch receipt does not identify the release commit. Only if the
    current live receipt, deterministic merged-main matrix, and release asset
