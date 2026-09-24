@@ -123,8 +123,13 @@ def _copies_in_sqlite(path: Path, job_id: str) -> int:
     return sum(1 for column in _raw_columns(path, job_id) if column and MARKER in column)
 
 
-def _metadata_only(checkpoint: dict | None) -> bool:
-    return isinstance(checkpoint, dict) and checkpoint.get("transcript") is None
+def _copies_in_memory(job) -> int:
+    """How many of the two in-memory fields carry the transcript body."""
+    return sum(
+        1
+        for value in (job.transcript, job.checkpoint)
+        if value is not None and MARKER in json.dumps(value)
+    )
 
 
 # --- the storage shape ------------------------------------------------------
@@ -393,3 +398,70 @@ def test_done_checkpoint_with_a_corrupt_transcript_fails_closed(tmp_path):
         submit_request(
             store, request, background=False, resume_job_id=job.id
         )
+
+
+def test_cli_completion_leaves_one_copy_on_a_pre_change_row(tmp_path, monkeypatch):
+    """The CLI finalises a job with a DONE write of its own.
+
+    A pre-change row is seeded in the old two-copy shape - what an existing
+    database holds - and driven through the real CLI resume path, which reuses
+    the stored transcript and re-renders a requested output. The row must end
+    holding its words once, and the engine must never be reached.
+    """
+    from textflowkit import cli as cli_mod
+
+    media = tmp_path / "clip.wav"
+    media.write_bytes(b"RIFF....WAVEfmt ")
+
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+    monkeypatch.setenv("TEXTFLOWKIT_INPUT_ROOT", str(tmp_path))
+    store = MemoryJobStore()
+    monkeypatch.setattr(cli_mod, "get_default_store", lambda: store)
+
+    transcript = Transcript(
+        source=str(media), language="en", segments=[Segment(0.0, 1.0, MARKER)]
+    )
+    request = SubmissionRequest(source=str(media), formats=["json"], model="tiny")
+    prior = store.create(str(media), request=request.to_dict())
+    store.update(
+        prior.id,
+        state=JobState.DONE,
+        transcript=transcript.to_dict(),
+        checkpoint={
+            "version": 2,
+            "source": str(media),
+            "model": "tiny",
+            "language": None,
+            "engine": "whisper",
+            "device": None,
+            "options": request.options(),
+            "finished_stages": ["source", "fetch", "extract", "transcribe", "render"],
+            "transcript": transcript.to_dict(),
+            "media_path": None,
+            "audio_path": None,
+            "local_identity": local_source_identity(str(media), input_root=tmp_path),
+        },
+    )
+    assert _copies_in_memory(store.get(prior.id)) == 2
+
+    def explode(*a, **k):
+        raise AssertionError("the CLI transcribed instead of reusing the checkpoint")
+
+    monkeypatch.setattr(pipeline, "get_engine", explode)
+
+    rc = cli_mod.main([
+        "transcribe", str(media),
+        "--model", "tiny",
+        "--formats", "json",
+        "--output-dir", str(tmp_path),
+        "--resume",
+        "--quiet",
+    ])
+
+    assert rc == 0
+    done = store.get(prior.id)
+    assert done.state is JobState.DONE
+    assert done.id == prior.id, "the CLI must reuse the completed job"
+    assert MARKER in json.dumps(done.transcript)
+    assert _copies_in_memory(done) == 1
+    assert (tmp_path / f"clip-{prior.id}.json").is_file()
