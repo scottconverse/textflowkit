@@ -55,8 +55,9 @@ services:
       - "textflowkit-output:/srv/textflowkit/output"
       - "textflowkit-work:/srv/textflowkit/work"
       - "textflowkit-state:/srv/textflowkit/state"
-      # whisper downloads its model once into the runtime user's cache; without
-      # this volume a recreated container downloads it again.
+      # openai-whisper downloads each model into `~/.cache/whisper` (its own
+      # default download root), so without this volume a recreated container
+      # downloads the model again.
       - "textflowkit-cache:/home/textflowkit/.cache"
     healthcheck:
       test:

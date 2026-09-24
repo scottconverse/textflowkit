@@ -34,20 +34,21 @@ FROM python:3.12-slim-bookworm
 # ffmpeg is required in every profile: decode, and the ffprobe duration bound the
 # production profile enforces before a full decode.
 # ca-certificates is the trust store URL acquisition needs.
-# libstdc++6 is what the Node binary copied below links against, and a slim base
-# is not obliged to carry it; the version gate below would fail the build if the
-# binary could not run at all.
+# libstdc++6 is installed unconditionally so the Node binary copied below has a
+# C++ runtime to link against whatever the slim base happens to carry; the gate
+# below would fail the build if that binary could not run at all.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates ffmpeg libstdc++6; \
     rm -rf /var/lib/apt/lists/*
 
 # The JavaScript runtime yt-dlp uses to solve some YouTube player challenges.
-# It comes from the official Node image rather than from the base distribution:
-# the installed yt-dlp requires Node >= 22 (yt_dlp/utils/_jsruntime.py,
-# `NodeJsRuntime.MIN_SUPPORTED_VERSION`), which is newer than the Node a Debian
-# base release carries, and a distro package that silently misses the floor is
-# exactly the failure the gate below exists to catch.
+# It comes from the official Node image rather than from the base distribution,
+# because the installed yt-dlp requires Node >= 22 (yt_dlp/utils/_jsruntime.py,
+# `NodeJsRuntime.MIN_SUPPORTED_VERSION`) and the version the base distribution
+# carries was not measured here. Taking the runtime from a tag that names the
+# major version does not by itself prove the floor either, which is why the gate
+# below runs the binary and fails the build rather than trusting a tag name.
 COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 
 # yt-dlp's Node floor, taken from the installed package and re-checked against it
