@@ -127,6 +127,11 @@ word timing; older transcript JSON without `words` remains readable. Pass
 [the install guide](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)
 for ffmpeg and Windows ROCm setup.
 
+MCP and HTTP transcript reads omit word timings by default to keep responses
+small; set `include_words=true` on a JSON read to receive them. Saved files,
+Python results, and durable job records still retain the source-language words,
+including when segment text has been translated.
+
 **AMD ROCm on native Windows:** do not use the generic command in an environment
 with a working ROCm PyTorch install. Ordinary dependency resolution can replace
 that torch build. Follow the [ROCm install notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)

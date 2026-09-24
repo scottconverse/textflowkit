@@ -283,11 +283,14 @@ def get_transcript(
     limit: int | None = None,
     start: float | None = None,
     end: float | None = None,
+    include_words: bool = False,
 ):
     """Transcript for a completed job, optionally a slice.
 
     `offset`/`limit` page through segments; `start`/`end` select a time range in
-    seconds. The JSON form reports total_segments and has_more.
+    seconds. The JSON form reports total_segments and has_more. Word timings
+    are omitted unless include_words is true; translated segments retain
+    source-language word timings.
     """
     job, tr = _finished_transcript(job_id)
     if production_enabled():
@@ -325,7 +328,7 @@ def get_transcript(
         response = {
             "job_id": job.id,
             **page.as_dict(),
-            "transcript": sliced.to_dict(),
+            "transcript": sliced.to_dict(include_words=include_words),
         }
         try:
             enforce_output_limit(len(json.dumps(response, ensure_ascii=False).encode("utf-8")))
@@ -460,6 +463,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
 

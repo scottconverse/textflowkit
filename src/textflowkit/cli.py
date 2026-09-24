@@ -425,6 +425,9 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
             speech = [s for s in transcript.segments if s.text.strip() and s.end > s.start]
             if not speech:
                 raise ValueError("model returned no nonempty timed speech segments")
+            recognized = " ".join(s.text for s in speech).lower().split()
+            if "transcribe" not in {word.strip(".,!?;:\"'()") for word in recognized}:
+                raise ValueError("model did not recognize 'transcribe' in the bundled speech")
             ok("whisper produced timed speech", f"model={args.model} device={transcript.metadata.get('device')} segments={len(speech)}")
     except Exception as exc:  # noqa: BLE001 - diagnostic
         bad("whisper produced timed speech", f"{type(exc).__name__}: {exc}")

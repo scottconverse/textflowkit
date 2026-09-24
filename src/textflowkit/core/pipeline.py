@@ -39,7 +39,7 @@ from textflowkit.core.translate import (
     get_translator,
     translate_segments,
 )
-from textflowkit.render import SUPPORTED_FORMATS, write_all
+from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements, write_all
 from textflowkit.sources.acquire import (
     AcquisitionError,
     extract_audio,
@@ -203,6 +203,8 @@ def transcribe(
             raise PipelineError(
                 f"unsupported format '{fmt}'; choose from {', '.join(SUPPORTED_FORMATS)}"
             )
+    if output_dir is not None:
+        validate_export_requirements(formats)
 
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured

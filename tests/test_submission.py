@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from textflowkit.core.checkpoint import CheckpointRecord
 from textflowkit.core.executor import JobExecutor
 from textflowkit.core.jobs import JobState, MemoryJobStore
@@ -39,6 +41,30 @@ def test_submission_saves_the_same_request_it_runs(monkeypatch):
     assert seen["model"] == "tiny"
     assert seen["formats"] == ["json"]
     assert seen["output_id"] == job.id
+
+
+@pytest.mark.parametrize("fmt", ["pdf", "docx"])
+def test_missing_export_extra_is_rejected_before_job_creation(monkeypatch, fmt, tmp_path):
+    from textflowkit.core import submission
+
+    def unavailable(formats):
+        raise ValueError(f"missing {formats[0]} dependency")
+
+    monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
+    store = MemoryJobStore()
+    with pytest.raises(ValueError, match="missing"):
+        request = SubmissionRequest(source="media.wav", formats=[fmt], output_dir=str(tmp_path))
+        submit_request(store, request, background=False)
+    assert store.list() == []
+
+
+def test_export_preflight_does_not_block_transcript_only_request(monkeypatch):
+    from textflowkit.core import submission
+
+    monkeypatch.setattr(submission, "validate_export_requirements", lambda formats: (_ for _ in ()).throw(
+        AssertionError("no file export requested")))
+    request = SubmissionRequest(source="media.wav", formats=["pdf"], output_dir=None)
+    assert request.formats == ["pdf"]
 
 
 def test_resume_after_sqlite_restart_reuses_transcript(monkeypatch, tmp_path):

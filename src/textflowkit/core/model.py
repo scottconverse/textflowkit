@@ -44,8 +44,17 @@ class Segment:
         """Text to render: translated if present, else source."""
         return self.translated_text or self.text
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_dict(self, *, include_words: bool = True) -> dict[str, Any]:
+        if include_words:
+            return asdict(self)
+        return {
+            "start": self.start,
+            "end": self.end,
+            "text": self.text,
+            "speaker": self.speaker,
+            "translated_text": self.translated_text,
+            "hidden": self.hidden,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Segment:
@@ -76,7 +85,7 @@ class Transcript:
     def text(self) -> str:
         return "\n".join(s.display_text().strip() for s in self.segments if not s.hidden)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, include_words: bool = True) -> dict[str, Any]:
         return {
             "source": self.source,
             "language": self.language,
@@ -84,7 +93,7 @@ class Transcript:
             "duration": self.duration,
             "engine": self.engine,
             "metadata": self.metadata,
-            "segments": [s.to_dict() for s in self.segments],
+            "segments": [s.to_dict(include_words=include_words) for s in self.segments],
         }
 
     @classmethod
@@ -99,8 +108,8 @@ class Transcript:
             segments=[Segment.from_dict(s) for s in data.get("segments", [])],
         )
 
-    def to_json(self, *, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
+    def to_json(self, *, indent: int = 2, include_words: bool = True) -> str:
+        return json.dumps(self.to_dict(include_words=include_words), ensure_ascii=False, indent=indent)
 
     @classmethod
     def from_json(cls, raw: str) -> Transcript:

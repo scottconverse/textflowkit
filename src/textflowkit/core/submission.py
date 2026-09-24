@@ -20,7 +20,7 @@ from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.paths import default_input_root
 from textflowkit.core.runner import run_job
-from textflowkit.render import SUPPORTED_FORMATS
+from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements
 
 
 @dataclass(slots=True)
@@ -55,6 +55,8 @@ class SubmissionRequest:
             raise ValueError(f"unsupported format(s): {', '.join(bad)}")
         if len(self.formats) != len(set(self.formats)):
             raise ValueError("duplicate output format")
+        if self.output_dir is not None:
+            validate_export_requirements(self.formats)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
