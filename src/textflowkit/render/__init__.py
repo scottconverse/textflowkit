@@ -69,12 +69,36 @@ def _render_requested(
     return rendered
 
 
-def atomic_write_bytes(path: Path, data: bytes, *, replace: bool = False) -> None:
-    """Publish a complete file; optionally replace an explicitly chosen path."""
+def _holds_exactly(path: Path, data: bytes) -> bool:
+    """Whether `path` is a file whose bytes are exactly `data`."""
+    try:
+        if path.stat().st_size != len(data):
+            return False
+        with path.open("rb") as handle:
+            return handle.read() == data
+    except OSError:
+        return False
+
+
+def atomic_write_bytes(
+    path: Path, data: bytes, *, replace: bool = False, reuse_identical: bool = False
+) -> None:
+    """Publish a complete file; optionally replace an explicitly chosen path.
+
+    `reuse_identical` is the same-job resume case: a file an earlier attempt of
+    this job already published is byte-for-byte what this call would write, so
+    leaving it in place finishes the publication instead of failing on it.
+    Nothing is clobbered to make that work - only a file whose bytes are exactly
+    the ones being written is adopted. A differing file still fails closed
+    through the no-clobber link below, and the default (`False`) keeps a fresh
+    attempt from taking over an existing file even when its bytes match.
+    """
     from textflowkit.core.paths import verify_output_file_target
 
     enforce_output_limit(len(data))
     verify_output_file_target(path)
+    if reuse_identical and _holds_exactly(path, data):
+        return
     temp: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
@@ -174,8 +198,15 @@ def write_all(
     output_dir: str | Path,
     stem: str,
     title: str | None = None,
+    reuse_published: bool = False,
 ) -> list[Path]:
-    """Write each requested format to `output_dir`."""
+    """Write each requested format to `output_dir`.
+
+    `reuse_published` is set only by a resume of the job that owns `stem`, whose
+    earlier attempt named its files with that same stem. It finishes a partial
+    publication by adopting a format whose bytes match the new rendering, and
+    leaves every other collision to the strict no-clobber rule.
+    """
     from textflowkit.core.paths import ensure_output_dir
 
     out_dir = ensure_output_dir(str(output_dir))
@@ -183,7 +214,7 @@ def write_all(
     written: list[Path] = []
     for norm, data in rendered:
         path = out_dir / f"{stem}.{norm}"
-        atomic_write_bytes(path, data)
+        atomic_write_bytes(path, data, reuse_identical=reuse_published)
         written.append(path)
     return written
 

@@ -367,7 +367,20 @@ def transcribe(
             stem = Path(ref.location).stem if ref.kind != "url" else "transcript"
             stem = stem.replace("textflowkit-", "") or "transcript"
             stem = f"{stem}-{output_id or uuid.uuid4().hex[:16]}"
-            outputs = write_all(transcript, formats=formats, output_dir=output_dir, stem=stem)
+            # A resume of the same job keeps the job id, so this stem names the
+            # files that job published before it failed. Only then may an
+            # existing artifact be adopted - and only when its bytes are exactly
+            # what this run renders. A fresh run has no checkpoint and keeps the
+            # strict no-clobber rule. The pairing of `resume_checkpoint` with
+            # this `output_id` is set by the single submission path, which always
+            # resumes a job with that job's own checkpoint.
+            outputs = write_all(
+                transcript,
+                formats=formats,
+                output_dir=output_dir,
+                stem=stem,
+                reuse_published=resumed is not None and output_id is not None,
+            )
         _checkpoint("render")
 
         assert transcript is not None
