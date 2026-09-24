@@ -42,6 +42,13 @@ SUPPORTED_FORMATS = TEXT_FORMATS + BINARY_FORMATS
 # there and `_ordinary_file_mode` is a no-op.
 _HAS_UMASK = os.name == "posix"
 
+# Whether `os.rename` refuses an existing destination, which is what makes it a
+# usable second no-replace publication primitive. Windows: yes - it raises
+# `FileExistsError` (WinError 183, measured on the unit's host) and moves within
+# one volume atomically. POSIX: no - `os.rename` silently overwrites, so a link
+# failure there stays fail-closed rather than degrading to a rename.
+_RENAME_REFUSES_EXISTING = os.name == "nt"
+
 
 def validate_export_requirements(formats: list[str]) -> None:
     """Fail before acquisition or inference when a requested export is unavailable."""
@@ -148,6 +155,12 @@ def atomic_write_bytes(
     0600 `tempfile` gave it. The staged bytes stay 0600 until they are fully
     written and fsynced, and nothing becomes visible under the destination name
     until the link or replace below.
+
+    Publication is no-clobber whenever `replace` is false: a hard link normally,
+    and on Windows a rename after a link failure, since a filesystem without
+    hard links (FAT32, exFAT, some network shares) still has a rename that
+    refuses an existing destination. Neither path writes bytes to the
+    destination name directly, so a partial file is never visible there.
     """
     from textflowkit.core.paths import verify_output_file_target
 
@@ -180,7 +193,26 @@ def atomic_write_bytes(
             os.replace(temp, path)
             temp = None
         else:
-            os.link(temp, path)
+            try:
+                os.link(temp, path)
+            except OSError as exc:
+                # Some filesystems have no hard links at all - FAT32 and exFAT
+                # (most USB drives and SD cards) and some network shares - so
+                # the link above cannot publish there. Windows offers an
+                # equivalent primitive: `os.rename` refuses an existing
+                # destination with FileExistsError and moves within one volume
+                # atomically. The staging file is created in `path.parent`, so
+                # the move stays on that volume, and nothing under the
+                # destination name is ever clobbered. A collision is the
+                # no-clobber verdict rather than a capability gap, so it is
+                # raised instead of retried. POSIX rename overwrites and is
+                # deliberately not used: there the link failure stays
+                # fail-closed. The exception is swallowed only where a rename
+                # replaces the outcome; any other platform keeps its error.
+                if not _RENAME_REFUSES_EXISTING or isinstance(exc, FileExistsError):
+                    raise
+                os.rename(temp, path)
+                temp = None
     finally:
         if temp is not None:
             temp.unlink(missing_ok=True)
