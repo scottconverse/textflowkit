@@ -3,9 +3,10 @@
 Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.**
 
 [Project landing page](https://www.textflowkit.org/) ·
+[PyPI package](https://pypi.org/project/textflowkit/) ·
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases)
 
-The [static site deployment](docs/site-deployment.md) is hosted on Cloudflare
+The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
 transcription engine.
 
@@ -19,12 +20,12 @@ products, AI harnesses, and agents.
 >
 > **This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND**, express or
 > implied, including but not limited to the warranties of MERCHANTABILITY, FITNESS
-> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](LICENSE) (Apache-2.0,
+> FOR A PARTICULAR PURPOSE, and NONINFRINGEMENT. See [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE) (Apache-2.0,
 > §7–8) for the full disclaimer and limitation of liability.
 >
 > **You are responsible for what you transcribe.** textflowkit can fetch media from
 > third-party platforms. Copyright, terms-of-service, and privacy obligations for any
-> media you choose to process are **yours alone**. See [LEGAL.md](LEGAL.md).
+> media you choose to process are **yours alone**. See [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md).
 
 ---
 
@@ -68,39 +69,37 @@ YouTube · TikTok · Facebook · Instagram · Vimeo · Twitch · Bilibili · Rum
 Kick · Zoom · Medal · Loom · Dropbox — plus **direct media URLs and local files**.
 
 All 13 are recognised through `yt-dlp`; only YouTube has an opt-in, maintained
-[live end-to-end smoke](docs/release-checklist.md). It is run on a Windows
+[live end-to-end smoke](https://github.com/scottconverse/textflowkit/blob/main/docs/release-checklist.md). It is run on a Windows
 maintainer machine before a release, not on GitHub-hosted runners or every pull
 request. Local files have also been transcribed live. The other
 12 are not release-verified end to end, and some sources require cookies or
-change their access rules frequently. See [docs/sources.md](docs/sources.md).
+change their access rules frequently. See [docs/sources.md](https://github.com/scottconverse/textflowkit/blob/main/docs/sources.md).
 
 ## Install
 
 Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
 
 ```bash
-git clone https://github.com/scottconverse/textflowkit
-cd textflowkit
-pip install -e .
+python -m pip install textflowkit
+textflowkit doctor
 ```
 
-Or install the built wheel from the release page:
+For MCP or the JSON HTTP adapter, install the matching extra:
 
 ```bash
-pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.3/textflowkit-0.1.3-py3-none-any.whl
+python -m pip install 'textflowkit[mcp]'    # MCP server
+python -m pip install 'textflowkit[http]'   # JSON HTTP API
 ```
 
-Not published to PyPI; the repository and its releases are the distribution path.
-The release page lists each artifact's SHA-256. (Those values are deliberately
-kept out of this file: the README is bundled into the wheel as its description,
-so a hash written here would change the artifact it describes.)
-Optional extras:
+**AMD ROCm on native Windows:** do not use the generic command in an environment
+with a working ROCm PyTorch install. Ordinary dependency resolution can replace
+that torch build. Follow the [ROCm install notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)
+to preserve it.
 
-```bash
-pip install -e ".[mcp]"    # MCP server adapter
-pip install -e ".[http]"   # HTTP API adapter
-pip install -e ".[dev]"    # tests + linter
-```
+The same version's wheel and source archive are also on the
+[GitHub release page](https://github.com/scottconverse/textflowkit/releases/latest).
+The release lists their SHA-256 hashes. For editable source development, see
+[CONTRIBUTING.md](https://github.com/scottconverse/textflowkit/blob/main/CONTRIBUTING.md).
 
 ## Usage
 
@@ -143,7 +142,7 @@ textflowkit export ./transcript.json --format vtt
 ## Use as an MCP server
 
 ```bash
-pip install -e ".[mcp]"
+python -m pip install 'textflowkit[mcp]'
 textflowkit-mcp                                  # stdio
 textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
@@ -170,12 +169,12 @@ These checks are not end-to-end transcription runs driven by each harness:
 There is also a protocol test that launches the server as a real subprocess and
 speaks newline-delimited JSON-RPC over stdio, so the entry point, framing, and
 version negotiation are covered on every CI run (`tests/test_stdio_protocol.py`).
-See [docs/adapters.md](docs/adapters.md) for per-harness configuration.
+See [docs/adapters.md](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md) for per-harness configuration.
 
 ## Use as an HTTP API
 
 ```bash
-pip install -e ".[http]"
+python -m pip install 'textflowkit[http]'
 textflowkit-http --port 8767
 ```
 
@@ -183,7 +182,7 @@ Submit a job, poll it, fetch the transcript. Developer mode is unauthenticated
 and defaults to localhost. The opt-in JSON HTTP production profile requires a
 Bearer token, explicit roots, durable SQLite jobs, and request/rate/media/output
 limits; URL input additionally requires an SSRF-filtering egress proxy. See
-[adapter deployment details](docs/adapters.md#developer-mode-and-production-profile).
+[adapter deployment details](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#developer-mode-and-production-profile).
 
 ## Durable, bounded, cancellable
 
@@ -193,7 +192,7 @@ TEXTFLOWKIT_MAX_CONCURRENCY=1        # default; Whisper saturates a GPU alone
 ```
 
 `cancel_job` stops a queued job immediately, or a running job at its next stage
-boundary. See [docs/adapters.md](docs/adapters.md).
+boundary. See [docs/adapters.md](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md).
 
 ## Long jobs never block
 
@@ -204,19 +203,19 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.3 release.** Core, CLI, MCP, and HTTP have automated
+**v0.1.4 release.** Core, CLI, MCP, and HTTP have automated
 coverage; Windows-native ROCm and a dated local Windows YouTube run were verified.
 The GitHub-hosted YouTube attempt was blocked by a bot challenge, so hosted
 live transcription is not verified.
 This does not imply that all 13 platforms or every harness workflow has been
-tested end to end. See [docs/roadmap.md](docs/roadmap.md).
+tested end to end. See [docs/roadmap.md](https://github.com/scottconverse/textflowkit/blob/main/docs/roadmap.md).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). Includes an explicit patent grant and a
+Apache-2.0 — see [LICENSE](https://github.com/scottconverse/textflowkit/blob/main/LICENSE). Includes an explicit patent grant and a
 limitation of liability.
 
 ## Contributing
 
-Issues and PRs welcome. Please read [LEGAL.md](LEGAL.md) before adding a source
+Issues and PRs welcome. Please read [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md) before adding a source
 adapter.

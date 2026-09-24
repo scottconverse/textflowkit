@@ -6,6 +6,11 @@
 - **ffmpeg** on `PATH` (ffprobe comes with it)
 - **yt-dlp** — installed as a dependency
 
+For a standard CPU or NVIDIA environment, install from
+[PyPI](https://pypi.org/project/textflowkit/) with
+`python -m pip install textflowkit`. For an existing AMD ROCm environment,
+follow the instructions below instead of allowing pip to replace your torch.
+
 ## AMD GPU support (ROCm) — no WSL required
 
 textflowkit runs natively on Windows. On AMD hardware, GPU acceleration comes from a
@@ -28,9 +33,10 @@ distribution for the target architecture.
 will happily replace a working ROCm torch with a stock PyPI CPU wheel, silently
 disabling GPU acceleration.
 
-Install the engine **without** letting it resolve torch:
+Install textflowkit and the engine **without** letting either resolve torch:
 
 ```bash
+pip install textflowkit --no-deps
 pip install openai-whisper yt-dlp --no-deps
 pip install tiktoken more-itertools tqdm numba
 ```
@@ -229,5 +235,4 @@ how many segments were labelled. If the backend or token is missing, the run
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
 CPU transcription is dramatically slower; prefer a smaller `--model`.
-
 
