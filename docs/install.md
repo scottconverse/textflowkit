@@ -261,3 +261,31 @@ how many segments were labelled. If the backend or token is missing, the run
 
 With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
 CPU transcription is dramatically slower; prefer a smaller `--model`.
+
+## Optional CPU/Mac engine: faster-whisper
+
+`openai-whisper` on CPU is slow, which hurts most on CPU-only machines and Apple
+Silicon. `faster-whisper` (CTranslate2) is an **opt-in** alternative engine:
+
+```bash
+python -m pip install 'textflowkit[faster-whisper]'
+textflowkit transcribe meeting.mp4 --engine faster-whisper
+```
+
+- It is an extra, never a base dependency, and **the default engine does not
+  change**: without `--engine` you still get `openai-whisper` on the
+  torch/ROCm/CUDA stack.
+- With no `--device`, or `--device cpu`, it runs CPU `int8`.
+- It is **not** the ROCm path. CTranslate2's GPU path is CUDA-only (a ROCm build
+  means compiling it yourself with `-DWITH_HIP=ON`), so on AMD Windows keep the
+  default engine. `--engine faster-whisper --device cuda` passes `cuda` straight
+  to upstream; on an AMD box that fails there, and that failure is the point -
+  the device is never silently rewritten into a CPU run.
+- CTranslate2 does not depend on torch, so this extra cannot replace a ROCm
+  torch build.
+- Its decoding defaults differ from `openai-whisper`, so the same audio can
+  produce different text. No speed or accuracy comparison is claimed here;
+  measure on your own machine.
+
+Selecting it without the extra installed fails with the install line above,
+before any media is fetched or model loaded.

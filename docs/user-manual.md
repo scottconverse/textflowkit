@@ -56,6 +56,13 @@ change their access rules. Of the 13 recognized platforms, only YouTube has a
 maintained live URL release check; the others are not independently verified
 on every release. See [sources and limitations](sources.md).
 
+`--engine` chooses the speech engine. The default is `whisper`
+(`openai-whisper` on the torch stack — ROCm on AMD, CUDA on NVIDIA, CPU
+otherwise) and is unchanged. `--engine faster-whisper` is an opt-in CPU/Mac
+engine; it needs `pip install 'textflowkit[faster-whisper]'`, is not a ROCm
+replacement, and fails with that install line before fetching anything if the
+extra is missing. See [install notes](install.md#optional-cpumac-engine-faster-whisper).
+
 Decoding runs under a wall-clock limit that applies in every mode, not only
 production: `transcribe`, `batch`, the MCP server, and the HTTP adapter all
 abort a decode that runs past it and report the setting to raise. The default

@@ -39,6 +39,13 @@ http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
 # no longer provides. See docs/install.md before installing - pyannote pulls
 # torch open-endedly, so pin your torch stack or you lose GPU acceleration.
 diarize = ["pyannote.audio>=4.0"]
+# Opt-in second engine for CPU and Apple Silicon (CTranslate2, int8 on CPU).
+# Deliberately not a base dependency and deliberately not part of `all`:
+# installing it must never be a surprise, and on AMD Windows its GPU path is
+# CUDA-only, so it is not the ROCm choice (see docs/install.md). CTranslate2
+# does not depend on torch, so this extra cannot disturb a ROCm torch build.
+# Version range reflects the published 1.x line.
+faster-whisper = ["faster-whisper>=1.0,<2"]
 export = ["python-docx>=1.1", "reportlab>=4.0", "textflowkit-fonts>=0.1.5,<0.2"]
 all = ["textflowkit[mcp,http,diarize,export]"]
 
