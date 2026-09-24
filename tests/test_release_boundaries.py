@@ -13,9 +13,27 @@ from pathlib import Path
 import pytest
 
 from textflowkit import cli
+from textflowkit.core.executor import reset_default_executor
+from textflowkit.core.jobs import reset_default_store
 from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.sqlite_store import SqliteJobStore
 from textflowkit.sources.acquire import require_tool
+
+
+@pytest.fixture(autouse=True)
+def _release_default_store():
+    """Do not leave a store built under this file's TEXTFLOWKIT_DB cached.
+
+    `cli_boundary` points TEXTFLOWKIT_DB at a temporary database but
+    monkeypatches only `cli.get_default_store`; the MCP and HTTP adapters call
+    the process-wide `get_default_store`/`get_default_executor` directly. A test
+    that touches them caches a SqliteJobStore bound to a directory pytest then
+    deletes, and every later test file inherits it. Reset both - the executor
+    holds its own reference to the store it was built with.
+    """
+    yield
+    reset_default_executor()
+    reset_default_store()
 
 
 def _wav(path: Path, seconds: int = 1) -> None:
