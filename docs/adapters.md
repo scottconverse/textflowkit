@@ -342,6 +342,8 @@ question being asked.
 
 Saved JSON, SQLite job records, and resume checkpoints retain word timings even
 when `include_words=false`; the option reduces response size, not storage size.
+In one short reviewer sample, transcript JSON grew from 508 to 1,641 bytes
+(roughly threefold); the multiplier varies with segment and word counts.
 If the transcript was translated, the optional word timings still refer to the
 **original spoken language**, not the translated segment text. The Python API
 also retains the original word timings.
