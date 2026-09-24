@@ -1,7 +1,25 @@
 """CLI parsing and dispatch for resume and batch."""
 from __future__ import annotations
 
+import pytest
+
 from textflowkit import cli as cli_mod
+from textflowkit.core.jobs import reset_default_store
+
+
+@pytest.fixture(autouse=True)
+def _cli_leaves_no_cached_store():
+    """Do not leave the store `cli.main` builds from TEXTFLOWKIT_DB cached.
+
+    `cli.main` calls the process-wide `get_default_store()` directly, so
+    `test_no_resume_warning_when_the_store_is_durable` caches a SqliteJobStore
+    bound to a `tmp_path` pytest then deletes. `monkeypatch` restores the
+    environment but not that cache, and `tests/test_adapters.py` asserts every
+    later test file sees a store matching its own environment. `cli.main` never
+    reaches `get_default_executor`, so the store alone is reset here.
+    """
+    yield
+    reset_default_store()
 
 
 def test_transcribe_resume_flag_parses():
