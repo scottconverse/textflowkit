@@ -15,7 +15,10 @@ prose and code rather than matching a frozen string.
 
 from __future__ import annotations
 
+import ast
 import re
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -57,14 +60,55 @@ UNINDENTED_ARGS_DESCRIPTION = (
 )
 
 
+# A line that starts an `Args:` entry: optional indent, a parameter name, the
+# colon. The indent is captured only to rank lines against each other.
+_ARG_LINE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<name>[A-Za-z_][A-Za-z0-9_]*):(?P<body>.*)$", re.MULTILINE
+)
+
+
+def _args_section(description: str) -> str | None:
+    """Everything after the `Args:` heading line, or None if there is none."""
+    header = re.search(r"(?m)^[ \t]*Args:[ \t]*$", description)
+    return None if header is None else description[header.end() :]
+
+
+def _entries(section: str) -> list[re.Match[str]]:
+    """The lines that start an `Args:` entry.
+
+    The least-indented named lines are the entries; anything indented deeper is
+    one of their wrapped continuation lines, so a colon-bearing sentence inside
+    another entry's body cannot pass for an argument name.
+    """
+    candidates = list(_ARG_LINE.finditer(section))
+    if not candidates:
+        return []
+    indent = min(len(m.group("indent")) for m in candidates)
+    return [m for m in candidates if len(m.group("indent")) == indent]
+
+
+def arg_names_in(description: str) -> list[str]:
+    """The argument names the description's `Args:` section declares."""
+    section = _args_section(description)
+    return [] if section is None else [m.group("name") for m in _entries(section)]
+
+
 def arg_help_in(description: str, arg: str, label: str = "description") -> str:
-    """The whitespace-normalized `Args:` entry for `arg` in `description`."""
-    _, separator, args_section = description.partition("Args:")
-    assert separator, f"{label} has no Args section"
-    for entry in re.split(r"\n(?=    \S+?:)", args_section):
-        name, _, body = entry.strip().partition(":")
-        if name == arg:
-            return " ".join(body.split())
+    """The whitespace-normalized `Args:` entry for `arg` in `description`.
+
+    Entries are located by argument name and line boundary, never by a fixed
+    indent: the width of that indent is an artifact of the interpreter that
+    compiled the docstring, not part of what the description says.
+    """
+    section = _args_section(description)
+    assert section is not None, f"{label} has no Args section"
+    entries = _entries(section)
+    for i, entry in enumerate(entries):
+        if entry.group("name") != arg:
+            continue
+        stop = entries[i + 1].start() if i + 1 < len(entries) else len(section)
+        body = section[entry.end("name") + 1 : stop]
+        return " ".join(body.split())
     raise AssertionError(f"{label} has no Args entry for {arg!r}")
 
 
@@ -103,6 +147,43 @@ def test_arg_help_ignores_a_colon_bearing_continuation_line():
     """`Available: ...` inside an entry's body is prose, not an argument name."""
     with pytest.raises(AssertionError):
         arg_help_in(PRE_313_TRANSCRIBE_DESCRIPTION, "Available")
+
+
+def test_every_tool_serves_the_same_args_help_to_a_pre_313_interpreter():
+    """The real product text, read the way a 3.10-3.12 harness would receive it.
+
+    3.13 strips the compiled docstring's source indentation; before that the
+    literal - which `ast` still holds - was what `fn.__doc__` gave the SDK. So
+    the source recovers the older description exactly, with no guessed indent,
+    and every tool's `Args:` help must survive the re-indentation unchanged.
+    """
+    from textflowkit.adapters import mcp_server
+
+    source = Path(mcp_server.__file__).read_text(encoding="utf-8")
+    served = {
+        node.name: node.body[0].value.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+        and node.name in TOOLS
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+
+    checked = [name for name in TOOLS if "Args:" in TOOLS[name].description]
+    missing = sorted(set(checked) - set(served))
+    assert not missing, f"no pre-3.13 docstring literal found for {missing}"
+    if sys.version_info >= (3, 13):
+        # 3.13 is where the compiler began stripping the source indent, so on
+        # this interpreter the two texts really are the two shapes. Older ones
+        # keep the literal, and here the check would compare a text with itself.
+        assert all(served[name] != TOOLS[name].description for name in checked)
+    for name in checked:
+        published = TOOLS[name].description
+        assert arg_names_in(served[name]) == arg_names_in(published)
+        for arg in arg_names_in(published):
+            assert arg_help_in(served[name], arg, label=name) == arg_help(name, arg)
 
 
 @pytest.mark.parametrize("tool", ["transcribe_media", "export_transcript"])
