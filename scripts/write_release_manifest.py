@@ -14,6 +14,16 @@ Rows are `<digest>  <basename>`, sorted by basename, with `\n` endings, so
 into. Only the basename is recorded: a path would be useless to the downloader
 and would leak the runner's scratch layout. Nothing is written unless the whole
 set validates, so a failed run cannot leave a partial manifest behind.
+
+Versions are validated per project rather than as one value across all four
+artifacts (issue #15, D1). The two projects release on separate contracts: the
+core version is what the release tag names, and the fonts companion package may
+be published at its own version, so a core release can reuse an earlier fonts
+release instead of republishing it. Each project's wheel and sdist must still
+carry the same version, and each project is checked against the version
+expected for it - `--version` for core, `--fonts-version` for fonts. Naming
+only `--version` still requires fonts to match it, which is what every caller
+did before this flag existed.
 """
 
 from __future__ import annotations
@@ -82,10 +92,21 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def manifest_lines(paths: list[Path], *, expect_version: str | None = None) -> list[str]:
-    """Validate the candidate set and return its sorted `sha256sum` rows."""
+def manifest_lines(
+    paths: list[Path],
+    *,
+    expect_version: str | None = None,
+    expect_fonts_version: str | None = None,
+) -> list[str]:
+    """Validate the candidate set and return its sorted `sha256sum` rows.
+
+    `expect_version` pins the core artifacts (the release tag) and
+    `expect_fonts_version` pins the fonts artifacts. When the fonts version is
+    not named, the core version is expected of it too, so a caller that names
+    one version keeps the guarantee it had before the fonts flag existed.
+    """
     found: dict[tuple[str, str], Path] = {}
-    version: str | None = None
+    versions: dict[str, str] = {}
     for path in paths:
         project, kind, artifact_version = _identify(path)
         if not path.is_file():
@@ -95,12 +116,13 @@ def manifest_lines(paths: list[Path], *, expect_version: str | None = None) -> l
                 f"duplicate artifact: {path.name} repeats the {project} {kind} "
                 f"already supplied as {found[(project, kind)].name}"
             )
-        if version is None:
-            version = artifact_version
-        elif artifact_version != version:
+        known = versions.get(project)
+        if known is None:
+            versions[project] = artifact_version
+        elif artifact_version != known:
             raise ManifestError(
                 f"artifacts disagree on version: {path.name} is {artifact_version}, "
-                f"but other candidates are {version}"
+                f"but the other {project} candidates are {known}"
             )
         found[(project, kind)] = path
     missing = [
@@ -111,13 +133,25 @@ def manifest_lines(paths: list[Path], *, expect_version: str | None = None) -> l
     ]
     if missing:
         raise ManifestError(f"missing artifact for: {', '.join(missing)}")
-    assert version is not None  # every expected identity is present
-    if expect_version is not None:
-        expected = expect_version.removeprefix("v")
-        if version != expected:
+    # The release tag names core; fonts is the companion package that may be
+    # reused from an earlier release.
+    core_project, fonts_project = EXPECTED_PROJECTS
+    expected_for = {
+        core_project: expect_version,
+        # Backward compatible default: a caller that names only the release tag
+        # still gets its version required of the fonts package.
+        fonts_project: (
+            expect_fonts_version if expect_fonts_version is not None else expect_version
+        ),
+    }
+    for project, expectation in expected_for.items():
+        if expectation is None:
+            continue
+        expected = expectation.removeprefix("v")
+        if versions[project] != expected:
             raise ManifestError(
-                f"artifacts disagree on version: candidates are {version}, "
-                f"but the release is {expected}"
+                f"artifacts disagree on version: {project} candidates are "
+                f"{versions[project]}, but the release expects {expected}"
             )
     return [
         f"{_digest(found[key])}  {found[key].name}"
@@ -126,10 +160,16 @@ def manifest_lines(paths: list[Path], *, expect_version: str | None = None) -> l
 
 
 def write_release_manifest(
-    paths: list[Path], output: Path, *, expect_version: str | None = None
+    paths: list[Path],
+    output: Path,
+    *,
+    expect_version: str | None = None,
+    expect_fonts_version: str | None = None,
 ) -> list[str]:
     """Write `output` from the validated set; raise before touching it otherwise."""
-    lines = manifest_lines(paths, expect_version=expect_version)
+    lines = manifest_lines(
+        paths, expect_version=expect_version, expect_fonts_version=expect_fonts_version
+    )
     text = "".join(f"{line}\n" for line in lines)
     try:
         # Pin LF so the manifest is byte-identical on a Windows maintainer run
@@ -148,12 +188,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="manifest path, outside the directories published to PyPI")
     parser.add_argument("--version", default=None,
                         help="expected release version; the tag name (v0.1.6) is accepted")
+    parser.add_argument("--fonts-version", default=None,
+                        help="expected textflowkit-fonts version, which may be older than "
+                             "--version; defaults to --version")
     args = parser.parse_args(argv)
     try:
         lines = write_release_manifest(
             [Path(artifact) for artifact in args.artifacts],
             Path(args.output),
             expect_version=args.version,
+            expect_fonts_version=args.fonts_version,
         )
     except ManifestError as exc:
         print(f"release manifest failed: {exc}", file=sys.stderr)

@@ -95,9 +95,10 @@ Publishing, then hashes the downloaded distributions with
 [`scripts/write_release_manifest.py`](../scripts/write_release_manifest.py) and
 creates a **draft** GitHub release with those exact artifacts plus the resulting
 `SHA256SUMS` asset. Only after the assets are attached does it make that release
-public. The step refuses to write a manifest unless it finds exactly the two
-wheels and two sdists from this release's version, so a missing, duplicated, or
-stray artifact stops the release instead of publishing misleading hashes.
+public. The step refuses to write a manifest unless it finds exactly two wheels
+and two sdists, each project's pair at the version expected for that project, so
+a missing, duplicated, or stray artifact stops the release instead of publishing
+misleading hashes.
 `SHA256SUMS` is a release **asset**, a sidecar of the attached files; it is not
 a table inside the release notes, which GitHub generates. Only releases published
 after this step was added have one: v0.1.5 and earlier releases predate it and
@@ -106,6 +107,30 @@ No upload token is passed to CI. Both PyPI projects must have trusted publishers
 for owner `scottconverse`, repository `textflowkit`, workflow
 `publish-pypi.yml`, and environment `pypi`. The GitHub `pypi` environment
 should require maintainer approval before an upload job can proceed.
+
+### The fonts version contract (issue #15)
+
+The fonts companion package is versioned on its own contract. A core release
+that changes nothing in the fonts data has no reason to republish the fonts
+package, so the fonts package may carry its own version, older than the core
+version being released. The manifest script takes the two versions separately:
+`--version` pins the two `textflowkit` artifacts (it is the release tag), and
+`--fonts-version` pins the two `textflowkit-fonts` artifacts, defaulting to
+`--version` when it is not given. A caller that names only `--version` therefore
+still requires the fonts package to match it.
+
+Reusing an earlier fonts release means reusing the **original published bytes**:
+the wheel and sdist already on PyPI, whose digests PyPI recorded. A rebuild is a
+different file with different hashes, and PyPI rejects an upload whose filename
+already exists, so a core release that reuses the fonts package has to download
+the published files and verify them against their PyPI digests rather than
+rebuilding them and presenting new hashes as the old ones.
+
+This section describes the contract only. `publish-pypi.yml` still builds and
+republishes both packages on every tag; it does not yet pass `--fonts-version`,
+does not yet download an earlier fonts release, and expects the fonts version to
+equal the core version. Conditional publication and reuse of the published fonts
+files is a separate, later change.
 
 ### The README release-claim guard
 
