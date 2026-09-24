@@ -1,4 +1,13 @@
-"""Do not publish a new version while public documentation still names the old one."""
+"""Do not publish a new version while public documentation still names the old one.
+
+The core package and the fonts companion package have separate release
+contracts (issue #15, D1). The *core* version must still match every public
+surface: `pyproject.toml`, the README, the install guide, the adapters doc, the
+user manual, the roadmap entry, and the website's primary release link. The
+fonts package may be published at its own version - what has to hold is that
+the declared fonts version is one core can install, i.e. that it satisfies the
+`export` extra's requirement in `pyproject.toml`.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +15,17 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
+
 from textflowkit import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
+FONTS_PYPROJECT = ROOT / "packages/textflowkit-fonts/pyproject.toml"
+# The one requirement string that says which fonts builds core can be installed
+# with. Matching the requirement rather than the whole dependency line keeps the
+# check meaningful if the line's other contents change.
+FONTS_REQUIREMENT = re.compile(r'"textflowkit-fonts([^"]*)"')
 
 # Anchor for the website's primary release link. Matching on this copy rather than on the
 # version string keeps the guard meaningful: the page mentions the version in several other
@@ -87,10 +104,12 @@ def test_website_primary_release_link_shows_and_targets_the_current_version() ->
     assert len(labels) == 1, f"expected exactly one 'v{version}' release label, found {labels}"
 
 
-def test_release_version_matches_both_packages_and_current_public_surfaces() -> None:
+def test_release_version_matches_the_core_package_and_current_public_surfaces() -> None:
     version = __version__
     assert _declared_version(ROOT / "pyproject.toml") == version
-    assert _declared_version(ROOT / "packages/textflowkit-fonts/pyproject.toml") == version
+    # The fonts package is checked separately, against the version range core
+    # can install: requiring it to equal the core version is the coupling D1
+    # removes, and it is not what keeps a release honest.
 
     # docs/index.html is covered semantically by
     # test_website_primary_release_link_shows_and_targets_the_current_version: a substring
@@ -105,3 +124,31 @@ def test_release_version_matches_both_packages_and_current_public_surfaces() -> 
 
     roadmap = (ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
     assert f"- [x] Ship v{version} review follow-ups" in roadmap
+
+
+def _core_fonts_requirement() -> SpecifierSet:
+    """The version constraint core's `export` extra places on the fonts package.
+
+    `pyproject.toml` is the one place that says which fonts builds core can be
+    installed with. A declared fonts version outside it would be a release set
+    pip could not resolve, however well the two versions are pinned elsewhere.
+    """
+    match = FONTS_REQUIREMENT.search((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert match is not None, "core pyproject.toml must require textflowkit-fonts in `export`"
+    return SpecifierSet(match.group(1))
+
+
+def test_the_declared_fonts_version_is_inside_the_core_export_requirement() -> None:
+    fonts_version = _declared_version(FONTS_PYPROJECT)
+
+    assert Version(fonts_version) in _core_fonts_requirement()
+
+
+def test_a_core_release_may_reuse_an_earlier_fonts_release() -> None:
+    """Core 0.1.6 published with the fonts package still at 0.1.5 must install.
+
+    That reuse is the point of D1, and it is what the current 0.1.5 has to keep
+    satisfying: the range, not an equality with the core version, is the
+    contract. `pyproject.toml`'s export spec is unchanged by this unit.
+    """
+    assert Version("0.1.5") in _core_fonts_requirement()

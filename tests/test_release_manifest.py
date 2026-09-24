@@ -6,11 +6,20 @@ downloader can verify the wheel or sdist they got against the release; a
 manifest that hashes a different build, names a fifth artifact, silently drops
 one, or lists a filesystem path is worse than no manifest at all. These tests
 use local fixture files only: no network, no PyPI, no GitHub.
+
+Version validation is per project, not one global value (issue #15, D1): a core
+release that reuses the fonts package published at an earlier version is
+legitimate. Each project's own artifacts must still agree with each other and
+with the version explicitly expected for that project - the release tag pins
+core, and `--fonts-version` pins fonts when the workflow passes it. Without an
+explicit fonts version the core version is still the expectation, so every
+existing call site keeps its meaning.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -23,6 +32,33 @@ from scripts.write_release_manifest import (
 )
 
 VERSION = "0.1.5"
+ROOT = Path(__file__).resolve().parents[1]
+CHECKLIST = ROOT / "docs/release-checklist.md"
+# A future core release that reuses the fonts package published at 0.1.5, the
+# shape D1 exists to allow. Both are named explicitly, because the whole point
+# is that neither version is inferred from the other.
+NEXT_CORE = "0.1.6"
+REUSED_FONTS = VERSION
+# The publication section of the checklist must say the fonts package may carry
+# its own version, and must say the workflow that reuses the published files is
+# not built yet (that is U46). A doc that claims the current workflow already
+# does it would be a false description of `.github/workflows/publish-pypi.yml`.
+FONTS_VERSION_MARKERS = (
+    "fonts package may carry its own version",
+    "may carry its own version",
+    "independent version",
+    "may version independently",
+)
+NOT_BUILT_MARKERS = (
+    "does not yet",
+    "not yet",
+    "still republishes",
+    "no workflow change",
+)
+
+
+def _publication_section() -> str:
+    return CHECKLIST.read_text(encoding="utf-8").split("## PyPI publication", 1)[1]
 
 
 def _write(path: Path, data: bytes) -> Path:
@@ -144,12 +180,17 @@ def test_a_name_that_only_looks_like_a_fifth_wheel_is_rejected(tmp_path) -> None
         manifest_lines([*paths, lookalike])
 
 
-def test_distributions_that_disagree_on_version_are_rejected(tmp_path) -> None:
-    """Four artifacts from two different builds would make the manifest misleading."""
-    paths = _artifacts(tmp_path, version=VERSION, fonts_version="0.1.4")
+def test_distributions_from_one_project_that_disagree_on_version_are_rejected(tmp_path) -> None:
+    """A core wheel from one build with a core sdist from another is a mixed release.
+
+    Core and fonts may now differ from each other, but each project is still one
+    build: hashing two core versions would make the manifest misleading.
+    """
+    paths = _artifacts(tmp_path)
+    older_sdist = _write(tmp_path / "dist/main" / "textflowkit-0.1.4.tar.gz", b"older main sdist")
 
     with pytest.raises(ManifestError, match="version"):
-        manifest_lines(paths)
+        manifest_lines([paths[0], older_sdist, paths[2], paths[3]])
 
 
 @pytest.mark.parametrize("tag", [VERSION, f"v{VERSION}"])
@@ -194,3 +235,124 @@ def test_cli_writes_the_manifest_and_separates_failure_from_success(tmp_path, ca
     captured = capsys.readouterr()
     assert "missing" in captured.err and captured.out == ""
     assert not bad.exists()
+
+
+def test_a_core_release_may_reuse_the_previous_fonts_release(tmp_path) -> None:
+    """Core 0.1.6 with the fonts package still at 0.1.5 is a valid release set.
+
+    issue #15: the fonts package is rebuilt and republished on every core
+    release even when nothing in it changed. A core release that legitimately
+    reuses the published fonts release must validate once both versions are
+    named as the expected ones.
+    """
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+
+    lines = manifest_lines(paths, expect_version=f"v{NEXT_CORE}", expect_fonts_version=REUSED_FONTS)
+
+    assert len(lines) == 4
+    assert sorted(line.split("  ")[1] for line in lines) == sorted(path.name for path in paths)
+
+
+def test_the_manifest_records_a_reused_fonts_release_in_full(tmp_path) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+    output = tmp_path / "SHA256SUMS"
+
+    lines = write_release_manifest(
+        paths, output, expect_version=f"v{NEXT_CORE}", expect_fonts_version=f"v{REUSED_FONTS}"
+    )
+
+    assert len(lines) == 4
+    assert output.read_bytes().count(b"\n") == 4
+    assert manifest_lines(paths) == output.read_text(encoding="utf-8").splitlines()
+
+
+def test_an_unexpected_core_version_is_still_rejected(tmp_path) -> None:
+    """The release tag keeps pinning the core artifacts."""
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+
+    with pytest.raises(ManifestError, match="textflowkit candidates"):
+        manifest_lines(paths, expect_version="0.1.7", expect_fonts_version=REUSED_FONTS)
+
+
+def test_an_unexpected_fonts_version_is_still_rejected(tmp_path) -> None:
+    """`--fonts-version` pins the fonts artifacts when the workflow passes it."""
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+
+    with pytest.raises(ManifestError, match="textflowkit-fonts candidates"):
+        manifest_lines(paths, expect_version=NEXT_CORE, expect_fonts_version=NEXT_CORE)
+
+
+def test_a_wrong_fonts_version_is_rejected_before_the_manifest_is_written(tmp_path) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=NEXT_CORE)
+    output = tmp_path / "SHA256SUMS"
+
+    with pytest.raises(ManifestError, match="version"):
+        write_release_manifest(
+            paths, output, expect_version=NEXT_CORE, expect_fonts_version=REUSED_FONTS
+        )
+
+    assert not output.exists()
+
+
+def test_the_expected_fonts_version_defaults_to_the_core_version(tmp_path) -> None:
+    """Existing call sites pass only `--version`; fonts then still has to match it.
+
+    That is the current contract, kept as the default so a caller that names one
+    version keeps the guarantee it always had.
+    """
+    paths = _artifacts(tmp_path)
+
+    assert len(manifest_lines(paths, expect_version=f"v{VERSION}")) == 4
+
+    lagging = _artifacts(tmp_path / "lagging", version=VERSION, fonts_version="0.1.4")
+    with pytest.raises(ManifestError, match="version"):
+        manifest_lines(lagging, expect_version=VERSION)
+
+
+def test_cli_accepts_an_independent_fonts_version(tmp_path, capsys) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+    output = tmp_path / "SHA256SUMS"
+
+    argv = [
+        *map(str, paths),
+        "--output", str(output),
+        "--version", f"v{NEXT_CORE}",
+        "--fonts-version", f"v{REUSED_FONTS}",
+    ]
+
+    assert main(argv) == 0
+    assert "wrote" in capsys.readouterr().out
+    assert output.read_bytes().count(b"\n") == 4
+
+
+def test_cli_rejects_fonts_that_do_not_match_its_fonts_version(tmp_path, capsys) -> None:
+    paths = _artifacts(tmp_path, version=NEXT_CORE, fonts_version=REUSED_FONTS)
+    output = tmp_path / "SHA256SUMS"
+
+    argv = [
+        *map(str, paths),
+        "--output", str(output),
+        "--version", f"v{NEXT_CORE}",
+        "--fonts-version", "v0.1.4",
+    ]
+
+    assert main(argv) == 1
+    captured = capsys.readouterr()
+    assert "textflowkit-fonts" in captured.err and captured.out == ""
+    assert not output.exists()
+
+
+def test_the_checklist_documents_the_fonts_version_contract_without_overclaiming() -> None:
+    """The contract, and the fact that reuse is not wired yet, must both be stated.
+
+    `docs/release-checklist.md` is a release surface: a maintainer reads it
+    before tagging. Claiming the workflow already downloads and reuses the
+    published fonts files would describe a workflow that does not exist yet.
+    """
+    section = _publication_section()
+    paragraphs = [block for block in re.split(r"\n[ \t]*\n", section) if "fonts" in block]
+    assert paragraphs, "the publication section must discuss the fonts package"
+    joined = "\n".join(paragraphs)
+
+    assert any(marker in joined for marker in FONTS_VERSION_MARKERS), joined
+    assert any(marker in joined for marker in NOT_BUILT_MARKERS), joined
