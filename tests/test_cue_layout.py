@@ -14,6 +14,8 @@ The contract under test:
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 
 from textflowkit.core.model import Segment, Transcript, WordTiming
@@ -110,7 +112,7 @@ def test_cue_boundaries_are_the_first_and_last_word_of_the_cue():
 
 def test_cue_intervals_are_ordered_and_do_not_overlap():
     cues = layout_cues(_worded())
-    for earlier, later in zip(cues, cues[1:]):
+    for earlier, later in pairwise(cues):
         assert later.start >= earlier.end
     for cue in cues:
         assert cue.end > cue.start
@@ -178,7 +180,7 @@ def test_wordless_legacy_segment_is_readable_on_a_segment_time_estimate():
     assert len(cues) >= 2
     assert cues[0].start == pytest.approx(1.0)
     assert cues[-1].end == pytest.approx(9.0)
-    for earlier, later in zip(cues, cues[1:]):
+    for earlier, later in pairwise(cues):
         assert later.start >= earlier.end
 
 
@@ -203,7 +205,7 @@ def test_unordered_word_timings_fall_back_instead_of_overlapping():
     seg = _worded()
     seg.words = list(reversed(seg.words))
     cues = layout_cues(seg)
-    for earlier, later in zip(cues, cues[1:]):
+    for earlier, later in pairwise(cues):
         assert later.start >= earlier.end
     for cue in cues:
         assert cue.end > cue.start
@@ -214,7 +216,7 @@ def test_degenerate_segment_still_gets_positive_ordered_cues():
     seg = Segment(3.0, 3.0, LONG)
     cues = layout_cues(seg)
     assert len(cues) >= 1
-    for earlier, later in zip(cues, cues[1:]):
+    for earlier, later in pairwise(cues):
         assert later.start >= earlier.end
     for cue in cues:
         assert cue.end > cue.start
