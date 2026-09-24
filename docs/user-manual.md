@@ -111,6 +111,13 @@ from the segment's own interval, and an imported transcript with no word
 timings is estimated the same way. Wrapping is a readability change only: it
 never rewrites, reorders, or drops text, and it does not realign words.
 
+A speaker label repeats on every cue. In SRT the label is visible text, so it
+counts toward that line's width and leaves the rest of the cue slightly
+narrower; WebVTT carries the speaker as `<v ...>` markup, which is not visible
+text and so is not counted. A label that is itself wider than the target, or
+one containing line breaks, is kept whole rather than being shortened, which
+can push a line past the target - text is never sacrificed to the width.
+
 ## 5. Python API
 
 ```python

@@ -122,17 +122,9 @@ def layout_cues(
     first_budget = MAX_LINE_CHARS - len(label_lines[-1]) if label_lines else MAX_LINE_CHARS
     first_budget = max(first_budget, 1)
 
-    wrapped: list[_Line] = []
-    for index, (line, indices) in enumerate(zip(payload_lines, line_tokens)):
-        budget = first_budget if index == 0 else MAX_LINE_CHARS
-        wrapped.extend(_wrap_line(line, indices, tokens, budget))
-
-    groups = [
-        wrapped[at : at + payload_lines_per_cue]
-        for at in range(0, len(wrapped), payload_lines_per_cue)
-    ]
-    if not groups:
-        groups = [[]]
+    groups = _layout_lines(
+        payload_lines, line_tokens, tokens, first_budget, payload_lines_per_cue
+    )
 
     times = _cue_times(segment, tokens, groups, source_text)
     if times is None:
@@ -203,35 +195,60 @@ def _tokenize(payload_lines: list[str]) -> tuple[list[_Token], list[list[int]], 
     return tokens, line_tokens, total_chars
 
 
-def _wrap_line(line: str, indices: list[int], tokens: list[_Token], budget: int) -> list[_Line]:
-    """Break one payload line into output lines within `budget` characters.
+def _layout_lines(
+    payload_lines: list[str],
+    line_tokens: list[list[int]],
+    tokens: list[_Token],
+    first_budget: int,
+    per_cue: int,
+) -> list[list[_Line]]:
+    """Wrap the payload into output lines already grouped into cues.
 
-    A line that already fits is emitted exactly as it was written. Rebuilding
-    it from tokens would collapse a deliberate double space, and a short cue's
-    bytes should not change just because it was measured.
+    Wrapping and grouping happen together because they are not independent: a
+    visible label repeats at the start of every cue, so the *first* line of
+    every cue is the one that pays for it. Wrapping the whole payload first and
+    grouping afterwards would give the reduced budget to the segment's first
+    line only, and every later cue would overflow by the label's width.
+
+    A payload line that already fits is emitted exactly as it was written.
+    Rebuilding it from tokens would collapse a deliberate double space, and a
+    short cue's bytes should not change just because it was measured.
     """
-    if not indices:
-        return []
-    if len(line) <= budget:
-        return [_Line(line, tuple(indices))]
+    groups: list[list[_Line]] = []
+    current: list[_Line] = []
 
-    out: list[_Line] = []
-    current: list[int] = []
-    length = 0
-    limit = budget
-    for index in indices:
-        text = tokens[index].text
-        if not current:
-            current, length = [index], len(text)
-        elif length + 1 + len(text) <= limit:
-            current.append(index)
-            length += 1 + len(text)
-        else:
-            out.append(_line_from(current, tokens))
-            current, length, limit = [index], len(text), MAX_LINE_CHARS
-    if current:
-        out.append(_line_from(current, tokens))
-    return out
+    def close() -> None:
+        if len(current) == per_cue:
+            groups.append(current[:])
+            current.clear()
+
+    def budget() -> int:
+        return first_budget if not current else MAX_LINE_CHARS
+
+    for line, indices in zip(payload_lines, line_tokens):
+        if not indices:
+            continue
+        if len(line) <= budget():
+            current.append(_Line(line, tuple(indices)))
+            close()
+            continue
+        # The line is too wide: rebuild it from its tokens, emitting one output
+        # line at a time so a cue boundary can raise the budget back up.
+        pending: list[int] = []
+        width = 0
+        for index in indices:
+            text = tokens[index].text
+            if pending and width + 1 + len(text) > budget():
+                current.append(_line_from(pending, tokens))
+                close()
+                pending, width = [], 0
+            width += 1 + len(text) if pending else len(text)
+            pending.append(index)
+        current.append(_line_from(pending, tokens))
+        close()
+    if current or not groups:
+        groups.append(current)
+    return groups
 
 
 def _line_from(indices: list[int], tokens: list[_Token]) -> _Line:
