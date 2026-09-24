@@ -122,7 +122,7 @@ def test_not_found_page_has_a_clear_canonical_home_link() -> None:
     assert home, (
         f"no link to the canonical home {sorted(HOME_URLS)}; found {page.links}"
     )
-    relative = [link for link in page.links if not link.startswith(("/", "http"))]
+    relative = [link for link in page.links if not link.startswith(("/", "http", "#"))]
     assert not relative, (
         f"relative links {relative} resolve against the unknown requested path, not "
         "against the 404 document's own location"
