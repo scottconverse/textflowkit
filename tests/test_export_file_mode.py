@@ -127,6 +127,65 @@ def test_no_clobber_still_refuses_and_leaves_nothing_behind(tmp_path, monkeypatc
     assert sorted(p.name for p in tmp_path.iterdir()) == ["talk.txt"]
 
 
+def test_a_probe_name_collision_must_not_delete_the_existing_file(tmp_path, monkeypatch):
+    """A name collision must cost the mode, never somebody else's file.
+
+    The probe name is random, but "we did not create it" is not a property that
+    may be inferred from the name: the exclusive create is what proves
+    ownership. Cleanup that unlinks on a failed create destroys a file this call
+    never owned, which is precisely the no-clobber rule the publication path
+    below is built to keep.
+
+    `os.urandom` is pinned so the collision is deterministic instead of a
+    ~2^-64 event, and the squatter is planted under the name that produces. The
+    probe is the only caller of `os.urandom` in this path; `tempfile` names its
+    own staging files from the `random` module, so the staging file is still
+    unique (the export below could not otherwise complete).
+    """
+    _run_posix_branch(monkeypatch)
+    monkeypatch.setattr(os, "urandom", lambda n: b"\x00" * n)
+    squatter = tmp_path / f".{'00' * 8}.textflowkit-mode"
+    squatter.write_bytes(b"not ours")
+
+    target = tmp_path / "talk.txt"
+    atomic_write_bytes(target, b"hello")
+
+    assert squatter.read_bytes() == b"not ours", "the probe deleted a file it did not create"
+    assert target.read_bytes() == b"hello"
+    # The collision costs only the mode: this call measured nothing, so nothing
+    # was normalized. That is the documented best-effort outcome, and it is not
+    # an error - the export is still complete.
+    assert sorted(p.name for p in tmp_path.iterdir()) == [squatter.name, "talk.txt"]
+
+
+def test_a_cleanup_failure_fails_the_export_rather_than_littering(tmp_path, monkeypatch):
+    """Cleanup failure is chosen to be loud, and this pins that choice.
+
+    The mode itself is best-effort metadata, but removing a file this call
+    created is not: leaving a zero-byte probe in the user's output directory
+    forever, silently, trades a visible error for invisible litter. So a
+    cleanup failure propagates and the export fails closed - nothing is
+    published - which is also how the staging file's own cleanup already
+    behaves. Only the probe's unlink is made to fail here, so the failure under
+    test is that one and not the staging file's.
+    """
+    _run_posix_branch(monkeypatch)
+    real_unlink = Path.unlink
+
+    def refuse(self, *args, **kwargs):
+        if "textflowkit-mode" in self.name:
+            raise PermissionError(f"simulated: cannot remove {self.name}")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    target = tmp_path / "talk.txt"
+
+    with pytest.raises(PermissionError):
+        atomic_write_bytes(target, b"hello")
+
+    assert not target.exists(), "the export must fail closed, not publish anyway"
+
+
 @POSIX_ONLY
 @pytest.mark.parametrize("replace", [False, True], ids=["link", "replace"])
 @pytest.mark.parametrize(
