@@ -364,6 +364,118 @@ def test_resume_reuses_a_completed_transcript_after_the_extra_is_removed(
 
 
 # --------------------------------------------------------------------------
+# A refused resume must not mutate the job it refused
+# --------------------------------------------------------------------------
+
+RESUME_SOURCE = "https://example.invalid/media"
+
+
+def _seed_terminal_job(store, *, state, error, cancel_requested, with_checkpoint=False):
+    """A terminal job carrying a saved faster-whisper request, as resume finds it."""
+    from textflowkit.core.checkpoint import checkpoint_for_request, write_checkpoint
+    from textflowkit.core.submission import SubmissionRequest
+
+    request = SubmissionRequest(source=RESUME_SOURCE, engine="faster-whisper")
+    job = store.create(RESUME_SOURCE, request=request.to_dict())
+    store.update(
+        job.id, state=state, progress="failed", error=error,
+        cancel_requested=cancel_requested,
+    )
+    if with_checkpoint:
+        write_checkpoint(store, job.id, checkpoint_for_request(
+            source=RESUME_SOURCE, model="small", engine="faster-whisper",
+            options=request.options(),
+        ))
+    return job
+
+
+@pytest.mark.parametrize("state,error,cancel_requested", [
+    (JobState.ERROR, "interrupted", False),
+    (JobState.CANCELLED, None, True),
+])
+def test_a_refused_resume_leaves_a_checkpointless_job_exactly_as_it_was(
+    state, error, cancel_requested, missing_faster_whisper, inline_submission, http_client
+):
+    """An un-terminal job with no queued worker is a stuck job, not an error message."""
+    store = get_default_store()
+    job = _seed_terminal_job(
+        store, state=state, error=error, cancel_requested=cancel_requested
+    )
+
+    response = http_client.post(f"/jobs/{job.id}/resume")
+
+    assert response.status_code == 409, response.text
+    assert MISSING_HINT in response.json()["detail"]
+    after = store.get(job.id)
+    assert after.state is state, "the refused resume un-terminated the job"
+    assert after.progress == "failed"
+    assert after.error == error
+    assert after.cancel_requested is cancel_requested
+    assert inline_submission == []
+
+
+def test_a_refused_resume_leaves_a_checkpointed_job_exactly_as_it_was(
+    missing_faster_whisper, inline_submission, http_client
+):
+    """The checkpoint case mutates through `prepare_resume`, not the fallback branch."""
+    store = get_default_store()
+    job = _seed_terminal_job(
+        store, state=JobState.ERROR, error="interrupted", cancel_requested=False,
+        with_checkpoint=True,
+    )
+    before = store.get(job.id)
+
+    response = http_client.post(f"/jobs/{job.id}/resume")
+
+    assert response.status_code == 409, response.text
+    assert MISSING_HINT in response.json()["detail"]
+    after = store.get(job.id)
+    assert after.state is JobState.ERROR
+    assert after.progress == "failed"
+    assert after.error == "interrupted"
+    assert after.cancel_requested is False
+    assert after.checkpoint == before.checkpoint, "the refused resume lost the checkpoint"
+    assert inline_submission == []
+
+
+def test_a_refused_mcp_resume_leaves_the_job_exactly_as_it_was(
+    missing_faster_whisper, inline_submission
+):
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import resume_job
+
+    store = get_default_store()
+    job = _seed_terminal_job(
+        store, state=JobState.ERROR, error="interrupted", cancel_requested=False
+    )
+
+    out = resume_job(job.id)
+
+    assert MISSING_HINT in out["error"], out
+    after = store.get(job.id)
+    assert after.state is JobState.ERROR
+    assert after.error == "interrupted"
+    assert inline_submission == []
+
+
+def test_a_resume_with_the_extra_present_still_runs(
+    fake_faster_whisper, inline_submission, http_client
+):
+    """The refusal must not have been bought by breaking valid resume."""
+    store = get_default_store()
+    job = _seed_terminal_job(
+        store, state=JobState.ERROR, error="interrupted", cancel_requested=False,
+        with_checkpoint=True,
+    )
+
+    response = http_client.post(f"/jobs/{job.id}/resume")
+
+    assert response.status_code == 202, response.text
+    assert [request["engine"] for request in inline_submission] == ["faster-whisper"]
+    assert store.get(job.id).state is JobState.DONE
+
+
+# --------------------------------------------------------------------------
 # Direct Python API preflights before acquisition
 # --------------------------------------------------------------------------
 
