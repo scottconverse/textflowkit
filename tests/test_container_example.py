@@ -8,8 +8,8 @@ There is no container engine on the machine these were written on, so nothing
 here starts a container. These are static contract checks over the shipped
 files, strong enough to catch a drifted or half-written example and honest about
 what they do not prove: whether the image builds, starts, and passes its
-healthcheck in a real engine is **unverified** here and belongs to a hosted CI
-gate (see `reports/U44-c3-container-example.md`).
+healthcheck in a real engine is **unverified**. Running one is deliberately out
+of scope for this example, so no build or start is claimed anywhere.
 
 `compose.yaml` is read with the strict subset parser below rather than PyYAML,
 for the same reason `tests/test_publish_workflow_gate.py` scans workflow text by
@@ -631,6 +631,13 @@ def test_the_env_example_names_who_can_read_the_token() -> None:
 
 CONTAINER_SECTION = "### Container example (Dockerfile and Compose)"
 
+# The next heading at or above the section's own level ends it. The section is a
+# `###` under `## HTTP`, and the `### Client identity behind a proxy` that
+# follows it is the first such heading; a deeper `####` subheading inside the
+# section would not end it. Reading past the section would let these checks
+# judge prose that has nothing to do with the container example.
+SECTION_END = re.compile(r"\n#{1,3} ")
+
 SHELL_TOKEN_BEARER = re.compile(r"Bearer\s+\$\{?TEXTFLOWKIT_API_TOKEN")
 
 EXEC_PROBE = re.compile(r'docker compose exec textflowkit-http python -c "(?P<script>[^"]+)"')
@@ -662,8 +669,8 @@ def _container_docs() -> str:
     text = _read(DOCS)
     start = text.index(CONTAINER_SECTION)
     rest = text[start + len(CONTAINER_SECTION):]
-    end = rest.find("\n### ")
-    return rest if end == -1 else rest[:end]
+    end = SECTION_END.search(rest)
+    return rest if end is None else rest[:end.start()]
 
 
 def test_no_documented_command_expands_the_token_from_the_callers_shell() -> None:

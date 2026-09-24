@@ -19,8 +19,10 @@
 # bundled - so URL jobs fail closed until an operator supplies one. See
 # docs/adapters.md for what still has to sit in front of this.
 #
-# Build and start are unverified here: no container engine is installed on the
-# machine this example was written on. See reports/U44-c3-container-example.md.
+# Build and start are unverified: no container engine is installed on the machine
+# this example was written on, and running one is deliberately out of scope here,
+# so no build or start is claimed. Static contract checks cover this file and the
+# Dockerfile; see docs/adapters.md, "Container example".
 
 services:
   # One service, one process. The durable SQLite store has one owning process;

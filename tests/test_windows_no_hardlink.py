@@ -21,8 +21,7 @@ pin by turning the module's own platform flag off.
 
 A real FAT or exFAT volume was not available to this unit, so the fallback is
 proved against a simulated link failure, not a real drive. That is a stated
-limit of the evidence, not a claim of support; `reports/U31-windows-no-hardlink.md`
-records it.
+limit of the evidence, not a claim of support.
 """
 
 from __future__ import annotations

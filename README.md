@@ -254,8 +254,9 @@ ffmpeg and a JavaScript runtime in the image, a nonroot runtime user, the host
 port published to loopback only, and a token the operator supplies (there is no
 default). This is a Linux deployment **example**, not a published service - it
 ships no TLS gateway and no egress proxy, so URL jobs fail closed until you
-provide one. The image has not been built or started anywhere yet: only static
-contract checks cover it, and an actual build belongs to a CI gate. See
+provide one. The image has not been built or started anywhere: only static
+contract checks cover it, and running an actual build is deliberately out of
+scope here, so no image is claimed to build or start. See
 [the container example](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#container-example-dockerfile-and-compose).
 
 ## Durable, bounded, cancellable

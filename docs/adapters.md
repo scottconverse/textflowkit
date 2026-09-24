@@ -323,8 +323,9 @@ example was written on. What is covered are static contract checks
 user and its directory ownership, the remote opt-in, the authenticated
 healthcheck, the production settings, the loopback-only host port, persisted
 roots, and the absent proxy - plus a native run of the production profile's
-`/health` with and without its token, which is not a container run. An actual
-`docker build` and `docker compose up` belong to a hosted CI gate.
+`/health` with and without its token, which is not a container run. No `docker
+build` or `docker compose up` is claimed to have run: this is a source example,
+not a verified image.
 
 ### Client identity behind a proxy
 
