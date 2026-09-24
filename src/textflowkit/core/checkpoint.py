@@ -378,12 +378,25 @@ def reusable_done_result(
     if formats:
         if not stem:
             raise CheckpointError("stem is required when rendering reused outputs")
-        outputs = ensure_outputs(
-            parsed,
-            formats=formats,
-            output_dir=output_dir,
-            stem=stem,
-            existing=current.outputs,
-        )
+        try:
+            outputs = ensure_outputs(
+                parsed,
+                formats=formats,
+                output_dir=output_dir,
+                stem=stem,
+                existing=current.outputs,
+            )
+        except FileExistsError as exc:
+            # The render layer refused to publish over a file that is not this
+            # job's own rendering (see `ensure_outputs`): a completed job's
+            # output was changed on disk after it finished. The resume cannot be
+            # honoured without overwriting those bytes, so it is refused in the
+            # same voice as the other resume refusals, and the job record and
+            # the file are both left exactly as they were.
+            raise CheckpointError(
+                f"recorded output for job '{current.id}' no longer matches the "
+                "stored transcript; refusing to overwrite it (move it aside and "
+                "resubmit without resume)"
+            ) from exc
         return parsed, outputs
     return parsed, [Path(path) for path in current.outputs]
