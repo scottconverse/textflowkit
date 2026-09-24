@@ -11,6 +11,24 @@ Two rules matter for correctness:
   resume crash; it means "start clean".
 - A checkpoint is only reusable when source, model, and language match. Anything
   less can silently mix transcripts from different runs.
+
+Storage contract for a finished job
+-----------------------------------
+
+A transcript is stored once per job. While a job is in flight the checkpoint
+carries it, because that is the only durable copy of the expensive work: a
+resume reads it and skips acquisition and the engine. When the job reaches DONE
+the transcript moves to the job's own `transcript` field and the checkpoint
+drops its copy, keeping only the metadata a later request is matched against -
+source, model, language, engine, device, options, finished stages, recorded
+media/audio paths, and the local-source identity. A finished job therefore pays
+for its words once, and `load_checkpoint` assembles the full record for a DONE
+job from the two halves in memory.
+
+Only DONE is hydrated that way. For an ERROR or CANCELLED job the checkpoint is
+still the sole copy, so filling it in from the job field would invent work that
+never finished; `metadata_only_checkpoint` is the write half of this contract
+and `load_checkpoint` is the read half.
 """
 
 from __future__ import annotations
@@ -191,13 +209,47 @@ def validate_local_resume(
 
 
 def load_checkpoint(job: Job | None) -> CheckpointRecord | None:
-    """Return a valid checkpoint from a job, or None on absent/corrupt data."""
-    if job is None or job.checkpoint is None:
+    """Return a valid checkpoint from a job, or None on absent/corrupt data.
+
+    A DONE job holds its transcript in the job field and its resume metadata in
+    the checkpoint, so the record returned here is assembled from both halves.
+    The assembly happens in memory: a read never rewrites the stored row. Rows
+    written before this rule - which carry the transcript in both places - are
+    read from the checkpoint exactly as they always were, and a corrupt half in
+    either direction is treated as absent rather than served as a resume.
+
+    Only a DONE job is hydrated. See the module docstring for why an ERROR or
+    CANCELLED checkpoint must speak for itself.
+    """
+    if job is None or not isinstance(job.checkpoint, dict):
         return None
+    raw = job.checkpoint
+    if raw.get("transcript") is None and job.state is JobState.DONE:
+        if not isinstance(job.transcript, dict):
+            return None
+        raw = {**raw, "transcript": job.transcript}
     try:
-        return CheckpointRecord.from_dict(job.checkpoint)
+        return CheckpointRecord.from_dict(raw)
     except (CheckpointError, TypeError, ValueError, KeyError):
         return None
+
+
+def metadata_only_checkpoint(
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return a finished job's checkpoint with its transcript body removed.
+
+    None means there was no body to remove - the checkpoint is absent, already
+    metadata only, or not an object at all - so a caller leaves the stored value
+    exactly as it found it instead of writing a value it did not read. The
+    metadata that matching and local-source validation depend on is kept
+    untouched; only the duplicated transcript goes.
+    """
+    if not isinstance(checkpoint, dict) or checkpoint.get("transcript") is None:
+        return None
+    payload = dict(checkpoint)
+    payload.pop("transcript", None)
+    return payload
 
 
 def parse_checkpoint(raw: Any) -> CheckpointRecord | None:

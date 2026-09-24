@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.checkpoint import write_checkpoint
+from textflowkit.core.checkpoint import metadata_only_checkpoint, write_checkpoint
 from textflowkit.core.executor import JobCancelled, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
@@ -116,13 +116,22 @@ def run_job(
     if latest is not None and latest.state is JobState.CANCELLED:
         return
 
-    store.update(
-        job.id,
-        state=JobState.DONE,
-        progress="complete",
-        transcript=result.transcript.to_dict(),
-        outputs=[str(p) for p in result.outputs],
+    # The transcript is stored once, in the job's own field: the checkpoint that
+    # carried it through the run keeps only the metadata a later request is
+    # matched against. Both go in one update, so no reader can catch the row
+    # holding neither copy.
+    fields: dict[str, Any] = {
+        "state": JobState.DONE,
+        "progress": "complete",
+        "transcript": result.transcript.to_dict(),
+        "outputs": [str(p) for p in result.outputs],
+    }
+    metadata = metadata_only_checkpoint(
+        latest.checkpoint if latest is not None else job.checkpoint
     )
+    if metadata is not None:
+        fields["checkpoint"] = metadata
+    store.update(job.id, **fields)
 
 
 def submit(

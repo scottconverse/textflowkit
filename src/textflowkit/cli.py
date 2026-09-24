@@ -11,6 +11,7 @@ from pathlib import Path
 
 from textflowkit import __version__
 from textflowkit.core.batch import run_batch
+from textflowkit.core.checkpoint import metadata_only_checkpoint
 from textflowkit.core.engine import ENGINE_CHOICES, ensure_engine_available, get_engine
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
@@ -246,13 +247,24 @@ def _finish_transcribe(
     if not isinstance(result, TranscribeResult):
         transcript, outputs = result
         result = TranscribeResult(transcript=transcript, outputs=list(outputs))
-    store.update(
-        job.id,
-        state=JobState.DONE,
-        progress="complete",
-        transcript=result.transcript.to_dict(),
-        outputs=[str(p) for p in result.outputs],
-    )
+    # The runner is not the only writer that finishes a job, so this transition
+    # keeps the same storage rule: the transcript goes in once, and the
+    # checkpoint keeps only the metadata a later request is matched against. The
+    # row is re-read rather than trusting the caller's object: a stale one
+    # carries no checkpoint, and writing that absence over a real one would throw
+    # away the job's resume identity. Both fields go in one update, so a row is
+    # never left holding neither copy.
+    current = store.get(job.id)
+    fields = {
+        "state": JobState.DONE,
+        "progress": "complete",
+        "transcript": result.transcript.to_dict(),
+        "outputs": [str(p) for p in result.outputs],
+    }
+    metadata = metadata_only_checkpoint(current.checkpoint if current is not None else None)
+    if metadata is not None:
+        fields["checkpoint"] = metadata
+    store.update(job.id, **fields)
 
     tr = result.transcript
     if not args.quiet:
