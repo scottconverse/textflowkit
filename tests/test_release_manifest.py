@@ -40,21 +40,20 @@ CHECKLIST = ROOT / "docs/release-checklist.md"
 NEXT_CORE = "0.1.6"
 REUSED_FONTS = VERSION
 # The publication section of the checklist must say the fonts package may carry
-# its own version, and must say the workflow that reuses the published files is
-# not built yet (that is U46). A doc that claims the current workflow already
-# does it would be a false description of `.github/workflows/publish-pypi.yml`.
+# its own version, must describe the reuse the workflow now performs - the
+# published files are downloaded and verified rather than rebuilt - and must
+# state that a changed fonts tree without a version bump is refused. The prose
+# that described reuse as future work (U45) is no longer true of
+# `.github/workflows/publish-pypi.yml` and must be gone.
 FONTS_VERSION_MARKERS = (
     "fonts package may carry its own version",
     "may carry its own version",
     "independent version",
     "may version independently",
 )
-NOT_BUILT_MARKERS = (
-    "does not yet",
-    "not yet",
-    "still republishes",
-    "no workflow change",
-)
+REUSE_MARKERS = ("download", "reuse", "published files", "published bytes")
+DRIFT_MARKERS = ("bump", "changed")
+FUTURE_WORK_MARKERS = ("does not yet", "no workflow change", "still republishes")
 
 
 def _publication_section() -> str:
@@ -399,12 +398,15 @@ def test_cli_rejects_fonts_that_do_not_match_its_fonts_version(tmp_path, capsys)
     assert not output.exists()
 
 
-def test_the_checklist_documents_the_fonts_version_contract_without_overclaiming() -> None:
-    """The contract, and the fact that reuse is not wired yet, must both be stated.
+def test_the_checklist_documents_the_reuse_contract_without_overclaiming() -> None:
+    """The contract, and the reuse the workflow performs, must both be stated.
 
     `docs/release-checklist.md` is a release surface: a maintainer reads it
-    before tagging. Claiming the workflow already downloads and reuses the
-    published fonts files would describe a workflow that does not exist yet.
+    before tagging. U45 wrote this section as a contract the workflow did not
+    use yet; the workflow now fetches and verifies the published fonts files, so
+    the section has to describe that path, the drift rule that stops a changed
+    package from silently reusing an older version, and must no longer promise
+    the reuse as future work.
     """
     section = _publication_section()
     paragraphs = [block for block in re.split(r"\n[ \t]*\n", section) if "fonts" in block]
@@ -412,4 +414,7 @@ def test_the_checklist_documents_the_fonts_version_contract_without_overclaiming
     joined = "\n".join(paragraphs)
 
     assert any(marker in joined for marker in FONTS_VERSION_MARKERS), joined
-    assert any(marker in joined for marker in NOT_BUILT_MARKERS), joined
+    assert any(marker in joined for marker in REUSE_MARKERS), joined
+    assert any(marker in joined for marker in DRIFT_MARKERS), joined
+    for marker in FUTURE_WORK_MARKERS:
+        assert marker not in joined, f"the checklist still promises reuse as future work: {joined}"

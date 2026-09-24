@@ -12,9 +12,12 @@ the declared fonts version is one core can install, i.e. that it satisfies the
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
@@ -22,6 +25,7 @@ from textflowkit import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 FONTS_PYPROJECT = ROOT / "packages/textflowkit-fonts/pyproject.toml"
+FONTS_DIR = "packages/textflowkit-fonts"
 # The one requirement string that says which fonts builds core can be installed
 # with. Matching the requirement rather than the whole dependency line keeps the
 # check meaningful if the line's other contents change.
@@ -152,3 +156,54 @@ def test_a_core_release_may_reuse_an_earlier_fonts_release() -> None:
     contract. `pyproject.toml`'s export spec is unchanged by this unit.
     """
     assert Version("0.1.5") in _core_fonts_requirement()
+
+
+def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *arguments],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+
+
+def _fonts_version_at(tag: str) -> str | None:
+    """The fonts version a release tag declares, or None if it had no such package."""
+    relative = FONTS_PYPROJECT.relative_to(ROOT).as_posix()
+    shown = _git("show", f"{tag}:{relative}")
+    if shown.returncode != 0:
+        return None
+    match = re.search(r'^version = "([^"]+)"$', shown.stdout, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def test_the_declared_fonts_version_is_not_reused_for_changed_source() -> None:
+    """A fonts version a release already published must not be declared again.
+
+    The version is what a downloader resolves on PyPI: if the working tree's
+    fonts package differs from the source that tag released, then reusing that
+    version would make this checkout claim content the published files do not
+    have. So no tag that declares the declared fonts version may differ from the
+    working tree - bump the fonts version and the change ships as its own
+    release. Tags are compared rather than looked up by name, so this keeps
+    holding once a fonts version no longer matches the core release tag.
+
+    A checkout with no tags (a shallow CI clone) has nothing to compare and
+    passes; that case is covered at release time by
+    `scripts/fetch_published_fonts.py`, which compares the working tree against
+    the published sdist itself rather than against a tag.
+    """
+    if shutil.which("git") is None:
+        pytest.skip("git is required to compare the fonts tree with the release tags")
+    declared = _declared_version(FONTS_PYPROJECT)
+    conflicts = []
+    for tag in _git("tag", "-l", "v*").stdout.split():
+        if _fonts_version_at(tag) != declared:
+            continue
+        changed = _git("diff", "--name-only", tag, "--", FONTS_DIR)
+        untracked = _git("ls-files", "--others", "--exclude-standard", "--", FONTS_DIR)
+        if changed.stdout.strip() or untracked.stdout.strip():
+            conflicts.append(tag)
+    assert not conflicts, (
+        f"{FONTS_PYPROJECT.relative_to(ROOT).as_posix()} declares fonts version {declared}, "
+        f"which {', '.join(conflicts)} already released with different source; bump the fonts "
+        f"version so the change is published, rather than reusing the published {declared} files"
+    )
