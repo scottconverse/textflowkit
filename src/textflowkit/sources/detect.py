@@ -28,8 +28,6 @@ PLATFORMS: dict[str, tuple[str, ...]] = {
     "dropbox": ("dropbox.com", "dropboxusercontent.com"),
 }
 
-DIRECT_MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".wav", ".ogg", ".flac")
-
 
 class UnsafeUrlError(ValueError):
     """Raised when a URL targets a loopback, link-local, or private address.
@@ -179,7 +177,11 @@ def is_url(value: str) -> bool:
 
 
 def detect_platform(value: str) -> str:
-    """Identify the platform for a URL, or 'local' for a filesystem path."""
+    """Identify the platform for a URL, or 'local' for a filesystem path.
+
+    A URL that is not one of the recognized platforms is `direct`: it is fetched
+    as a plain media URL rather than through a site adapter.
+    """
     if not is_url(value):
         return "local"
     host = (urlparse(value).netloc or "").lower().split("@")[-1].split(":")[0]
@@ -188,11 +190,6 @@ def detect_platform(value: str) -> str:
         for domain in domains:
             if host == domain or host.endswith("." + domain):
                 return platform
-    if host and host.split("/")[-1].lower().endswith(DIRECT_MEDIA_SUFFIXES):
-        return "direct"
-    path = urlparse(value).path.lower()
-    if path.endswith(DIRECT_MEDIA_SUFFIXES):
-        return "direct"
     return "direct"
 
 
