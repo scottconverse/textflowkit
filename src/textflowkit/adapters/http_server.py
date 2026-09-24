@@ -59,6 +59,7 @@ from textflowkit.core.submission import (
     resume_job as core_resume_job,
 )
 from textflowkit.render import (
+    DEFAULT_FORMATS,
     SUPPORTED_FORMATS,
     TEXT_FORMATS,
     atomic_write_bytes,
@@ -209,7 +210,7 @@ async def production_guard(request: Request, call_next):
 class TranscribeRequest(BaseModel):
     source: str = Field(..., description="Media URL or local file path")
     language: str | None = Field(None, description="ISO language code; auto-detected if omitted")
-    formats: list[str] = Field(default_factory=lambda: ["json", "srt", "txt"])
+    formats: list[str] = Field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = Field(None, description="Directory for rendered files; omit for none")
     model: str = Field("small", description="Whisper model size")
     device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted")

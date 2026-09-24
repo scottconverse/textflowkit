@@ -40,6 +40,11 @@ TEXT_FORMATS = tuple(RENDERERS) + ("json",)
 BINARY_FORMATS = ("docx", "pdf")
 SUPPORTED_FORMATS = TEXT_FORMATS + BINARY_FORMATS
 
+# What an omitted or empty `formats` means. It is spelled once, here, because
+# every surface has to agree on it: a request that records one meaning and a
+# checkpoint that records another can never be matched back to each other.
+DEFAULT_FORMATS = ("json", "srt", "txt")
+
 # Whether created files carry umask-derived permission bits. Windows reports
 # the same synthetic mode for every file, so there is nothing to normalize
 # there and `_ordinary_file_mode` is a no-op.

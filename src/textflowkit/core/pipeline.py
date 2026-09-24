@@ -39,7 +39,12 @@ from textflowkit.core.translate import (
     get_translator,
     translate_segments,
 )
-from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements, write_all
+from textflowkit.render import (
+    DEFAULT_FORMATS,
+    SUPPORTED_FORMATS,
+    validate_export_requirements,
+    write_all,
+)
 from textflowkit.sources.acquire import (
     AcquisitionError,
     extract_audio,
@@ -215,7 +220,7 @@ def transcribe(
 
     _checkpoint()
 
-    formats = formats or ["json", "srt", "txt"]
+    formats = formats or list(DEFAULT_FORMATS)
     for fmt in formats:
         if fmt.lower().lstrip(".") not in SUPPORTED_FORMATS:
             raise PipelineError(

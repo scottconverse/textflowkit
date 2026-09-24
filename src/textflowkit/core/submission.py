@@ -22,14 +22,14 @@ from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.paths import default_input_root
 from textflowkit.core.runner import run_job
 from textflowkit.core.service import reject_browser_cookie_requests
-from textflowkit.render import SUPPORTED_FORMATS, validate_export_requirements
+from textflowkit.render import DEFAULT_FORMATS, SUPPORTED_FORMATS, validate_export_requirements
 
 
 @dataclass(slots=True)
 class SubmissionRequest:
     source: str
     language: str | None = None
-    formats: list[str] = field(default_factory=lambda: ["json", "srt", "txt"])
+    formats: list[str] = field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = None
     model: str = "small"
     engine: str = "whisper"
@@ -62,6 +62,14 @@ class SubmissionRequest:
         if isinstance(self.work_dir, Path):
             self.work_dir = str(self.work_dir)
         self.formats = [str(fmt).lower().lstrip(".") for fmt in self.formats]
+        if not self.formats:
+            # `pipeline.transcribe` has always read an empty list as its normal
+            # default, so an empty request means the default formats and nothing
+            # else. Recording that here - before the request is persisted and
+            # matched - is what keeps a checkpoint written under the default
+            # findable by the request that produced it. Explicit, invalid, and
+            # duplicate formats are untouched: only "nothing asked for" resolves.
+            self.formats = list(DEFAULT_FORMATS)
         bad = [fmt for fmt in self.formats if fmt not in SUPPORTED_FORMATS]
         if bad:
             raise ValueError(f"unsupported format(s): {', '.join(bad)}")

@@ -29,9 +29,13 @@ DEFAULT_FORMATS = ["json", "srt", "txt"]
 
 
 class _Engine:
-    """Deterministic engine: no model, no network."""
+    """Deterministic engine that counts runs: no model, no network."""
+
+    def __init__(self) -> None:
+        self.calls = 0
 
     def transcribe(self, audio, *, language=None) -> Transcript:
+        self.calls += 1
         return Transcript(
             source=str(audio),
             language=language or "en",
@@ -53,11 +57,13 @@ def fake_pipeline(tmp_path, monkeypatch):
         audio.write_bytes(media.read_bytes())
         return audio
 
+    engine = _Engine()
     monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: "ffmpeg")
     monkeypatch.setattr(pipeline, "fetch_media", fetch)
     monkeypatch.setattr(pipeline, "extract_audio", extract)
-    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: _Engine())
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: engine)
     monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+    return engine
 
 
 @pytest.mark.parametrize("durable", [False, True], ids=["memory", "sqlite"])
@@ -86,6 +92,7 @@ def test_empty_formats_request_resumes_its_own_checkpoint(
         resumed = resume_job(store, job.id, background=False)
         assert resumed.id == job.id
         assert resumed.state is JobState.DONE
+        assert fake_pipeline.calls == 1, "the resume must not transcribe again"
 
         # One canonical meaning: what the durable request records is exactly
         # what the run did and what the checkpoint was matched against.
@@ -93,5 +100,36 @@ def test_empty_formats_request_resumes_its_own_checkpoint(
         assert stored.request["formats"] == DEFAULT_FORMATS
         assert request.options()["formats"] == DEFAULT_FORMATS
         assert load_checkpoint(stored).options == request.options()
+    finally:
+        store.close()
+
+
+def test_empty_formats_request_finds_its_own_checkpoint_without_a_job_id(
+    tmp_path, fake_pipeline
+):
+    """A bare resume (CLI ``--resume``, MCP ``resume=True``) must reuse, not re-run.
+
+    With no job id the submission path searches by checkpoint match alone, so a
+    request that cannot match its own checkpoint is not refused - it quietly
+    submits a second identical job and pays for the transcription twice.
+    """
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    store = MemoryJobStore()
+    try:
+        first = submit_request(
+            store, SubmissionRequest(source=str(source), formats=[], model="tiny", device="cpu"),
+            background=False,
+        )
+        assert first.state is JobState.DONE
+        assert fake_pipeline.calls == 1
+
+        again = submit_request(
+            store, SubmissionRequest(source=str(source), formats=[], model="tiny", device="cpu"),
+            background=False, resume=True,
+        )
+        assert again.id == first.id
+        assert again.state is JobState.DONE
+        assert fake_pipeline.calls == 1, "the checkpoint was not reused"
     finally:
         store.close()

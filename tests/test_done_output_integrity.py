@@ -474,19 +474,18 @@ def test_helper_fails_closed_on_a_pdf_tamper_or_an_uncomparable_document_id(
     assert not list(out_dir.glob("*.tmp"))
 
 
-def test_resume_of_an_empty_format_list_never_returns_recorded_outputs(
+def test_resume_of_an_empty_format_list_verifies_recorded_outputs(
     tmp_path, fake_pipeline
 ):
-    """``formats=[]`` (CLI ``--formats ""``) cannot reach the rendering-skip branch.
+    """``formats=[]`` (CLI ``--formats ""``) never hands back unverified outputs.
 
-    The pipeline reads an empty list as the standard three formats, so such a
-    job publishes and records all three - while the checkpoint it stores holds
-    that defaulted list, not the empty one the request keeps. A resume
-    therefore fails the checkpoint match before the DONE branch is reached, and
-    the recorded paths are never handed back unverified. This is what makes
-    ``reusable_done_result``'s ``formats``-empty branch unreachable from the
-    real surfaces; if a later change makes the two lists agree, this test must
-    be revisited before that branch can be trusted.
+    The pipeline reads an empty list as the standard three formats, and since
+    U51 the request records that same meaning, so its resume now matches the
+    checkpoint it wrote and reaches the DONE branch. That branch verifies every
+    recorded output against a fresh render, so a recorded file changed after the
+    job finished is refused instead of returned. The rendering-skip branch in
+    ``reusable_done_result`` is still unreachable from a real surface: a
+    ``SubmissionRequest`` can no longer hold an empty list.
     """
     out_dir, engine = fake_pipeline
     source = tmp_path / "clip.wav"
@@ -495,13 +494,15 @@ def test_resume_of_an_empty_format_list_never_returns_recorded_outputs(
     job = _finish_job(store, out_dir, source, formats=())
 
     assert sorted(Path(p).suffix for p in job.outputs) == [".json", ".srt", ".txt"]
+    assert store.get(job.id).request["formats"] == ["json", "srt", "txt"]
     tampered = next(Path(p) for p in job.outputs if p.endswith(".txt"))
     tampered.write_bytes(FOREIGN)
 
-    with pytest.raises(ValueError, match="does not match the saved checkpoint"):
+    with pytest.raises(CheckpointError) as exc:
         _resume(store, job.id)
 
-    assert tampered.read_bytes() == FOREIGN
+    assert "no longer matches" in str(exc.value), exc.value
+    assert tampered.read_bytes() == FOREIGN, "the foreign bytes were clobbered"
     assert engine.calls == 1
 
 
