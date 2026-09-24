@@ -26,7 +26,7 @@ from textflowkit.core.checkpoint import (
     validate_local_resume,
 )
 from textflowkit.core.diarize import DiarizationError, assign_speakers, get_diarizer
-from textflowkit.core.engine import get_engine
+from textflowkit.core.engine import get_engine, require_engine
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeInputPathError,
@@ -223,6 +223,17 @@ def transcribe(
             )
     if output_dir is not None:
         validate_export_requirements(formats)
+
+    # The engine name, and whether an optional engine's package is importable at
+    # all, are both knowable from the arguments alone. Checking them here means a
+    # typo or a missing extra costs neither a download, a decode, nor a model
+    # load. The adapters preflight through `SubmissionRequest` and
+    # `submit_request`; this is the same refusal for a caller who reaches the
+    # pipeline directly from Python.
+    try:
+        require_engine(engine)
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
 
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured

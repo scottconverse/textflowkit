@@ -71,6 +71,22 @@ def ensure_engine_available(name: str) -> str:
     return canonical
 
 
+def require_engine(name: str) -> str:
+    """Validate the name and require an optional engine's package to be importable.
+
+    The same checks as :func:`ensure_engine_available`, except that a missing
+    extra is reported as ``ValueError`` rather than ``RuntimeError``. Every
+    surface already maps ``ValueError`` onto its own refusal - a CLI message and
+    exit code, an MCP ``{"error": ...}``, an HTTP 422 - so the install line
+    travels through the contract those surfaces already have, instead of a fifth
+    error type that each of them would have to learn to catch separately.
+    """
+    try:
+        return ensure_engine_available(name)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 class Engine(Protocol):
     name: str
 

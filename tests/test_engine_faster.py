@@ -411,6 +411,12 @@ def test_batch_request_carries_the_engine_into_the_job_record(monkeypatch):
     from textflowkit.core import submission
     from textflowkit.core.batch import run_batch
 
+    # U43: `submit_request` now preflights the optional extra before a job is
+    # created, so naming faster-whisper without it is refused rather than run.
+    # The engine still has to survive into the record, which is what this test
+    # is about - so the package is faked, not absent.
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        _fake_faster_whisper([], {}))
     store = MemoryJobStore()
     seen: list = []
     monkeypatch.setattr(submission, "run_job",
