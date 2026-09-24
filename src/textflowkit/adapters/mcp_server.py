@@ -6,6 +6,12 @@ Transport decision (2026-09-21): stdio first, Streamable HTTP second. Both are
 served from this one module so the tool definitions cannot drift apart. Every
 tool calls straight into `core.runner`; no pipeline logic lives here.
 
+Streamable HTTP is unauthenticated and loopback-only unless remote access is
+deliberately opted into. `run_http()` refuses a wide bind, and the app itself
+refuses a request that is not provably from a local caller, so a remote peer
+cannot reach the tools by pointing an ASGI server at the app and sending a
+loopback `Host`. See `LoopbackPeerGuard`.
+
 Verified harness support:
   - DSH (@deepseek-ai/dsh-mcp-client) - stdio + streamable-http
   - Claude Code                       - stdio + http (+ sse)
@@ -23,7 +29,12 @@ import sys
 from typing import Any
 
 from textflowkit import __version__
-from textflowkit.core.bind import ENV_ALLOW_REMOTE, UnsafeBindError, check_bind_safety
+from textflowkit.core.bind import (
+    ENV_ALLOW_REMOTE,
+    UnsafeBindError,
+    check_bind_safety,
+    developer_request_refusal,
+)
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
@@ -55,6 +66,12 @@ try:  # the MCP SDK is an optional extra
     # mcp 2.x renamed FastMCP to MCPServer (mcp.server.mcpserver).
     from mcp.server.mcpserver import MCPServer
     from mcp.types import ToolAnnotations
+
+    # Starlette arrives with the SDK and is what the Streamable-HTTP app is built
+    # from, so the guard below is only reachable where it is importable.
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.types import ASGIApp, Receive, Scope, Send
 except ImportError as exc:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The MCP adapter requires the 'mcp' extra. Install with: pip install 'textflowkit[mcp]'"
@@ -80,8 +97,89 @@ Transcription runs locally. Long videos are processed in the background, so neve
 block on transcribe_media; poll the job instead.
 """
 
-mcp = MCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
 
+def _scope_header(scope: Scope, name: bytes) -> str | None:
+    """An ASGI request header value, or None. ASGI lowercases header names."""
+    for key, value in scope.get("headers") or ():
+        if key == name:
+            return value.decode("latin-1")
+    return None
+
+
+def _scope_peer(scope: Scope) -> str | None:
+    """The ASGI peer address, or None when the server reports none."""
+    client = scope.get("client")
+    return client[0] if client else None
+
+
+class LoopbackPeerGuard:
+    """Refuse an MCP-over-HTTP request that is not provably from a local caller.
+
+    The SDK's built-in DNS-rebinding protection checks the `Host` and `Origin`
+    headers but never the ASGI peer, and a header says who the caller was
+    pointing at rather than who the caller is. So the app
+    `streamable_http_app()` returns is reachable by a remote caller that simply
+    sends `Host: 127.0.0.1` whenever another ASGI server sits in front of it - a
+    widened bind, a container port mapping, or a reverse proxy. `main()`'s
+    startup bind check cannot see any of that, and never runs at all when the
+    app is started directly by an ASGI server.
+
+    `developer_request_refusal()` is asked instead: it wants a loopback `Host`
+    and `Origin`, and a peer address that is *provably* loopback, so an
+    unjudged peer is refused rather than assumed local. That is the same verdict
+    the developer JSON-HTTP surface reaches, from the same core policy, so the
+    two HTTP surfaces cannot drift apart. Explicit remote opt-in
+    (`--allow-remote` per app, or `TEXTFLOWKIT_ALLOW_REMOTE=1`) stands it down.
+
+    Pure ASGI, not `BaseHTTPMiddleware`: MCP responses stream, and middleware
+    that buffers `receive`/`send` would break them. Only the scope is read, and
+    a permitted request is passed through untouched.
+    """
+
+    def __init__(self, app: ASGIApp, *, allow_remote: bool | None = None) -> None:
+        self.app = app
+        self.allow_remote = allow_remote
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Non-HTTP scopes (lifespan above all: it starts the SDK's session
+        # manager) are not requests and have no peer to judge.
+        if scope.get("type") != "http" or self.allow_remote:
+            await self.app(scope, receive, send)
+            return
+        refusal = developer_request_refusal(
+            host=_scope_header(scope, b"host"),
+            origin=_scope_header(scope, b"origin"),
+            peer=_scope_peer(scope),
+        )
+        if refusal is None:
+            await self.app(scope, receive, send)
+            return
+        await JSONResponse({"error": refusal}, status_code=403)(scope, receive, send)
+
+
+class GuardedMCPServer(MCPServer):
+    """`MCPServer` whose Streamable-HTTP app carries the loopback peer guard.
+
+    `streamable_http_app()` is the SDK's extension point: both a direct call and
+    `run(transport='streamable-http')` (which `run_http` uses) go through it, so
+    building the app here covers every way this module reaches Streamable HTTP.
+
+    `remote_opt_in` is the per-app form of `--allow-remote`, set by `run_http`
+    for the duration of one run. It is deliberately not a process-global env
+    write: an opt-in for one server must not silently widen another, and an
+    operator starting the app directly can still use `TEXTFLOWKIT_ALLOW_REMOTE`,
+    which the guard reads per request.
+    """
+
+    remote_opt_in: bool | None = None
+
+    def streamable_http_app(self, **kwargs: Any) -> Starlette:
+        app = super().streamable_http_app(**kwargs)
+        app.add_middleware(LoopbackPeerGuard, allow_remote=self.remote_opt_in)
+        return app
+
+
+mcp = GuardedMCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
 
 def _job_payload(job: Job) -> dict[str, Any]:
     return job.to_dict()
@@ -514,13 +612,31 @@ def run_stdio() -> None:
     mcp.run(transport="stdio")
 
 
-def run_http(host: str = "127.0.0.1", port: int = 8766, path: str = "/mcp") -> None:
+def run_http(
+    host: str = "127.0.0.1",
+    port: int = 8766,
+    path: str = "/mcp",
+    *,
+    allow_remote: bool | None = None,
+) -> None:
     """Run the server over Streamable HTTP (for remote/multi-client use).
 
     Binds to localhost by default. Exposing this beyond localhost requires your
     own auth layer; the server ships none.
+
+    This validates the bind itself rather than leaving it to `main()`: called
+    directly from Python it must refuse a non-loopback bind just as the CLI
+    does. `allow_remote=True` is the per-app opt-in (the CLI flag); left unset,
+    `TEXTFLOWKIT_ALLOW_REMOTE=1` still permits a wide bind, and the app it
+    builds keeps refusing a remote peer unless one of the two is set.
     """
-    mcp.run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
+    check_bind_safety(host, allow_remote=allow_remote)
+    previous = mcp.remote_opt_in
+    mcp.remote_opt_in = allow_remote
+    try:
+        mcp.run(transport="streamable-http", host=host, port=port, streamable_http_path=path)
+    finally:
+        mcp.remote_opt_in = previous
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -554,11 +670,15 @@ def main(argv: list[str] | None = None) -> int:
         run_stdio()
     else:
         try:
-            check_bind_safety(args.host, allow_remote=args.allow_remote or None)
+            run_http(
+                host=args.host,
+                port=args.port,
+                path=args.path,
+                allow_remote=args.allow_remote or None,
+            )
         except UnsafeBindError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        run_http(host=args.host, port=args.port, path=args.path)
     return 0
 
 

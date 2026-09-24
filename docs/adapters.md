@@ -167,7 +167,14 @@ TEXTFLOWKIT_ALLOW_REMOTE=1 textflowkit-mcp --transport http --host 0.0.0.0
 The same policy is enforced per request, so it also covers the JSON HTTP app
 started directly through an ASGI server (`uvicorn
 textflowkit.adapters.http_server:app`), where the startup check above never
-runs. A developer-mode request is refused with `403` unless its `Host` header
+runs. The MCP Streamable-HTTP app carries the same per-request boundary, for
+the same reason: the MCP SDK's DNS-rebinding protection checks `Host` and
+`Origin` but never the client's address, so an app built with
+`mcp.streamable_http_app()` and reached through another ASGI server would accept
+a remote caller that sends a loopback `Host`. `run_http()` performs the startup
+bind check itself, so calling it from Python refuses a wide bind exactly as the
+CLI does.
+A developer-mode request is refused with `403` unless its `Host` header
 names loopback, any `Origin` header it carries names a loopback origin, and the
 client's own address (not `X-Forwarded-*`, which is not trusted) is loopback.
 That blocks a hostname that resolves to loopback (DNS rebinding) and cross-site
@@ -217,7 +224,9 @@ the operator must ensure that proxy blocks private/loopback destinations and
 DNS rebinding. External JavaScript runtimes are disabled for production URL
 jobs because they are not guaranteed to honor yt-dlp's proxy; this may limit
 some YouTube formats. Local-file jobs do not require network egress. Streamable-HTTP
-MCP is a separate surface and should remain on loopback or behind a gateway;
+MCP is a separate surface: it enforces the loopback peer/`Host`/`Origin`
+boundary described above and stands it down on `--allow-remote` /
+`TEXTFLOWKIT_ALLOW_REMOTE=1`, and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
 
 ### Client identity behind a proxy
