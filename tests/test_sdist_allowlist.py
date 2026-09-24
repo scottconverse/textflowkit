@@ -28,24 +28,28 @@ from textflowkit import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Untracked local state that `.gitignore` does not name, so hatchling's default
-# "everything the ignore files do not exclude" rule picked it up. The first is
-# the exact shape the reviewer reported; the rest are the kinds of stray path
-# that must not ship either: a notes file, a build-output folder, a local
-# credentials file.
+# Untracked local state planted in the copy, one entry per kind the brief names.
+# `.gitignore` does not name the first two, which is exactly why hatchling's
+# default "everything the ignore files do not exclude" rule published them - the
+# `.v` folder is the shape the reviewer reported. The last four `.gitignore`
+# does name, so they were safe before and must stay safe now that the rule is an
+# allowlist rather than a blocklist.
 DEBRIS = (
-    ".v/sentinel.txt",
-    "stray-local-notes.txt",
-    "out/scrap.txt",
-    ".env",
+    ".v/sentinel.txt",            # scratch env folder, not named by .gitignore
+    "stray-local-notes.txt",      # loose stray file, not named by .gitignore
+    "out/scrap.txt",              # build output
+    ".env",                       # local credentials
+    ".venv/marker.txt",           # local environment
+    ".pytest_cache/marker.txt",   # cache
 )
 
-# The copy must not drag in the maintainer's own environment or build output.
-# They are planted fresh inside the copy instead, so the assertion is about the
-# configuration rather than about whatever this machine happens to have.
+# Not copied. A `.git` directory would make the copy a second repository, and
+# the maintainer's own environment, build output, and caches must not decide the
+# outcome; the debris kinds above are planted fresh in the copy instead, so the
+# assertions are about the configuration rather than about this machine.
 COPY_SKIP = (
     ".git", ".venv", "venv", "__pycache__", "build", "dist", "out", "outputs",
-    "work", ".pytest_cache", ".ruff_cache", ".mypy_cache",
+    "work", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".env",
 )
 
 # Everything an sdist install/build or a contributor's test run needs. This is
