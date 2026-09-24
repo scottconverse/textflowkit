@@ -77,8 +77,19 @@ BLOCKED_NETWORKS = tuple(
 )
 
 
+# RFC 4291 IPv4-mapped IPv6 (::ffff:0:0/96). Detected with an explicit range
+# test and mask rather than `IPv6Address.ipv4_mapped`, so the guard rests only
+# on arithmetic that is identical across the declared 3.10-3.13 range.
+IPV4_MAPPED_NETWORK = ipaddress.ip_network("::ffff:0:0/96")
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for addresses that must never be reachable from a user-supplied URL."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip in IPV4_MAPPED_NETWORK:
+        # ::ffff:10.0.0.1 names the same destination as 10.0.0.1 - the IPv4 stack
+        # connects to the embedded address - so judge it by the IPv4 policy. The
+        # mapped range as a whole is not blocked: ::ffff:8.8.8.8 stays reachable.
+        return _is_blocked_ip(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF))
     if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
         return True
     return any(ip in net for net in BLOCKED_NETWORKS if net.version == ip.version)
