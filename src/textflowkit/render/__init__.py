@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 
 from textflowkit.core.model import Transcript
 from textflowkit.core.service import enforce_output_limit
+from textflowkit.render import _rename_noreplace
 from textflowkit.render.markdown import render_markdown
 from textflowkit.render.srt import render_srt
 from textflowkit.render.txt import render_txt
@@ -45,9 +47,17 @@ _HAS_UMASK = os.name == "posix"
 # Whether `os.rename` refuses an existing destination, which is what makes it a
 # usable second no-replace publication primitive. Windows: yes - it raises
 # `FileExistsError` (WinError 183, measured on the unit's host) and moves within
-# one volume atomically. POSIX: no - `os.rename` silently overwrites, so a link
-# failure there stays fail-closed rather than degrading to a rename.
+# one volume atomically. POSIX: no - `os.rename` silently overwrites, so off
+# Windows a link failure must reach some other primitive or fail closed.
 _RENAME_REFUSES_EXISTING = os.name == "nt"
+
+# Whether that other primitive is Linux's `renameat2(..., RENAME_NOREPLACE)`,
+# which moves the staged inode atomically and refuses an existing destination
+# with `EEXIST`. `os.name == "posix"` is not the test: macOS is POSIX with no
+# `renameat2`, and a Linux filesystem without support for the flag answers
+# `EINVAL` - so the syscall wrapper probes for the libc symbol and fails closed
+# on either, rather than this flag promising something the host cannot do.
+_IS_LINUX = sys.platform.startswith("linux")
 
 
 def validate_export_requirements(formats: list[str]) -> None:
@@ -157,10 +167,12 @@ def atomic_write_bytes(
     until the link or replace below.
 
     Publication is no-clobber whenever `replace` is false: a hard link normally,
-    and on Windows a rename after a link failure, since a filesystem without
-    hard links (FAT32, exFAT, some network shares) still has a rename that
-    refuses an existing destination. Neither path writes bytes to the
-    destination name directly, so a partial file is never visible there.
+    then a platform's second no-replace primitive after a link failure, since a
+    filesystem without hard links (FAT32, exFAT, some network shares) may still
+    have one - Windows' `os.rename`, and Linux's `renameat2(RENAME_NOREPLACE)`.
+    A platform that has neither keeps the link's error and publishes nothing.
+    None of these paths writes bytes to the destination name directly, so a
+    partial file is never visible there.
     """
     from textflowkit.core.paths import verify_output_file_target
 
@@ -198,20 +210,34 @@ def atomic_write_bytes(
             except OSError as exc:
                 # Some filesystems have no hard links at all - FAT32 and exFAT
                 # (most USB drives and SD cards) and some network shares - so
-                # the link above cannot publish there. Windows offers an
-                # equivalent primitive: `os.rename` refuses an existing
-                # destination with FileExistsError and moves within one volume
-                # atomically. The staging file is created in `path.parent`, so
-                # the move stays on that volume, and nothing under the
-                # destination name is ever clobbered. A collision is the
+                # the link above cannot publish there. A collision is the
                 # no-clobber verdict rather than a capability gap, so it is
-                # raised instead of retried. POSIX rename overwrites and is
-                # deliberately not used: there the link failure stays
-                # fail-closed. The exception is swallowed only where a rename
-                # replaces the outcome; any other platform keeps its error.
-                if not _RENAME_REFUSES_EXISTING or isinstance(exc, FileExistsError):
+                # raised instead of retried; the fallback below is for the
+                # "this filesystem cannot link" answer.
+                if isinstance(exc, FileExistsError):
                     raise
-                os.rename(temp, path)
+                # Windows offers an equivalent primitive: `os.rename` refuses an
+                # existing destination with FileExistsError and moves within one
+                # volume atomically. Linux offers `renameat2(RENAME_NOREPLACE)`,
+                # which moves the staged inode and refuses an existing
+                # destination with EEXIST - kernel-enforced like the link, and
+                # unlike POSIX rename(2), which would replace whatever is there.
+                # Both keep the destination name either fully published or
+                # untouched. The staging file is created in `path.parent`, so
+                # the move stays on the destination's volume.
+                if _RENAME_REFUSES_EXISTING:
+                    os.rename(temp, path)
+                elif _IS_LINUX:
+                    # Raises NoReplaceRenameUnsupported when this Linux host
+                    # cannot do it (no libc symbol, no filesystem support for
+                    # the flag): the export fails closed with the link failure
+                    # still in the traceback, never through a plain rename.
+                    _rename_noreplace.rename_noreplace(temp, path)
+                else:
+                    # No second primitive here (macOS, say): fail closed with
+                    # the link's own error rather than degrading to a write
+                    # that could expose or overwrite a destination.
+                    raise
                 temp = None
     finally:
         if temp is not None:

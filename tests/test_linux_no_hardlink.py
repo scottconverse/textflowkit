@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -76,15 +77,15 @@ UNSUPPORTED_ANSWERS = [
 
 
 def _native():
-    """The Linux syscall wrapper under test.
+    """The Linux syscall wrapper module under test.
 
     Imported inside the callers rather than at module scope so that a red run -
     before the module exists - reports one failure per behaviour instead of a
-    single collection error that hides which behaviours are unproven.
+    single collection error that hides which behaviours are unproven. By module
+    name rather than by package attribute, so that the package's own binding of
+    the callable cannot be mistaken for the module.
     """
-    from textflowkit.render import _rename_noreplace
-
-    return _rename_noreplace
+    return importlib.import_module("textflowkit.render._rename_noreplace")
 
 
 def _entries(directory: Path) -> list[str]:
@@ -183,8 +184,9 @@ class _KernelDouble:
 
 
 def _install_kernel(monkeypatch, fail_with: OSError | None = None) -> _KernelDouble:
+    """Put the double in place of the real syscall, wherever it is called from."""
     kernel = _KernelDouble(fail_with)
-    monkeypatch.setattr(render_mod, "_rename_noreplace", kernel, raising=False)
+    monkeypatch.setattr(_native(), "rename_noreplace", kernel)
     return kernel
 
 
@@ -598,6 +600,32 @@ def test_the_real_probe_reports_this_host_honestly(native):
         assert "renameat2" in str(exc)
         return
     assert symbol.restype is ctypes.c_int
+
+
+def test_the_real_linux_branch_fails_closed_on_a_host_without_the_symbol(native, tmp_path, monkeypatch):
+    """The real wrapper, in the real branch, on a host whose libc has no symbol.
+
+    Only the platform flag and the link failure are simulated: the call that
+    decides is this host's own libc probe, so the fail-closed answer is
+    measured here rather than faked. On a host that does have the symbol there
+    is nothing to measure, and the skip says so.
+    """
+    try:
+        native._load_renameat2()
+    except native.NoReplaceRenameUnsupported:
+        pass
+    else:
+        pytest.skip("this host has a real renameat2 symbol; see the Linux-only tests")
+
+    target = tmp_path / "talk.txt"
+    _linux_host(monkeypatch)
+    _fail_link(monkeypatch, OSError(errno.EPERM, "Operation not permitted"))
+
+    with pytest.raises(native.NoReplaceRenameUnsupported):
+        atomic_write_bytes(target, b"hello")
+
+    assert not target.exists(), "a host without the native primitive published anyway"
+    assert _entries(tmp_path) == [], "the staging file was left behind"
 
 
 def test_a_host_without_the_symbol_publishes_nothing(native, tmp_path):
