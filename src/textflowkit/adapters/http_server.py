@@ -84,14 +84,41 @@ _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
 RATE_BUCKET_CAPACITY = 10000
 RATE_BUCKET_TTL_SECONDS = 60.0
-_last_prune_at = float("-inf")  # guarded by _RATE_LOCK
+# Earliest monotonic time at which a tracked bucket can expire. A sweep is only
+# eligible once it passes, so a table full of live peers costs one length check
+# per request instead of an O(RATE_BUCKET_CAPACITY) walk. Every sweep relearns
+# it from the buckets that remain. Guarded by _RATE_LOCK.
+_next_expiry = float("inf")
 
 
-def _prune_expired_buckets(now: float) -> None:
-    """Drop buckets whose window has closed. Caller must hold _RATE_LOCK."""
+def _sweep_expired_buckets(now: float) -> None:
+    """Drop expired buckets and relearn when the next one can expire.
+
+    Caller must hold _RATE_LOCK. A bucket restarted in place is younger than the
+    one it replaces, so the relearned bound is exact and never too late.
+    """
+    global _next_expiry
     cutoff = now - RATE_BUCKET_TTL_SECONDS
-    for peer in [name for name, (started, _) in _RATE_BUCKETS.items() if started <= cutoff]:
-        del _RATE_BUCKETS[peer]
+    oldest = float("inf")
+    for peer in list(_RATE_BUCKETS):
+        started, _ = _RATE_BUCKETS[peer]
+        if started <= cutoff:
+            del _RATE_BUCKETS[peer]
+        elif started < oldest:
+            oldest = started
+    _next_expiry = oldest + RATE_BUCKET_TTL_SECONDS
+
+
+def _sweep_is_eligible(now: float) -> bool:
+    """True when a bucket may have expired since the last sweep.
+
+    Caller must hold _RATE_LOCK. _next_expiry is only maintained through
+    _rate_refusal. Reading it as infinite while buckets exist means the table was
+    written directly, so the bound is unknown and must be relearned rather than
+    trusted - otherwise a stale claim of "nothing can have expired" would defer
+    reclamation indefinitely.
+    """
+    return now >= _next_expiry or (_next_expiry == float("inf") and bool(_RATE_BUCKETS))
 
 
 def _rate_refusal(peer: str, now: float, rate: int) -> str | None:
@@ -99,23 +126,27 @@ def _rate_refusal(peer: str, now: float, rate: int) -> str | None:
 
     Returns None when the request may proceed, else the refusal reason. Buckets
     are per-peer for RATE_BUCKET_TTL_SECONDS. At capacity an untracked peer is
-    refused rather than evicting counters that are still counting down; expired
-    buckets are the only thing reclaimed, and a live table is swept at most once
-    per window so a flood of new addresses cannot force a sweep per request.
+    refused rather than evicting counters that are still counting down. Expired
+    buckets are the only thing reclaimed, and only once the earliest known one
+    has actually expired, so neither a live table nor a single expiry costs a
+    scan per request.
     """
-    global _last_prune_at
+    global _next_expiry
     with _RATE_LOCK:
+        known = peer in _RATE_BUCKETS
         started, count = _RATE_BUCKETS.get(peer, (now, 0))
         if now - started >= RATE_BUCKET_TTL_SECONDS:
             started, count = now, 0
         if count >= rate:
             return "rate limit exceeded"
-        if peer not in _RATE_BUCKETS and len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
-            if now - _last_prune_at >= RATE_BUCKET_TTL_SECONDS:
-                _prune_expired_buckets(now)
-                _last_prune_at = now
+        if not known and len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
+            if _sweep_is_eligible(now):
+                _sweep_expired_buckets(now)
             if len(_RATE_BUCKETS) >= RATE_BUCKET_CAPACITY:
                 return "rate capacity reached"
+        if not known and not _RATE_BUCKETS:
+            # Only bucket in an empty table: it is also the next to expire.
+            _next_expiry = started + RATE_BUCKET_TTL_SECONDS
         _RATE_BUCKETS[peer] = started, count + 1
         return None
 
