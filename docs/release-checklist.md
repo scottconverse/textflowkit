@@ -165,7 +165,13 @@ checkout would otherwise claim content the published files do not have. A change
 fonts package needs a version bump in
 `packages/textflowkit-fonts/pyproject.toml` so the change ships as its own fonts
 release — the same rule `tests/test_release_surfaces.py` enforces for a fonts
-version a release tag already published.
+version a release tag already published. One published member is not compared:
+hatchling copies the repository root's `.gitignore` into the sdist root, so the
+sdist carries a `.gitignore` the package directory does not have — the published
+`textflowkit-fonts` 0.1.5 sdist is one — and that single member is builder
+metadata that follows the repository root rather than this package. It is
+exempt only while the package has no `.gitignore` of its own; a package
+`.gitignore`, or any nested one, is compared like any other file.
 
 The manifest script takes the two versions separately: `--version` pins the two
 `textflowkit` artifacts (it is the release tag), and `--fonts-version` pins the
