@@ -3,6 +3,7 @@
 Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.**
 
 [Project landing page](https://www.textflowkit.org/) ·
+[PyPI package](https://pypi.org/project/textflowkit/) ·
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases)
 
 The [static site deployment](docs/site-deployment.md) is hosted on Cloudflare
@@ -79,28 +80,26 @@ change their access rules frequently. See [docs/sources.md](docs/sources.md).
 Requires **Python ≥ 3.10** and **ffmpeg** on `PATH`.
 
 ```bash
-git clone https://github.com/scottconverse/textflowkit
-cd textflowkit
-pip install -e .
+python -m pip install textflowkit
+textflowkit doctor
 ```
 
-Or install the built wheel from the release page:
+For MCP or the JSON HTTP adapter, install the matching extra:
 
 ```bash
-pip install https://github.com/scottconverse/textflowkit/releases/download/v0.1.3/textflowkit-0.1.3-py3-none-any.whl
+python -m pip install 'textflowkit[mcp]'    # MCP server
+python -m pip install 'textflowkit[http]'   # JSON HTTP API
 ```
 
-Not published to PyPI; the repository and its releases are the distribution path.
-The release page lists each artifact's SHA-256. (Those values are deliberately
-kept out of this file: the README is bundled into the wheel as its description,
-so a hash written here would change the artifact it describes.)
-Optional extras:
+**AMD ROCm on native Windows:** do not use the generic command in an environment
+with a working ROCm PyTorch install. Ordinary dependency resolution can replace
+that torch build. Follow the [ROCm install notes](docs/install.md)
+to preserve it.
 
-```bash
-pip install -e ".[mcp]"    # MCP server adapter
-pip install -e ".[http]"   # HTTP API adapter
-pip install -e ".[dev]"    # tests + linter
-```
+The same version's wheel and source archive are also on the
+[GitHub release page](https://github.com/scottconverse/textflowkit/releases/latest).
+The release lists their SHA-256 hashes. For editable source development, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
@@ -143,7 +142,7 @@ textflowkit export ./transcript.json --format vtt
 ## Use as an MCP server
 
 ```bash
-pip install -e ".[mcp]"
+python -m pip install 'textflowkit[mcp]'
 textflowkit-mcp                                  # stdio
 textflowkit-mcp --transport http --port 8766     # Streamable HTTP
 ```
@@ -175,7 +174,7 @@ See [docs/adapters.md](docs/adapters.md) for per-harness configuration.
 ## Use as an HTTP API
 
 ```bash
-pip install -e ".[http]"
+python -m pip install 'textflowkit[http]'
 textflowkit-http --port 8767
 ```
 

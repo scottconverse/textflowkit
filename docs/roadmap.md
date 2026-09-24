@@ -67,6 +67,12 @@ See [site deployment](site-deployment.md) for the hosting configuration. This
 static page is documentation and a product landing page, not a hosted
 transcription service.
 
+## Package distribution
+
+- [x] Publish the verified v0.1.3 wheel and source archive on PyPI
+- [x] Make PyPI the default developer install path while keeping GitHub
+  releases and the native-Windows ROCm dependency instructions
+
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not
 a deterministic pull-request job. The release gate runs locally on Windows,

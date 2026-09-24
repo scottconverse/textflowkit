@@ -78,7 +78,7 @@ targeting an existing entry and fails with `patch: entry "<id>" not found`.
 ## MCP (for AI harnesses)
 
 ```bash
-pip install -e ".[mcp]"
+python -m pip install 'textflowkit[mcp]'
 textflowkit-mcp                      # stdio (default)
 textflowkit-mcp --transport http --host 127.0.0.1 --port 8766
 ```
@@ -123,7 +123,7 @@ OpenCode (`opencode.json`):
 ## HTTP (for software products and web frontends)
 
 ```bash
-pip install -e ".[http]"
+python -m pip install 'textflowkit[http]'
 textflowkit-http --host 127.0.0.1 --port 8767
 ```
 
@@ -254,7 +254,7 @@ Binary formats cannot be returned inline, and asking for one that way returns a
 clear message rather than failing deeper down.
 
 ```bash
-pip install -e ".[export]"        # python-docx + reportlab
+python -m pip install 'textflowkit[export]'  # python-docx + reportlab
 curl -X POST "http://127.0.0.1:8767/jobs/$ID/export?formats=docx&formats=pdf"
 ```
 

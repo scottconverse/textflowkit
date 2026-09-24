@@ -48,3 +48,16 @@ neither result verifies the other 12 recognized sites.
 
 The script deletes its temporary media and transcript after producing the
 receipt. It does not upload cookies, media, or transcripts to GitHub.
+
+## PyPI publication
+
+If this release is also published to PyPI, upload the **same** verified wheel
+and source archive as the GitHub release. Check package metadata before upload,
+then compare both PyPI SHA-256 digests with the GitHub release assets. Finally,
+install that exact version from the public PyPI index in a clean environment
+and smoke the CLI entry point. An install with `--no-deps` proves distribution
+and entry-point wiring only; it does not prove a full transcription run.
+
+Never place an API token in this repository, a CI log, or a shell command line.
+An upload is a separate public release action; passing CI alone does not
+authorize it.
