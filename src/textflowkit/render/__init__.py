@@ -101,20 +101,33 @@ def _ordinary_file_mode(directory: Path) -> int | None:
     filesystem and the same umask.
 
     Returns None when the mode cannot be measured, which includes Windows,
-    where files carry no umask-derived bits. This is metadata rather than a
-    safety property, so a filesystem that refuses the probe must not fail an
-    export that would otherwise succeed.
+    where files carry no umask-derived bits, and a name that is already taken.
+    This is metadata rather than a safety property, so a filesystem that
+    refuses the probe must not fail an export that would otherwise succeed.
+
+    Cleanup is not best-effort, because it deletes by name. The probe is
+    removed only once the exclusive create has proved this call owns it: a
+    failed create means the name belongs to somebody else, and unlinking it
+    would destroy a file this function never created. If the removal itself
+    fails, that OSError is left to propagate and the export fails closed -
+    a visible error is better than a probe left in the user's directory
+    forever, and the staging file's own cleanup already behaves this way. An
+    ambiguous failure between the create and the claim would leave a harmless
+    empty file rather than delete a stranger's.
     """
     if not _HAS_UMASK:
         return None
     probe = directory / f".{os.urandom(8).hex()}.textflowkit-mode"
+    created = False
     try:
         with open(probe, "xb") as handle:
+            created = True
             return stat.S_IMODE(os.fstat(handle.fileno()).st_mode)
     except OSError:
         return None
     finally:
-        probe.unlink(missing_ok=True)
+        if created:
+            probe.unlink(missing_ok=True)
 
 
 def atomic_write_bytes(
