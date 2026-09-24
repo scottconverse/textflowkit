@@ -139,12 +139,19 @@ def _arg(instructions: list[tuple[str, str]], name: str) -> str | None:
     return None
 
 
-def _exec_form(argument: str, marker: str) -> list[str]:
-    """The JSON argv of `CMD [...]` / `HEALTHCHECK  CMD [...]` after `marker`."""
-    index = argument.find(marker)
-    assert index != -1, f"no {marker!r} in {argument!r}"
-    payload = argument[index + len(marker):].strip()
-    assert payload.startswith("["), f"{marker} must use the exec form, not a shell string"
+def _exec_form(argument: str, marker: str | None = None) -> list[str]:
+    """The JSON argv of an exec-form instruction, after `marker` when given.
+
+    `CMD ["a", "b"]` carries the array as its whole argument; a `HEALTHCHECK`
+    carries options and then `CMD [...]`, so the marker says where the array
+    starts.
+    """
+    payload = argument.strip()
+    if marker is not None:
+        index = payload.find(marker)
+        assert index != -1, f"no {marker!r} in {argument!r}"
+        payload = payload[index + len(marker):].strip()
+    assert payload.startswith("["), f"{marker or 'the instruction'} must use the exec form"
     argv = json.loads(payload)
     assert isinstance(argv, list) and all(isinstance(item, str) for item in argv), argv
     return argv
@@ -376,7 +383,7 @@ def test_the_container_runs_as_a_nonroot_user_that_owns_its_roots() -> None:
 
 def test_the_server_is_started_on_the_container_interface_with_the_remote_opt_in() -> None:
     instructions = _instructions(DOCKERFILE)
-    argv = _exec_form(_instruction(instructions, "CMD"), "CMD")
+    argv = _exec_form(_instruction(instructions, "CMD"))
     assert argv[0] == "textflowkit-http", f"expected the JSON HTTP console script, got {argv}"
     assert "--host" in argv and argv[argv.index("--host") + 1] == "0.0.0.0", (
         "the server must listen on the container interface so the published port reaches it"
@@ -404,19 +411,25 @@ def test_the_image_healthcheck_authenticates_without_a_token_in_argv() -> None:
     assert "/health" in script, "the probe must hit the health endpoint"
 
 
+# `TEXTFLOWKIT_API_TOKEN=...` (a Dockerfile ENV) or `TEXTFLOWKIT_API_TOKEN: ...`
+# (Compose). A *reference* to the variable - the healthcheck reads it from the
+# environment - is not an assignment and must not be read as one.
+TOKEN_ASSIGNMENT = re.compile(r"TEXTFLOWKIT_API_TOKEN\s*(?::=|:|=)\s*(?P<value>.*)$")
+
+
 def test_neither_file_carries_a_production_token() -> None:
     for name in (DOCKERFILE, COMPOSE, ENV_EXAMPLE):
-        text = _read(name)
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#") or "TEXTFLOWKIT_API_TOKEN" not in stripped:
+        for line in _read(name).splitlines():
+            if line.strip().startswith("#"):
                 continue
-            # A value may come from the environment (`ENV`, `${...}`) or be an
-            # empty placeholder; it may never be a literal secret.
-            _, _, value = stripped.partition("TEXTFLOWKIT_API_TOKEN")
-            value = value.lstrip(":=").strip().strip('"')
+            match = TOKEN_ASSIGNMENT.search(line)
+            if match is None:
+                continue
+            value = match.group("value").strip().strip('"')
+            # The value may be an interpolation the operator supplies, or an
+            # empty placeholder. It may never be a literal secret.
             assert value == "" or value.startswith("${"), (
-                f"{name} appears to embed a token value: {stripped!r}"
+                f"{name} appears to embed a token value: {line.strip()!r}"
             )
     assert "${TEXTFLOWKIT_API_TOKEN:?" in _read(COMPOSE), (
         "Compose must refuse to start when the operator has not supplied a token"
@@ -494,9 +507,8 @@ def test_the_compose_healthcheck_authenticates_like_the_image_one() -> None:
     assert healthcheck.get("start_period"), "the probe needs a start period"
     assert healthcheck.get("retries"), "the probe needs a bounded retry count"
 
-    image = _instruction(_instructions(DOCKERFILE), "HEALTHCHECK")
-    image_argv = _exec_form(image, "CMD")
-    assert image_argv == argv, (
+    image_argv = _exec_form(_instruction(_instructions(DOCKERFILE), "HEALTHCHECK"), "CMD")
+    assert argv[1:] == image_argv, (
         "the image and the Compose file must run the same probe, or one of them is untested"
     )
 
