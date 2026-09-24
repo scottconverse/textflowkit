@@ -417,11 +417,18 @@ def test_a_collision_from_the_link_is_never_retried_as_the_native_call(tmp_path,
 
 
 def test_a_host_with_neither_no_replace_primitive_stays_fail_closed(tmp_path, monkeypatch):
-    """Anywhere else - macOS, say: the link error propagates untouched."""
+    """A host with no native no-replace primitive at all: the link error propagates.
+
+    All three platform flags are pinned, not just Linux's: since U33 a macOS
+    host has a primitive of its own, so leaving `_IS_MACOS` at its host value
+    would take that branch on a Mac and this test would no longer be about a
+    host that has nothing.
+    """
     assert render_mod._IS_LINUX == sys.platform.startswith("linux")
     assert render_mod._RENAME_REFUSES_EXISTING == (os.name == "nt")
     monkeypatch.setattr(render_mod, "_IS_LINUX", False, raising=False)
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False)
+    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
     kernel = _install_kernel(monkeypatch)
     target = tmp_path / "talk.txt"
     error = OSError(errno.EPERM, "Operation not permitted")

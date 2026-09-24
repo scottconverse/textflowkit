@@ -271,6 +271,10 @@ def test_a_link_failure_stays_fail_closed_where_rename_would_overwrite(tmp_path,
     cannot otherwise reach it; the export must not degrade to a direct write.
     """
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False, raising=False)
+    # Pinned off too, since U33 gave macOS a primitive of its own: otherwise a
+    # macOS host would take that branch here and this would stop testing the
+    # fail-closed one.
+    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
     target = tmp_path / "talk.txt"
     error = OSError(errno.EINVAL, "Incorrect function.")
     _fail_link(monkeypatch, error)
@@ -286,6 +290,7 @@ def test_a_link_failure_stays_fail_closed_where_rename_would_overwrite(tmp_path,
 def test_fail_closed_platform_does_not_clobber_a_competing_file(tmp_path, monkeypatch):
     """And it does not touch a file that is already there, either."""
     monkeypatch.setattr(render_mod, "_RENAME_REFUSES_EXISTING", False, raising=False)
+    monkeypatch.setattr(render_mod, "_IS_MACOS", False, raising=False)
     target = tmp_path / "talk.txt"
     target.write_bytes(b"someone else's bytes")
     error = OSError(errno.ENOTSUP, "no hard links")
