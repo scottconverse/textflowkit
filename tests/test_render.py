@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from tests.test_model import sample
+from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.timeutil import srt_timestamp, vtt_timestamp
-from textflowkit.render import SUPPORTED_FORMATS, render
+from textflowkit.render import SUPPORTED_FORMATS, render, render_bytes, write_all
 
 
 def test_srt_timestamp_format():
@@ -31,8 +32,53 @@ def test_vtt_header_and_cues():
     assert "<v A>Hello there." in out
 
 
-def test_txt_plain_omits_speakers_by_default():
+def unlabelled() -> Transcript:
+    """A transcript with no diarization at all."""
+    return Transcript(
+        source="https://example.com/y",
+        language="en",
+        segments=[
+            Segment(0.0, 2.5, "Hello there."),
+            Segment(2.5, 6.0, "General Kenobi."),
+        ],
+    )
+
+
+def test_txt_labels_speakers_at_the_normal_render_path():
+    """TXT joins srt/vtt/md in carrying the labels it was given (A5)."""
     out = render(sample(), "txt")
+    assert out.splitlines()[0] == "A: Hello there."
+    assert out.splitlines()[1] == "B: General Kenobi."
+    # The third segment carries no speaker, so it must not borrow one.
+    assert out.splitlines()[2] == "eres audaz"
+
+
+def test_txt_bytes_and_write_all_agree_with_render():
+    """render_bytes and the file writer are the same rendering as render()."""
+    tr = sample()
+    expected = "A: Hello there.\nB: General Kenobi.\neres audaz\n"
+    assert render(tr, "txt") == expected
+    assert render_bytes(tr, "txt").decode("utf-8") == expected
+
+
+def test_txt_write_all_publishes_labelled_text(tmp_path):
+    (path,) = write_all(sample(), formats=["txt"], output_dir=tmp_path, stem="talk")
+    assert path.read_text(encoding="utf-8") == (
+        "A: Hello there.\nB: General Kenobi.\neres audaz\n"
+    )
+
+
+def test_txt_unlabelled_transcript_stays_plain():
+    tr = unlabelled()
+    expected = "Hello there.\nGeneral Kenobi.\n"
+    assert render(tr, "txt") == expected
+    assert render_bytes(tr, "txt").decode("utf-8") == expected
+
+
+def test_txt_callers_can_still_suppress_speakers():
+    from textflowkit.render.txt import render_txt
+
+    out = render_txt(sample(), speaker=False)
     assert out.splitlines()[0] == "Hello there."
 
 
