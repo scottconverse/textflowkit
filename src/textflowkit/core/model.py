@@ -7,7 +7,7 @@ object is what lets the pipeline stay shared while platforms multiply.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -54,10 +54,17 @@ class Segment:
         both forms instead of silently disappearing from the compact one
         (issue #16). Loading such a transcript is unaffected; `from_dict`
         still reads the documented fields.
+
+        The compact form serializes a copy with the words already emptied
+        rather than removing the key afterwards, so the omitted word timings
+        are never converted — compact reads are the default HTTP/MCP path and
+        exist to avoid that work. With no words to skip, converting in place is
+        already free, so the copy is not built.
         """
-        data = asdict(self)
         if include_words:
-            return data
+            return asdict(self)
+        source = replace(self, words=[]) if self.words else self
+        data = asdict(source)
         data.pop("words", None)
         return data
 
