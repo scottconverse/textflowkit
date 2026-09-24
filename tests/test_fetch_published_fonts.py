@@ -18,11 +18,13 @@ something the manifest would misdescribe.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
 import json
 import sys
 import tarfile
+import time
 import urllib.error
 import zipfile
 from dataclasses import dataclass
@@ -93,9 +95,19 @@ def _sdist_bytes(
     tree has no counterpart for, which is how the published sdists differ from
     the checkout: hatchling copies the repository-root `.gitignore` into the
     sdist root.
+
+    The archive is a real tar.gz, but a clock-free one: `w:gz` would stamp the
+    gzip header with the current time and hand back different bytes - and a
+    different SHA-256 - on each call, and callers build an sdist to serve and
+    then build it again to describe. `mtime=0` with no filename keeps the header
+    fixed; the archive is written through a plain `w` tarfile so the payload
+    stays the same tar stream.
     """
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+    with (
+        gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed,
+        tarfile.open(fileobj=compressed, mode="w") as tar,
+    ):
         def add(name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name)
             info.size = len(data)
@@ -232,6 +244,29 @@ def _run(
     code = fetch_published_fonts.main(arguments, opener=_opener(routes or {}, seen))
     captured = capsys.readouterr()
     return Resolved(code, package_dir, out_dir, captured.out, captured.err)
+
+
+# --- the local fixtures -------------------------------------------------------
+
+
+def test_the_sdist_fixture_bytes_do_not_read_the_clock(monkeypatch) -> None:
+    """One sdist fixture, one set of bytes - whatever the clock says.
+
+    A gzip header carries the modification time. `_routes` builds the sdists it
+    both serves and describes, and
+    `test_the_fetched_files_are_the_bytes_the_index_recorded` calls `_routes`
+    twice - once to serve the fetch, once to name the digest it expects - so a
+    clock-reading fixture agrees with itself only while both calls land in the
+    same second. The clock is stepped here rather than waited on.
+    """
+    clock = iter([1_700_000_000.0, 1_700_000_030.0])
+    monkeypatch.setattr(time, "time", lambda: next(clock))
+
+    first = _sdist_bytes(_sources())
+    second = _sdist_bytes(_sources())
+
+    assert first == second
+    assert hashlib.sha256(first).hexdigest() == hashlib.sha256(second).hexdigest()
 
 
 # --- the two outcomes ---------------------------------------------------------
