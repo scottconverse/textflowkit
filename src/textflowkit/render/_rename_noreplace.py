@@ -99,16 +99,17 @@ class NoReplaceRenameUnsupported(OSError):
     """
 
 
-# The resolved libc symbol, the fact that the probe has run, and - when it found
-# nothing - why. One probe per process: the libc's symbol set does not change
-# underfoot, and asking again would only repeat the same answer.
-_symbol = None
-_probed = False
-_probe_error: NoReplaceRenameUnsupported | None = None
-
-
 def _load_renameat2():
-    """The libc `renameat2`, resolved once, or `NoReplaceRenameUnsupported`.
+    """The libc `renameat2`, or `NoReplaceRenameUnsupported` if this host lacks it.
+
+    Resolved on every call, with no cached answer. A cache would be shared by
+    every thread in the process while being published in more than one step, so
+    a second export job could observe "the probe has run" before the symbol
+    existed and fail closed on a host whose libc has the symbol - measured as
+    `{'second': NoReplaceRenameUnsupported, 'first': Sym}` under the one-shot
+    cache this module first shipped with. Resolving instead costs one `CDLL`
+    handle per call on a path that is only reached after a link has already
+    failed, and leaves no cross-thread state that could be seen half-published.
 
     `ctypes.CDLL(None)` names the namespace the process itself is loaded from,
     which is how libc is reached without guessing a soname - glibc is
@@ -118,27 +119,16 @@ def _load_renameat2():
     which is caught with the missing-symbol cases rather than left to escape as
     something that looks like a bug in the caller.
     """
-    global _symbol, _probed, _probe_error
-    if not _probed:
-        _probed = True
-        try:
-            libc = ctypes.CDLL(None, use_errno=True)
-            symbol = libc.renameat2
-        except (AttributeError, OSError, TypeError) as exc:
-            _probe_error = NoReplaceRenameUnsupported(
-                f"libc renameat2 is unavailable on this host ({sys.platform}): {exc}"
-            )
-        else:
-            symbol.argtypes = _SIGNATURE
-            symbol.restype = ctypes.c_int
-            _symbol = symbol
-    if _symbol is None:
-        if _probe_error is None:  # unreachable: a probe that finds nothing records why
-            _probe_error = NoReplaceRenameUnsupported(
-                f"libc renameat2 is unavailable on this host ({sys.platform})"
-            )
-        raise _probe_error
-    return _symbol
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        symbol = libc.renameat2
+    except (AttributeError, OSError, TypeError) as exc:
+        raise NoReplaceRenameUnsupported(
+            f"libc renameat2 is unavailable on this host ({sys.platform}): {exc}"
+        ) from exc
+    symbol.argtypes = _SIGNATURE
+    symbol.restype = ctypes.c_int
+    return symbol
 
 
 def _raise_rename_error(error_number: int, src: Path, dst: Path) -> NoReturn:
