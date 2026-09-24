@@ -8,6 +8,12 @@ are rejected here before any route runs. `TestClient` is used with an explicit
 loopback base URL and explicit peer address so the tests stay local: no socket is
 opened and no remote host is contacted.
 
+Locality is taken from the peer address and nothing else, so a request whose
+peer is missing or is not an IP literal is refused rather than assumed local:
+loopback-looking `Host`/`Origin` headers cannot stand in for a peer address. That
+is why the in-process client below declares a loopback peer instead of accepting
+`TestClient`'s non-address default.
+
 Production (`TEXTFLOWKIT_PROFILE=production`) keeps its Bearer profile and is not
 subject to the developer Host allowlist. Explicit remote opt-in
 (`--allow-remote` / `TEXTFLOWKIT_ALLOW_REMOTE=1`) keeps working.
@@ -24,6 +30,7 @@ from textflowkit.core.executor import reset_default_executor
 from textflowkit.core.jobs import reset_default_store
 
 LOOPBACK_BASE = "http://127.0.0.1"
+LOOPBACK_PEER = ("127.0.0.1", 50000)
 FOREIGN_PEER = ("203.0.113.9", 4444)  # TEST-NET-3; documentation range, not routable
 
 
@@ -42,7 +49,13 @@ def developer_mode(monkeypatch):
 
 
 def client(**kwargs) -> TestClient:
+    """In-process client declaring the loopback peer a local caller has.
+
+    `TestClient` defaults its peer to the non-address `testclient`, which
+    developer mode now refuses; a test that means "a local caller" has to say so.
+    """
     kwargs.setdefault("base_url", LOOPBACK_BASE)
+    kwargs.setdefault("client", LOOPBACK_PEER)
     return TestClient(http_server.app, **kwargs)
 
 
@@ -156,13 +169,71 @@ def test_forwarded_host_header_does_not_bypass_host_check():
     assert response.status_code == 403
 
 
-def test_indeterminate_peer_is_allowed_local_only():
-    """Documented limitation: a peer that is not an IP address is not judged.
+# --- an indeterminate peer is refused, never assumed local ----------------
 
-    Real ASGI servers (uvicorn) always report the peer IP, so this branch only
-    affects in-process test harnesses. The Host allowlist still applies.
-    """
-    assert client(client=("testclient", 50000)).get("/sources").status_code == 200
+def test_missing_peer_rejected_in_developer_mode():
+    """`request.client is None` proves nothing; loopback headers are not proof."""
+    response = client(client=None).get("/sources", headers={"Host": "127.0.0.1"})
+    assert response.status_code == 403
+    assert "loopback" in response.json()["error"].lower()
+
+
+def test_non_address_peer_rejected_in_developer_mode():
+    """A peer string that is not an IP literal is not judged as local either."""
+    response = client(client=("testclient", 50000)).get(
+        "/sources", headers={"Host": "127.0.0.1"}
+    )
+    assert response.status_code == 403
+    assert "loopback" in response.json()["error"].lower()
+
+
+@pytest.mark.parametrize("peer", [None, ("testclient", 50000)])
+def test_indeterminate_peer_does_not_reach_handler(monkeypatch, peer):
+    def boom(*args, **kwargs):
+        raise AssertionError("submit_request ran for an unjudged peer")
+
+    monkeypatch.setattr(http_server, "submit_request", boom)
+    response = client(client=peer).post(
+        "/jobs", json={"source": "x"}, headers={"Host": "127.0.0.1"}
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("peer", [None, ("testclient", 50000)])
+def test_indeterminate_peer_cannot_claim_forwarded_locality(peer):
+    """Forwarded headers are attacker-controlled; they cannot supply the peer."""
+    response = client(client=peer).get(
+        "/sources",
+        headers={
+            "Host": "127.0.0.1",
+            "X-Forwarded-For": "127.0.0.1",
+            "X-Forwarded-Host": "127.0.0.1",
+            "X-Real-IP": "127.0.0.1",
+        },
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "peer",
+    [("127.0.0.1", 50000), ("127.0.0.2", 50000), ("::1", 50000), ("::ffff:127.0.0.1", 50000)],
+)
+def test_loopback_peer_accepted(peer):
+    response = client(client=peer).get("/sources", headers={"Host": "127.0.0.1"})
+    assert response.status_code == 200, response.text
+
+
+def test_public_peer_rejected_even_with_loopback_host():
+    response = client(client=("198.51.100.7", 50000)).get(
+        "/sources", headers={"Host": "127.0.0.1"}
+    )
+    assert response.status_code == 403
+
+
+def test_missing_peer_allowed_with_remote_optin(monkeypatch):
+    """The opt-in is the operator's statement that a gateway fronts the app."""
+    monkeypatch.setenv(ENV_ALLOW_REMOTE, "1")
+    assert client(client=None).get("/sources", headers={"Host": "127.0.0.1"}).status_code == 200
 
 
 # --- explicit remote opt-in still works -----------------------------------

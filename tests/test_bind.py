@@ -12,6 +12,7 @@ from textflowkit.core.bind import (
     ENV_ALLOW_REMOTE,
     UnsafeBindError,
     check_bind_safety,
+    developer_request_refusal,
     is_loopback_host,
     remote_allowed,
 )
@@ -74,6 +75,53 @@ def test_explicit_flag_beats_env(monkeypatch):
     # explicit False must win over a permissive env
     with pytest.raises(UnsafeBindError):
         check_bind_safety("0.0.0.0", allow_remote=False)
+
+
+# --- the per-request decision is fail-closed on an unknown peer -----------
+
+def test_loopback_literal_peer_allowed(monkeypatch):
+    monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
+    for peer in ("127.0.0.1", "127.0.0.2", "::1", "[::1]", "::ffff:127.0.0.1"):
+        assert developer_request_refusal(
+            host="127.0.0.1", origin=None, peer=peer
+        ) is None, peer
+
+
+@pytest.mark.parametrize(
+    "peer",
+    [
+        None,               # an ASGI server that reports no peer
+        "",                 # reported but empty
+        "testclient",       # in-process ASGI test harness, not an address
+        "localhost",        # a name, not a proven loopback literal
+    ],
+)
+def test_unprovable_peer_refused(monkeypatch, peer):
+    """Host and Origin looking loopback does not prove the caller is local.
+
+    Locality has to be established from the peer address, so a peer that is
+    missing or is not an IP literal is refused rather than assumed local.
+    """
+    monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
+    reason = developer_request_refusal(host="127.0.0.1", origin=None, peer=peer)
+    assert reason is not None
+    assert "loopback" in reason.lower()
+
+
+def test_remote_peer_refused(monkeypatch):
+    monkeypatch.delenv(ENV_ALLOW_REMOTE, raising=False)
+    reason = developer_request_refusal(host="127.0.0.1", origin=None, peer="203.0.113.9")
+    assert reason is not None
+    assert "loopback" in reason.lower()
+
+
+def test_unprovable_peer_allowed_with_remote_optin(monkeypatch):
+    """The opt-in is the operator's statement that a gateway is in front."""
+    monkeypatch.setenv(ENV_ALLOW_REMOTE, "1")
+    for peer in (None, "testclient", "203.0.113.9"):
+        assert developer_request_refusal(
+            host="127.0.0.1", origin=None, peer=peer
+        ) is None, peer
 
 
 # --- the adapters actually enforce it -------------------------------------
