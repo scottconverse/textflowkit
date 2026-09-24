@@ -24,7 +24,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_WORKFLOW = ".github/workflows/ci.yml"
+# GitHub resolves `workflow_id` as a workflow filename, not as a repository path:
+# `/workflows/ci.yml/runs` answers 200 while `/workflows/.github/workflows/ci.yml/runs`
+# answers 404 (read-only probe of this public repository, 2026-09-24). A path here
+# would fail the gate closed even with green CI.
+DEFAULT_WORKFLOW = "ci.yml"
 DEFAULT_BRANCH = "main"
 DEFAULT_EVENT = "push"
 DEFAULT_TIMEOUT = 30
