@@ -226,6 +226,7 @@ def transcribe_media(
     cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
+    engine: str = "whisper",
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
@@ -252,6 +253,11 @@ def transcribe_media(
             rather than returning empty speakers.
         translate_to: Target language code (e.g. 'es'). Translates the transcript
             with the configured backend; fails loudly if it is unreachable.
+        engine: Speech engine. 'whisper' (the default: openai-whisper on the
+            torch stack - ROCm on AMD, CUDA on NVIDIA, CPU otherwise) or the
+            opt-in 'faster-whisper', a CTranslate2 engine for CPU and Apple
+            Silicon that needs the faster-whisper extra. The default is
+            unchanged; no speed or accuracy comparison is claimed here.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
@@ -273,6 +279,7 @@ def transcribe_media(
             input_root=server_input_root(),
             diarize=diarize,
             translate_to=translate_to,
+            engine=engine,
         )
         job = submit_request(get_default_store(), request)
     except ValueError as exc:
@@ -298,19 +305,43 @@ def submit_batch_media(
     diarize: bool = False,
     translate_to: str | None = None,
     resume: bool = False,
+    engine: str = "whisper",
 ) -> dict[str, Any]:
-    """Queue multiple independent media jobs and return each job handle."""
+    """Queue multiple independent media jobs and return each job handle.
+
+    Each source gets its own job, so one bad source cannot hide the others. Poll
+    each returned job_id with get_job_status.
+
+    Args:
+        sources: Media URLs or local file paths; one job per source.
+        language: Optional ISO language code (e.g. 'en') applied to every job.
+        formats: Comma-separated outputs to write when output_dir is set.
+            Available: txt, srt, vtt, md, json, docx, pdf. The binary formats
+            (docx, pdf) require the export extra.
+        output_dir: Directory to write rendered files into.
+        model: Whisper model size - tiny, base, small, medium, or large.
+        device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+        diarize: Label speakers (needs the diarize extra and a gated model).
+        translate_to: Target language code; fails loudly if unreachable.
+        resume: Reuse matching saved checkpoints and completed transcripts.
+        engine: Speech engine, applied to every job. 'whisper' (the default:
+            openai-whisper on the torch stack) or the opt-in 'faster-whisper'
+            (CPU/Mac; needs the faster-whisper extra). An unusable engine
+            refuses the whole batch before anything is queued.
+    """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     try:
         requests = [SubmissionRequest(
             source=source, language=language, formats=fmt_list,
             output_dir=output_dir, model=model, device=device,
             diarize=diarize, translate_to=translate_to,
-            input_root=server_input_root(),
+            input_root=server_input_root(), engine=engine,
         ) for source in sources]
+        # Fresh batches preflight the engine once, inside submit_batch, before
+        # queueing anything; a resume batch decides reuse per item instead.
+        results = submit_batch(get_default_store(), requests, resume=resume)
     except ValueError as exc:
         return {"error": str(exc)}
-    results = submit_batch(get_default_store(), requests, resume=resume)
     return {"count": len(results), "jobs": results}
 
 

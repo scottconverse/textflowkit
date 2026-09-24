@@ -216,6 +216,13 @@ class TranscribeRequest(BaseModel):
     cookies_from_browser: str | None = None
     diarize: bool = False
     translate_to: str | None = None
+    engine: str = Field(
+        "whisper",
+        description=(
+            "Speech engine: 'whisper' (default, openai-whisper on the torch stack) "
+            "or the opt-in 'faster-whisper' (CPU/Mac; needs the faster-whisper extra)"
+        ),
+    )
 
 
 class BatchRequest(BaseModel):
@@ -265,9 +272,12 @@ def create_batch(req: BatchRequest) -> dict[str, Any]:
     """Queue multiple independent jobs through the same core contract."""
     try:
         requests = [_submission_request(item) for item in req.jobs]
+        # The engine preflight for a fresh batch runs before the loop, so an
+        # unusable engine refuses the whole request rather than queueing part of
+        # it and erroring the rest for the same reason.
+        results = submit_batch(get_default_store(), requests, resume=req.resume)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    results = submit_batch(get_default_store(), requests, resume=req.resume)
     return {"count": len(results), "jobs": results}
 
 
