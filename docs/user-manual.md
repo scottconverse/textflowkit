@@ -150,3 +150,10 @@ The v0.1.5 release passed Windows/Linux/macOS CI, a local native-Windows
 YouTube smoke on the release commit, and a clean PyPI install with real
 transcription and PDF output. Those checks do not establish live access to
 every supported website, every AI harness, or every GPU configuration.
+
+**PyPI description erratum:** the immutable v0.1.5 long description was built
+from an earlier README and still says “v0.1.4 release” in its status paragraph.
+The uploaded wheel and source archive are version 0.1.5; their hashes match
+the GitHub v0.1.5 release. The current GitHub README and this manual correct
+the wording. PyPI's already-uploaded release metadata cannot be rewritten in
+place; a future package version will carry the corrected description.
