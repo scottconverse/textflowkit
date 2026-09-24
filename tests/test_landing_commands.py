@@ -9,10 +9,10 @@ quotes, which CMD passes through verbatim, so pip rejects
 
 These tests read the command text out of ``docs/index.html`` itself, not out of a copy of
 it, and they take the split between command and decoration from the page's own
-stylesheet: inside a code block, an element the page declares ``user-select: none`` is
-decoration (a prompt glyph, a comment, sample output) and the remaining text is what a
-reader copies into a shell. Everything a reader can select has to be a command that CMD,
-PowerShell and POSIX sh all accept unchanged.
+stylesheet, matched against each block's real ancestors: an element the page declares
+``user-select: none`` is decoration (a prompt glyph, a comment, sample output) and the
+remaining text is what a reader copies into a shell. Everything a reader can select has
+to be a command that CMD, PowerShell and POSIX sh all accept unchanged.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -31,6 +32,13 @@ assert STYLE is not None, "the page must keep its inline stylesheet"
 
 RULE = re.compile(r"(?P<selectors>[^{}]+)\{(?P<declarations>[^{}]*)\}")
 USER_SELECT_NONE = re.compile(r"(?<![-\w])user-select\s*:\s*none")
+CLASS = re.compile(r"\.([A-Za-z][\w-]*)")
+
+# https://html.spec.whatwg.org/multipage/syntax.html#void-elements
+VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+    "param", "source", "track", "wbr",
+})
 
 # The hero example and the quickstart example, as the page presents them.
 TRANSCRIBE = re.compile(r"^textflowkit transcribe \S+ --formats [\w,]+$")
@@ -47,55 +55,93 @@ SHELL_HOSTILE = {
 }
 
 
-def _non_selectable_classes() -> set[str]:
-    """Classes the page's own stylesheet declares unselectable, so they cannot be copied.
+class Rule(NamedTuple):
+    """One `user-select: none` selector: its ancestor compounds and its subject classes."""
 
-    Only the subject of each selector counts: in ``.terminal .prompt`` it is ``prompt``.
-    """
-    found: set[str] = set()
-    for rule in RULE.finditer(STYLE.group("css")):
-        if USER_SELECT_NONE.search(rule.group("declarations")):
-            for selector in rule.group("selectors").split(","):
-                subject = selector.split()[-1] if selector.split() else ""
-                found.update(re.findall(r"\.([A-Za-z][\w-]*)", subject))
-    return found
+    ancestors: tuple[frozenset[str], ...]
+    subjects: frozenset[str]
+
+
+class Element(NamedTuple):
+    """An element inside a code block, with the classes of the elements that contain it."""
+
+    classes: frozenset[str]
+    ancestors: list[frozenset[str]]
+
+
+def _rules() -> list[Rule]:
+    rules: list[Rule] = []
+    for block in RULE.finditer(STYLE.group("css")):
+        if not USER_SELECT_NONE.search(block.group("declarations")):
+            continue
+        for selector in block.group("selectors").split(","):
+            compounds = selector.split()
+            if not compounds:
+                continue
+            subjects = frozenset(CLASS.findall(compounds[-1]))
+            if subjects:
+                rules.append(
+                    Rule(
+                        ancestors=tuple(frozenset(CLASS.findall(c)) for c in compounds[:-1]),
+                        subjects=subjects,
+                    )
+                )
+    return rules
+
+
+def _applies(rule: Rule, element: Element) -> bool:
+    """Descendant match: every class-bearing ancestor compound must match, outermost first."""
+    if not rule.subjects & element.classes:
+        return False
+    ancestors = [classes for classes in element.ancestors if classes]
+    index = 0
+    for needed in rule.ancestors:
+        if not needed:
+            continue
+        while index < len(ancestors) and not needed <= ancestors[index]:
+            index += 1
+        if index == len(ancestors):
+            return False
+        index += 1
+    return True
 
 
 class CodeBlocks(HTMLParser):
-    """Copyable text of every ``<pre>``: the text that is not declared decoration."""
+    """Copyable text of every ``<pre>``, plus every element shown inside one."""
 
-    def __init__(self, decoration: set[str]) -> None:
+    def __init__(self, rules: list[Rule]) -> None:
         super().__init__()
-        self.decoration = decoration
+        self.rules = rules
         self.blocks: list[str] = []
-        self.classes: set[str] = set()
-        self.decorated_classes: set[str] = set()
+        self.elements: list[Element] = []
         self._buf: list[str] = []
+        self._open: list[tuple[str, frozenset[str]]] = []
         self._in_pre = 0
         self._muted = 0
-        self._stack: list[bool] = []
+        self._mute_stack: list[bool] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        classes = set((dict(attrs).get("class") or "").split())
+        classes = frozenset((dict(attrs).get("class") or "").split())
         if tag == "pre":
             self._in_pre += 1
             self._buf = []
-            return
-        if not self._in_pre:
-            return
-        self.classes |= classes
-        muted = bool(classes & self.decoration)
-        if muted:
-            self.decorated_classes |= classes
-        self._stack.append(muted)
-        self._muted += muted
+        elif self._in_pre:
+            element = Element(classes, [known for _, known in self._open])
+            self.elements.append(element)
+            muted = any(_applies(rule, element) for rule in self.rules)
+            self._mute_stack.append(muted)
+            self._muted += muted
+        if tag not in VOID_ELEMENTS:
+            self._open.append((tag, classes))
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "pre":
             self._in_pre -= 1
             self.blocks.append("".join(self._buf))
-        elif self._stack:
-            self._muted -= self._stack.pop()
+        elif self._in_pre and self._mute_stack:
+            self._muted -= self._mute_stack.pop()
+        if tag not in VOID_ELEMENTS and self._open:
+            self._open.pop()
 
     def handle_data(self, data: str) -> None:
         if self._in_pre and not self._muted:
@@ -104,7 +150,7 @@ class CodeBlocks(HTMLParser):
 
 @pytest.fixture(scope="module")
 def page() -> CodeBlocks:
-    parser = CodeBlocks(_non_selectable_classes())
+    parser = CodeBlocks(_rules())
     parser.feed(SOURCE)
     return parser
 
@@ -116,10 +162,14 @@ def commands(page: CodeBlocks) -> list[str]:
 
 def test_page_declares_every_code_block_element_unselectable(page: CodeBlocks) -> None:
     """A code block may show prompts, comments and output, but none of it may be copied."""
-    assert page.classes, "the expected prompt/comment/output elements are missing"
-    undeclared = sorted(page.classes - _non_selectable_classes())
-    assert not undeclared, (
-        f"elements inside a <pre> with classes {undeclared} are selectable, so they are "
+    assert page.elements, "the expected prompt/comment/output elements are missing"
+    selectable = sorted(
+        " ".join(sorted(element.classes))
+        for element in page.elements
+        if not any(_applies(rule, element) for rule in page.rules)
+    )
+    assert not selectable, (
+        f"elements inside a <pre> with classes {selectable} are selectable, so they are "
         "copied along with the command; declare them 'user-select: none' or remove them"
     )
 
