@@ -1,15 +1,18 @@
 """Batch transcription orchestration.
 
 Batch is deliberately a thin loop over one-item work. It does not know about
-media acquisition, engines, or rendering; it only creates jobs through the
-existing runner and reports what each job produced.
+media acquisition, engines, or rendering; it only submits each source through
+the shared one-item path and reports what each job produced.
 
 The contract that matters operationally is the same as the ticket's wording:
 one bad source must never erase the results of the other sources. Every item is
 attempted, and every item gets an explicit outcome in the returned report.
 
-Resuming a batch item uses the same `prepare_resume` path as the CLI, so an
-interrupted ERROR/CANCELLED job is reopened rather than silently skipped.
+Every item goes through the same `submit_request` lifecycle as CLI transcribe,
+MCP, and HTTP, so resume means the same thing everywhere: the same checkpoint
+matching, the same local-source fingerprint validation, and the same rendering
+of requested formats into the requested output directory. The one thing batch
+adds is isolation - a rejected item is reported and the loop continues.
 """
 
 from __future__ import annotations
@@ -17,15 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from textflowkit.core.checkpoint import (
-    find_resumable_checkpoint,
-    prepare_resume,
-    reusable_done_result,
-)
 from textflowkit.core.executor import JobCancelled
 from textflowkit.core.jobs import JobState, JobStore
-from textflowkit.core.runner import run_job
-from textflowkit.core.submission import SubmissionRequest
+from textflowkit.core.submission import SubmissionRequest, submit_request
 
 
 @dataclass(slots=True)
@@ -97,11 +94,12 @@ def run_batch(
     resume: bool = False,
     **kwargs: Any,
 ) -> BatchReport:
-    """Run every source through the single-item runner and return a report.
+    """Run every source through the shared submission path and return a report.
 
-    `run_job` already records terminal state on the store. This layer adds no
-    second pipeline path; it simply catches per-item failures so one bad source
-    does not stop the rest.
+    `submit_request` owns creation, resume matching, fingerprint validation, and
+    output rendering, and it records terminal state on the store. This layer adds
+    no second pipeline path; it catches per-item failures so one bad source does
+    not stop the rest.
     """
     report = BatchReport()
     for source in sources:
@@ -112,75 +110,43 @@ def run_batch(
             item.error = str(exc)
             report.items.append(item)
             continue
-        item_kwargs = request.run_kwargs()
-        item_kwargs.pop("source")
-        if resume:
-            found = find_resumable_checkpoint(
-                store,
-                source=source,
-                model=item_kwargs.get("model", "small"),
-                language=item_kwargs.get("language"),
-                engine=item_kwargs.get("engine", "whisper"),
-                device=item_kwargs.get("device"),
-                options=_resume_options(item_kwargs),
-            )
-            if found is not None:
-                prior, checkpoint = found
-                item.job_id = prior.id
-                prepared = prepare_resume(store, prior, checkpoint)
-                if prepared is None:
-                    reused = reusable_done_result(store, prior)
-                    if reused is not None:
-                        _transcript, outputs = reused
-                        item.status = "succeeded"
-                        item.resumed = True
-                        item.outputs = [str(p) for p in outputs]
-                        item.error = None
-                        report.items.append(item)
-                        continue
-                    job = store.create(source, request=request.to_dict())
-                    item.job_id = job.id
-                else:
-                    job, payload = prepared
-                    item.resumed = True
-                    item_kwargs["resume_checkpoint"] = payload
-            else:
-                job = store.create(source, request=request.to_dict())
-                item.job_id = job.id
-        else:
-            job = store.create(source, request=request.to_dict())
-            item.job_id = job.id
-
         try:
-            run_job(job, store, source=source, **item_kwargs)
-            current = store.get(job.id)
-            if current is None:
-                item.status = "failed"
-                item.error = "job disappeared from the store"
-            elif current.state is JobState.DONE:
-                item.status = "succeeded"
-                item.outputs = list(current.outputs)
-            elif current.state is JobState.CANCELLED:
-                item.status = "skipped"
-                item.error = current.error or "cancelled"
-            else:
-                item.status = "failed"
-                item.error = current.error or f"job ended in state {current.state.value}"
+            known = _known_job_ids(store)
+            job = submit_request(store, request, background=False, resume=resume)
         except JobCancelled:
             item.status = "skipped"
             item.error = "cancelled"
+            report.items.append(item)
+            continue
         except Exception as exc:  # noqa: BLE001 - isolate one item from the rest
             item.status = "failed"
             item.error = f"{type(exc).__name__}: {exc}"
+            report.items.append(item)
+            continue
+        item.job_id = job.id
+        # `submit_request` resumes or reuses an existing job when it can, and
+        # creates a fresh one otherwise. Comparing the id it returned against the
+        # ids that existed before the call is what makes that difference visible
+        # here, without a second resume implementation to keep in step.
+        item.resumed = job.id in known
+        if job.state is JobState.DONE:
+            item.status = "succeeded"
+            item.outputs = list(job.outputs)
+            item.error = None
+        elif job.state is JobState.CANCELLED:
+            item.status = "skipped"
+            item.error = job.error or "cancelled"
+        else:
+            item.status = "failed"
+            item.error = job.error or f"job ended in state {job.state.value}"
         report.items.append(item)
     return report
 
 
-def _resume_options(kwargs: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "formats": list(kwargs.get("formats") or []),
-        "diarize": bool(kwargs.get("diarize", False)),
-        "diarizer_backend": kwargs.get("diarizer_backend", "pyannote"),
-        "translate_to": kwargs.get("translate_to"),
-        "translator_backend": kwargs.get("translator_backend", "ollama"),
-    }
+def _known_job_ids(store: JobStore, *, limit: int = 10_000) -> set[str]:
+    """Every job id already in the store, for reporting whether an item resumed.
+
+    The bound matches the one `find_resumable_checkpoint` searches, so an item
+    can never be resumed from a job this set did not cover.
+    """
+    return {job.id for job in store.list(limit=limit)}
