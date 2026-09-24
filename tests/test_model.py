@@ -98,3 +98,53 @@ def test_compact_transcript_dict_drops_only_words():
     rendered = json.loads(tr.to_json(include_words=False))
     assert rendered["segments"][0]["quality"] == 0.9
     assert "words" not in rendered["segments"][0]
+
+
+class TraversalSentinel(str):
+    """A string that counts how often it is deep-copied.
+
+    `dataclasses.asdict` deep-copies leaf values as it walks a dataclass, so a
+    sentinel in a word timing's `text` is copied exactly when the serializer
+    traverses that word list. The count therefore measures whether the omitted
+    words were walked at all — not merely whether they survived into the result.
+    """
+
+    copies = 0
+
+    def __deepcopy__(self, memo):
+        type(self).copies += 1
+        return self
+
+
+def test_compact_serialization_does_not_traverse_omitted_words():
+    """Compact output must skip the words, not build them and throw them away.
+
+    The compact form is the default HTTP/MCP read, so walking a long word list
+    only to discard it is real work spent on the path that exists to avoid it.
+    """
+    tr = Transcript(
+        source="s",
+        segments=[Segment(0.0, 1.0, "hi", words=[WordTiming(0.0, 0.5, TraversalSentinel("word"))])],
+    )
+    segment = tr.segments[0]
+
+    TraversalSentinel.copies = 0
+    compact = segment.to_dict(include_words=False)
+    assert TraversalSentinel.copies == 0, "the compact segment form walked the words it omits"
+    assert "words" not in compact
+
+    TraversalSentinel.copies = 0
+    compact_tr = tr.to_dict(include_words=False)
+    assert TraversalSentinel.copies == 0, "the compact transcript form walked the words it omits"
+    assert "words" not in compact_tr["segments"][0]
+
+    # Control: both full forms do walk the words, so a zero count above is the
+    # compact path skipping them rather than the sentinel being inert.
+    TraversalSentinel.copies = 0
+    segment.to_dict()
+    assert TraversalSentinel.copies == 1
+
+    TraversalSentinel.copies = 0
+    full_tr = tr.to_dict()
+    assert TraversalSentinel.copies == 1
+    assert full_tr["segments"][0]["words"][0]["text"] == "word"
