@@ -16,6 +16,8 @@ venv/
 work/
 out/
 outputs/
+# Host-side media for the Compose example (`compose.yaml` mounts ./data/input).
+data/
 *.wav
 !src/textflowkit/assets/selftest-speech.wav
 *.mp3

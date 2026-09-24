@@ -1,0 +1,111 @@
+# Production-profile example for the JSON HTTP adapter (outside-review C3).
+#
+#   cp .env.example .env      # then put a real token in it
+#   mkdir -p data/input       # media the container may read
+#   docker compose up --build -d
+#   docker compose ps         # `healthy` is the container's own authenticated probe
+#
+# No host curl line here, on purpose. `docker compose` reads `.env` to
+# interpolate this file; it does not export those values into your shell, so a
+# host curl would send an empty bearer - and exporting the variable to make the
+# call work would put the token value in curl's argv, which is the exposure the
+# token note on the service below keeps out of command lines. Check it from inside:
+# `docker compose ps` reports the status of the probe below, and docs/adapters.md
+# shows that same probe run on demand with `docker compose exec`.
+#
+# This starts a server, not a service you can publish: the host port is bound to
+# loopback, the production token is required rather than defaulted, no TLS or
+# authentication gateway is included, and no SSRF-filtering egress proxy is
+# bundled - so URL jobs fail closed until an operator supplies one. See
+# docs/adapters.md for what still has to sit in front of this.
+#
+# Build and start are unverified: no container engine is installed on the machine
+# this example was written on, and running one is deliberately out of scope here,
+# so no build or start is claimed. Static contract checks cover this file and the
+# Dockerfile; see docs/adapters.md, "Container example".
+
+services:
+  # One service, one process. The durable SQLite store has one owning process;
+  # `--scale` or a second replica sharing TEXTFLOWKIT_DB would reap the running
+  # one's live jobs (`docs/adapters.md`, "Durable job state").
+  textflowkit-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: textflowkit-http:local
+    restart: unless-stopped
+    # The image's nonroot uid; named here so the mount ownership is explicit.
+    user: "10001:10001"
+    # A running job stops at its next stage boundary, so give it longer than the
+    # 10-second default before the container is killed outright.
+    stop_grace_period: 1m
+    environment:
+      TEXTFLOWKIT_PROFILE: production
+      # No default and no stored value: Compose refuses to start without this,
+      # which matches the server's own fail-closed startup check.
+      #
+      # An environment variable here is an argument-free way to hand over the
+      # token, not a secret store: the value lands in the container's
+      # configuration, so `docker inspect` and `docker compose config` render it
+      # to anyone who can reach the daemon, and `/proc/<pid>/environ` exposes it
+      # inside the container. Restrict access to the daemon, this file, and `.env`
+      # (`.env.example` says the same).
+      TEXTFLOWKIT_API_TOKEN: "${TEXTFLOWKIT_API_TOKEN:?set TEXTFLOWKIT_API_TOKEN in .env or the environment}"
+      TEXTFLOWKIT_INPUT_ROOT: /srv/textflowkit/input
+      TEXTFLOWKIT_OUTPUT_ROOT: /srv/textflowkit/output
+      TEXTFLOWKIT_WORK_ROOT: /srv/textflowkit/work
+      TEXTFLOWKIT_DB: /srv/textflowkit/state/jobs.db
+      # The documented default, pinned so a later reader does not raise it
+      # expecting parallel transcription: model inference serializes per engine
+      # instance anyway (`docs/adapters.md`, "Concurrency").
+      TEXTFLOWKIT_MAX_CONCURRENCY: "1"
+    # Loopback on the host side. A bare "8767:8767" would publish on 0.0.0.0 and
+    # put an unauthenticated-reachable port on every interface of the host.
+    ports:
+      - "127.0.0.1:8767:8767"
+    volumes:
+      # Read-only: the container never writes to the media it was given.
+      # `data/` is not tracked; the operator fills it.
+      - "./data/input:/srv/textflowkit/input:ro"
+      # Named volumes initialize from the image's directory ownership, so the
+      # nonroot process owns them without a privileged chown on the host.
+      - "textflowkit-output:/srv/textflowkit/output"
+      - "textflowkit-work:/srv/textflowkit/work"
+      - "textflowkit-state:/srv/textflowkit/state"
+      # openai-whisper downloads each model into `~/.cache/whisper` (its own
+      # default download root), so without this volume a recreated container
+      # downloads the model again.
+      - "textflowkit-cache:/home/textflowkit/.cache"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - "-c"
+        - "import os, urllib.request; request = urllib.request.Request('http://127.0.0.1:8767/health', headers={'Authorization': 'Bearer ' + os.environ['TEXTFLOWKIT_API_TOKEN']}); body = urllib.request.urlopen(request, timeout=3).read(); assert b'status' in body, body"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    # Bounds. Transcription is memory-hungry, so treat these as a starting point
+    # and raise the memory limit if a larger model needs it.
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
+    # `read_only: true` is deliberately absent: the runtime user needs a writable
+    # home for the whisper model cache and its scratch roots for each job, and a
+    # read-only root filesystem would fail the first transcription instead of
+    # failing here.
+
+volumes:
+  textflowkit-output:
+  textflowkit-work:
+  textflowkit-state:
+  textflowkit-cache:
