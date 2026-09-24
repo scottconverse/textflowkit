@@ -9,7 +9,7 @@
 # interpolate this file; it does not export those values into your shell, so a
 # host curl would send an empty bearer - and exporting the variable to make the
 # call work would put the token value in curl's argv, which is the exposure the
-# token note above keeps out of command lines. Check it from inside instead:
+# token note on the service below keeps out of command lines. Check it from inside:
 # `docker compose ps` reports the status of the probe below, and docs/adapters.md
 # shows that same probe run on demand with `docker compose exec`.
 #

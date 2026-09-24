@@ -277,7 +277,7 @@ A host `curl` is deliberately not shown. `docker compose` reads `.env` to
 interpolate the Compose file; it does not export those values into your shell, so
 a host request would send an empty bearer token. Exporting the variable to make
 the call work would put the token value in that client's argv, which is what the
-token note above keeps out of command lines.
+token note below keeps out of command lines.
 
 The image carries ffmpeg and a JavaScript runtime, installs the package with the
 `http` extra, and runs `textflowkit-http --host 0.0.0.0 --allow-remote` as uid
