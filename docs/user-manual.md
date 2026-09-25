@@ -198,11 +198,13 @@ same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 (see [transcribe one file or URL](#2-transcribe-one-file-or-url)).
 
 With `TEXTFLOWKIT_INPUT_ROOT` set, confined inputs must be self-contained
-media: a local playlist or manifest (HLS/M3U, MPEG-DASH, an ffmpeg concat
-script) is refused, because it names other files the decoder would open
-outside the reach of that root. See the
-[adapter guide](adapters.md#input-paths-unconfined-by-default) and
-[SECURITY.md](../SECURITY.md) for the exact guarantee.
+media: the decode is restricted to FFmpeg's self-contained starting formats
+(`wav`, `mp3`, `mov`/`mp4`/`m4a`, `matroska`/`webm`, `ogg`, `flac`, `aac`), so
+a local playlist or manifest (HLS/M3U, MPEG-DASH, an ffmpeg concat script) is
+refused — it names other files the decoder would otherwise open outside the
+reach of that root. The `ffprobe` duration check is restricted the same way.
+See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
+[SECURITY.md](../SECURITY.md) for the exact guarantee and its limits.
 
 ## 7. Release and help
 

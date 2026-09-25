@@ -50,22 +50,53 @@ user accounts or multi-tenancy.
   `TEXTFLOWKIT_OUTPUT_ROOT` to confine less-trusted callers. With those roots
   set, paths outside them (including `..` and symlink escapes) are rejected.
   See `resolve_output_dir` and `resolve_input_path` in
-  `src/textflowkit/core/paths.py`. Confined local input is copied from a
-  path-verified open handle into isolated scratch before ffmpeg, and a confined
-  input whose *content* is a manifest rather than media — an HLS/M3U playlist
-  (`#EXTM3U`), an MPEG-DASH manifest (`<MPD`), or an ffmpeg concat script
-  (`ffconcat version 1.0`) — is refused before that copy exists, by leading
-  bytes rather than by extension or by where it sits. That refusal is a
-  deliberate format restriction: such a file names *other* files for the
-  demuxer to open, and those references cannot be checked against the root once
-  the input has been staged into scratch, because a relative reference resolves
-  against the scratch directory while an absolute one survives the copy
-  unchanged. The guarantee is bounded by the manifest signatures listed above —
-  it is not a sandbox: a manifest whose signature is not recognized, or a
-  container that dereferences external data in some other way, is not refused,
-  and neither `ffmpeg` nor `yt-dlp` is confined by anything else (see "Not
-  defended"). Output paths are rechecked at file publication. Keep configured
-  roots non-writable by untrusted local users to prevent races.
+  `src/textflowkit/core/paths.py`. Output paths are rechecked at file
+  publication. Keep configured roots non-writable by untrusted local users to
+  prevent races.
+
+- **The decoder boundary for confined input.** A local file can be a
+  *reference* to other files rather than media itself: an HLS/M3U playlist, an
+  ffmpeg concat script, a DASH manifest. The demuxer opens every path such a
+  file names. Confined local input is handle-verified and copied into isolated
+  scratch, but only the top-level file is copied, so a playlist inside the root
+  can name a file outside it — an absolute reference survives the copy
+  unchanged, and a relative one resolves against the scratch directory, where
+  `..` walks out. When an input root is set, every confined input is therefore
+  decoded under FFmpeg's `-format_whitelist`, listing only the demuxers this
+  product supports as *self-contained* starting formats:
+
+      wav, mp3, mov,mp4,m4a,3gp,3g2,mj2, matroska,webm, ogg, flac, aac
+
+  These are FFmpeg's own demuxer names (`ffmpeg -demuxers`), not the extension
+  list. A file whose content is not one of them — including a playlist or
+  manifest however it is named — is refused by FFmpeg itself, before any
+  reference is followed. The same restriction is applied to the `ffprobe`
+  duration check, which otherwise opens the staged file the same way.
+
+  This is the guarantee, stated exactly:
+
+  - **Confined local input cannot make FFmpeg open another file.** The demuxer
+    that would follow a reference is not selectable, so there is no reference to
+    check and none is followed. This is a decoder-format restriction, not a
+    filesystem sandbox.
+  - **It applies only to confined input** (an input root set) and only to the
+    media decode. Without an input root there is no boundary to protect, and the
+    documented workflow decodes what FFmpeg already decoded.
+  - **It rests on the demuxer list above.** A file that this build classifies as
+    one of those demuxers, but which in another FFmpeg build (or through a
+    container's own external-data mechanism) opens other files, is not covered.
+    The `-format_whitelist` names are checked against `ffmpeg -demuxers`; a
+    build whose demuxers differ is not verified here.
+  - **It is not a sandbox of FFmpeg or yt-dlp at large** (see "Not defended").
+
+- **Leading-byte manifest refusal (defense in depth).** On top of the decoder
+  whitelist, a confined input whose leading bytes are an HLS/M3U playlist
+  (`#EXT`), an MPEG-DASH manifest (`<`), or an ffmpeg concat script
+  (`ffconcat`) is refused before the staged copy is written, so a recognised
+  manifest leaves nothing behind. This is an extra layer, deliberately *not*
+  the boundary: it covers only the signatures in its list, and detection is by
+  content rather than extension. The decoder whitelist above is what holds if
+  this check is widened, narrowed, or removed.
 
 ### Not defended (by design — read before deploying)
 
@@ -76,7 +107,10 @@ user accounts or multi-tenancy.
   Streamable-HTTP MCP is separate and not covered by this Bearer middleware.
 - **No sandboxing of `ffmpeg` / `yt-dlp`.** They run as your user on input you
   supply. Media is untrusted data; treat a malformed file as you would any
-  untrusted input to those tools.
+  untrusted input to those tools. The confined-input decoder boundary above
+  limits which *formats* a confined input may be, and so which files the demuxer
+  can open; it does not confine the decoder process, its codecs, or anything
+  else on the system.
 - **Cookies are passed through, not stored.** `--cookies-from-browser` hands
   browser cookies to `yt-dlp` for content you are authorised to access. Using it
   to reach content you are not authorised to access is outside the intended use.
