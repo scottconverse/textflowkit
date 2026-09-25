@@ -16,10 +16,18 @@ from textflowkit.core.checkpoint import (
     reusable_done_result,
     validate_local_resume,
 )
-from textflowkit.core.engine import require_engine, validate_engine
+from textflowkit.core.engine import (
+    require_engine,
+    validate_engine,
+    validate_model,
+)
 from textflowkit.core.executor import QueueFullError, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
-from textflowkit.core.paths import default_input_root
+from textflowkit.core.paths import (
+    default_input_root,
+    resolve_input_path,
+    resolve_output_dir,
+)
 from textflowkit.core.runner import run_job
 from textflowkit.core.service import reject_browser_cookie_requests
 from textflowkit.render import DEFAULT_FORMATS, SUPPORTED_FORMATS, validate_export_requirements
@@ -55,12 +63,34 @@ class SubmissionRequest:
         # optional engine's package is actually installed is a separate question
         # and deliberately not asked here - see `_require_engine_ready`.
         validate_engine(self.engine)
+        # The model *name* is settled next to the engine name, for the same
+        # reason and with the same limits: it is a lookup against a name list the
+        # engine publishes, not a load. See `validate_model` for why the engine's
+        # own name list is asked rather than a copy kept here, and why a path is
+        # refused rather than stat-ed.
+        validate_model(self.model, self.engine)
         # Adapter path helpers return Path objects, but a durable request must
         # be JSON-serializable before it is inserted into SQLite.
         if isinstance(self.input_root, Path):
             self.input_root = str(self.input_root)
         if isinstance(self.work_dir, Path):
             self.work_dir = str(self.work_dir)
+        # An explicit `output_dir` is resolved here, against the configured
+        # output root, but deliberately not created: submission only has to
+        # answer "would this be allowed", and the pipeline owns directory
+        # creation at the point it writes. Checking it here means a path the
+        # operator's root forbids is a request error on every surface rather
+        # than a late failure after a job row and a queue slot exist.
+        if self.output_dir is not None:
+            resolve_output_dir(self.output_dir)
+        # A local source must exist before a job is queued for it. `is_local_source`
+        # is the same test the pipeline uses to decide fetch-vs-open, so a URL is
+        # never stat-ed as a path; the resolver's missing-file error carries both
+        # `FileNotFoundError` and `ValueError`, so the surfaces keep the refusal
+        # they already have (a CLI message, an MCP `{"error": ...}`, an HTTP 422)
+        # rather than surfacing a missing input as an unhandled 500.
+        if is_local_source(self.source):
+            resolve_input_path(self.source, root=self.input_root)
         self.formats = [str(fmt).lower().lstrip(".") for fmt in self.formats]
         if not self.formats:
             # `pipeline.transcribe` has always read an empty list as its normal

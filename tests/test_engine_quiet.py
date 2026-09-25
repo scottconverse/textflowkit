@@ -59,7 +59,16 @@ class _FakeWhisperModel:
 def _install_fake_whisper(monkeypatch) -> _FakeWhisperModel:
     model = _FakeWhisperModel()
     monkeypatch.setitem(
-        sys.modules, "whisper", SimpleNamespace(load_model=lambda name, device: model)
+        sys.modules,
+        "whisper",
+        SimpleNamespace(
+            load_model=lambda name, device: model,
+            # The submission contract asks the engine for its own name list
+            # before a job exists; this module stands in for openai-whisper, so
+            # it has to answer that too. Names here are the engine's own, so a
+            # request that reaches validation is accepted.
+            available_models=lambda: ["tiny", "base", "small", "medium", "large"],
+        ),
     )
     return model
 
@@ -116,7 +125,11 @@ def _stub_submission(monkeypatch, model_name: str):
     monkeypatch.setattr(cli_mod, "submit_request", fake_submit)
 
 
-def test_quiet_transcribe_does_not_show_whisper_progress(monkeypatch, capsys):
+def test_quiet_transcribe_does_not_show_whisper_progress(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    # The submission contract refuses a local source that is not present. The
+    # engine is faked, so the bytes are never decoded.
+    (tmp_path / "media.wav").write_bytes(b"x")
     model = _install_fake_whisper(monkeypatch)
     _stub_submission(monkeypatch, "quiet-cli-only")
 

@@ -34,6 +34,22 @@ class UnsafeInputPathError(ValueError):
     """Raised when a local input path escapes the allowed input root."""
 
 
+class MissingInputError(FileNotFoundError, ValueError):
+    """Raised when a local input path names no readable file.
+
+    Deliberately *both* exception types, because two existing contracts meet on
+    this one condition and neither is allowed to break:
+
+    - ``FileNotFoundError`` is the honest answer a caller asked for with
+      ``pytest.raises(FileNotFoundError)`` and the type any ``except OSError``
+      handler already anticipates.
+    - ``ValueError`` is what every surface maps onto its own refusal - a CLI
+      message and exit code, an MCP ``{"error": ...}``, an HTTP 422 - so a
+      missing file travels through that contract instead of surfacing as an
+      unhandled 500 on a deployment that only catches ``ValueError``.
+    """
+
+
 def output_root() -> Path:
     """The directory all rendered output must live under.
 
@@ -129,7 +145,7 @@ def resolve_input_path(requested: str | Path, *, root: str | Path | None) -> Pat
     if root is None:
         resolved = candidate.resolve()
         if not resolved.exists():
-            raise FileNotFoundError(f"no such file: {requested}")
+            raise MissingInputError(f"no such file: {requested}")
         if not resolved.is_file():
             raise ValueError(f"not a file: {requested}")
         return resolved
@@ -145,7 +161,7 @@ def resolve_input_path(requested: str | Path, *, root: str | Path | None) -> Pat
             "inside it."
         )
     if not resolved.exists():
-        raise FileNotFoundError(f"no such file: {requested}")
+        raise MissingInputError(f"no such file: {requested}")
     if not resolved.is_file():
         raise ValueError(f"not a file: {requested}")
     return resolved

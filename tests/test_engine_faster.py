@@ -352,6 +352,11 @@ def _run_transcribe_capturing_request(monkeypatch, capsys, tmp_path, argv_extra)
     store = MemoryJobStore()
     monkeypatch.setattr(cli_mod, "get_default_store", lambda: store)
 
+    # The shared submission contract now refuses a local source that does not
+    # exist, before a job row is created, so the path has to name real bytes.
+    # `transcribe` is stubbed below, so nothing opens it.
+    (tmp_path / "meeting.wav").write_bytes(b"x")
+
     def fake_transcribe(source, **kwargs):
         return TranscribeResult(
             transcript=Transcript(source=source, language="en",
@@ -407,22 +412,26 @@ def test_cli_batch_passes_the_engine_into_the_request(monkeypatch, capsys, tmp_p
     assert captured["engine"] == "faster-whisper"
 
 
-def test_batch_request_carries_the_engine_into_the_job_record(monkeypatch):
+def test_batch_request_carries_the_engine_into_the_job_record(monkeypatch, tmp_path):
     from textflowkit.core import submission
     from textflowkit.core.batch import run_batch
 
     # U43: `submit_request` now preflights the optional extra before a job is
     # created, so naming faster-whisper without it is refused rather than run.
     # The engine still has to survive into the record, which is what this test
-    # is about - so the package is faked, not absent.
+    # is about - so the package is faked, not absent. The source is a real file
+    # for the same reason: the shared contract refuses a source that is not
+    # there, and `run_job` is stubbed below so nothing reads it.
     monkeypatch.setitem(sys.modules, "faster_whisper",
                         _fake_faster_whisper([], {}))
     store = MemoryJobStore()
+    media = str(tmp_path / "one")
+    (tmp_path / "one").write_bytes(b"")
     seen: list = []
     monkeypatch.setattr(submission, "run_job",
                         lambda job, s, **kwargs: seen.append(job.request))
 
-    report = run_batch(["one"], store=store, formats=["json"], output_dir=".",
+    report = run_batch([media], store=store, formats=["json"], output_dir=".",
                        engine="faster-whisper")
 
     assert report.total == 1

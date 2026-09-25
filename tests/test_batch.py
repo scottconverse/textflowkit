@@ -35,13 +35,20 @@ def _record(source: str, *, model: str = "small", language: str | None = "en",
     )
 
 
-def test_batch_reports_every_item_and_continues_after_failure(monkeypatch):
+def test_batch_reports_every_item_and_continues_after_failure(monkeypatch, tmp_path):
     store = MemoryJobStore()
     seen: list[str] = []
+    # The shared contract refuses a local source that is not present, so these
+    # batch items have to name real files. Nothing reads them: `run_job` is
+    # stubbed below and the report, not the bytes, is what this test is about.
+    sources = []
+    for name in ("one", "bad", "three"):
+        (tmp_path / name).write_bytes(b"")
+        sources.append(str(tmp_path / name))
 
     def fake_run_job(job, store_arg, *, source=None, **kwargs):
         seen.append(source or job.source)
-        if source == "bad":
+        if source == sources[1]:
             store_arg.update(job.id, state=JobState.ERROR, error="bad source")
             return
         store_arg.update(
@@ -52,10 +59,9 @@ def test_batch_reports_every_item_and_continues_after_failure(monkeypatch):
 
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
-    report = run_batch(["one", "bad", "three"], store=store,
-                       formats=["json"], output_dir=".")
+    report = run_batch(sources, store=store, formats=["json"], output_dir=".")
 
-    assert seen == ["one", "bad", "three"]
+    assert seen == sources
     assert report.total == 3
     assert report.succeeded == 2
     assert report.failed == 1
@@ -63,20 +69,24 @@ def test_batch_reports_every_item_and_continues_after_failure(monkeypatch):
     assert report.ok is False
     assert [item.status for item in report.items] == ["succeeded", "failed", "succeeded"]
     assert report.items[1].error == "bad source"
-    assert report.items[0].outputs == ["one.json"]
+    assert report.items[0].outputs == [f"{sources[0]}.json"]
 
 
-def test_batch_catches_per_item_exception_and_continues(monkeypatch):
+def test_batch_catches_per_item_exception_and_continues(monkeypatch, tmp_path):
     store = MemoryJobStore()
+    sources = []
+    for name in ("ok", "boom", "after"):
+        (tmp_path / name).write_bytes(b"")
+        sources.append(str(tmp_path / name))
 
     def fake_run_job(job, store_arg, *, source=None, **kwargs):
-        if source == "boom":
+        if source == sources[1]:
             raise RuntimeError("exploded")
         store_arg.update(job.id, state=JobState.DONE, outputs=[])
 
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
-    report = run_batch(["ok", "boom", "after"], store=store)
+    report = run_batch(sources, store=store)
 
     assert report.total == 3
     assert [item.status for item in report.items] == ["succeeded", "failed", "succeeded"]
@@ -84,19 +94,23 @@ def test_batch_catches_per_item_exception_and_continues(monkeypatch):
     assert report.ok is False
 
 
-def test_batch_reports_cancelled_item_as_skipped(monkeypatch):
+def test_batch_reports_cancelled_item_as_skipped(monkeypatch, tmp_path):
     """A cancelled item is a skip, not a failure, and later items still run."""
     store = MemoryJobStore()
+    sources = []
+    for name in ("stop", "after"):
+        (tmp_path / name).write_bytes(b"")
+        sources.append(str(tmp_path / name))
 
     def fake_run_job(job, store_arg, *, source=None, **kwargs):
-        if source == "stop":
+        if source == sources[0]:
             store_arg.update(job.id, state=JobState.CANCELLED, error="cancelled")
         else:
             store_arg.update(job.id, state=JobState.DONE, outputs=[])
 
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
-    report = run_batch(["stop", "after"], store=store)
+    report = run_batch(sources, store=store)
 
     assert [item.status for item in report.items] == ["skipped", "succeeded"]
     assert report.items[0].error == "cancelled"
@@ -199,9 +213,11 @@ def test_batch_resume_reuses_done_result_without_new_job(monkeypatch):
     assert report.items[0].outputs == ["kept.json"]
 
 
-def test_batch_resume_without_checkpoint_starts_new_job(monkeypatch):
+def test_batch_resume_without_checkpoint_starts_new_job(monkeypatch, tmp_path):
     store = MemoryJobStore()
     seen = []
+    media = str(tmp_path / "new")
+    (tmp_path / "new").write_bytes(b"")
 
     def fake_run_job(job, store_arg, *, source=None, resume_checkpoint=None, **kwargs):
         seen.append((job.id, resume_checkpoint))
@@ -209,7 +225,7 @@ def test_batch_resume_without_checkpoint_starts_new_job(monkeypatch):
 
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
-    report = run_batch(["new"], store=store, resume=True, model="small")
+    report = run_batch([media], store=store, resume=True, model="small")
 
     assert report.items[0].resumed is False
     assert seen[0][1] is None

@@ -54,6 +54,73 @@ def validate_engine(name: str) -> str:
     return canonical
 
 
+def engine_model_names(name: str) -> tuple[str, ...]:
+    """The model names the selected engine will accept, in preference order.
+
+    Read from the engine's own published list rather than copied here, so a
+    version that adds or renames a size cannot drift from what a submission
+    claims it will run. The engine is imported only for the default engine, and
+    only this far: a name list is metadata, not weights, and no loader is called.
+    """
+    canonical = validate_engine(name)
+    if canonical == "whisper":
+        try:
+            import whisper
+        except ImportError as exc:
+            raise RuntimeError(
+                "openai-whisper is not installed. Install with: pip install openai-whisper"
+            ) from exc
+        return tuple(whisper.available_models())
+    return _FASTER_WHISPER_MODELS
+
+
+def validate_model(name: str, engine: str = "whisper") -> str:
+    """Check a model name against what the selected engine publishes.
+
+    A *name* is what this contract runs; a *path* to a checkpoint - a directory
+    or a file, whether or not it exists here - is refused rather than stat-ed.
+    A model that happens to be named the same as a file in the working directory
+    is still just a name, so nothing here looks at the filesystem.
+
+    Cheap: one import of the optional package's name list at most, never a load,
+    so a typo is refused on every surface before a job record or queue slot
+    exists. Callers that only want a name checked can ignore the return value.
+    """
+    text = str(name)
+    if not text:
+        raise ValueError("model is required")
+    if Path(text).is_absolute() or "/" in text or "\\" in text:
+        raise ValueError(
+            f"model '{text}' is a path; pass a model name instead "
+            "(openai-whisper publishes its own list)"
+        )
+    available = engine_model_names(engine)
+    if text not in available:
+        raise ValueError(
+            f"unknown model '{text}' for engine '{validate_engine(engine)}'; "
+            f"choose from {', '.join(available)}"
+        )
+    return text
+
+
+#: faster-whisper's supported size names. Kept as one literal so a submission can
+#: validate a name on a box where the optional extra is *not installed* - the
+#: engine name is already settled by `validate_engine` on every box, and a typo
+#: in the *engine's own* model names is a request error rather than a
+#: missing-package failure. CTranslate2 model conversions use the same size
+#: names as upstream Whisper; anything else is a local directory a caller
+#: passes, which this contract refuses in favour of an explicit model.
+_FASTER_WHISPER_MODELS: tuple[str, ...] = (
+    "tiny.en", "tiny",
+    "base.en", "base",
+    "small.en", "small",
+    "medium.en", "medium",
+    "large-v1", "large-v2", "large-v3", "large",
+    "large-v3-turbo", "turbo",
+    "distil-large-v3", "distil-medium.en", "distil-small.en",
+)
+
+
 def ensure_engine_available(name: str) -> str:
     """Validate the name and check an optional engine's package is importable.
 

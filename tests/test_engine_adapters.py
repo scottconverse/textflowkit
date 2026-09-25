@@ -42,6 +42,20 @@ def clean_store():
     get_default_store().clear()
 
 
+@pytest.fixture(autouse=True)
+def local_media(monkeypatch, tmp_path):
+    """Give the relative source names these tests use real files to name.
+
+    The shared submission contract now refuses a local source that does not
+    exist before a job row is created, so ``media.wav`` has to be a file rather
+    than a string. The tests are still about engine *selection*, not media: the
+    file is empty, and ``run_job`` is stubbed, so nothing reads it.
+    """
+    for name in ("media.wav", "one.wav", "two.wav"):
+        (tmp_path / name).write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def fake_faster_whisper(monkeypatch):
     """The optional package appears importable without being installed."""
