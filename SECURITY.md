@@ -51,9 +51,21 @@ user accounts or multi-tenancy.
   set, paths outside them (including `..` and symlink escapes) are rejected.
   See `resolve_output_dir` and `resolve_input_path` in
   `src/textflowkit/core/paths.py`. Confined local input is copied from a
-  path-verified open handle into isolated scratch before ffmpeg. Output paths
-  are rechecked at file publication. Keep configured roots non-writable by
-  untrusted local users to prevent races.
+  path-verified open handle into isolated scratch before ffmpeg, and a confined
+  input whose *content* is a manifest rather than media — an HLS/M3U playlist
+  (`#EXTM3U`), an MPEG-DASH manifest (`<MPD`), or an ffmpeg concat script
+  (`ffconcat version 1.0`) — is refused before that copy exists, by leading
+  bytes rather than by extension or by where it sits. That refusal is a
+  deliberate format restriction: such a file names *other* files for the
+  demuxer to open, and those references cannot be checked against the root once
+  the input has been staged into scratch, because a relative reference resolves
+  against the scratch directory while an absolute one survives the copy
+  unchanged. The guarantee is bounded by the manifest signatures listed above —
+  it is not a sandbox: a manifest whose signature is not recognized, or a
+  container that dereferences external data in some other way, is not refused,
+  and neither `ffmpeg` nor `yt-dlp` is confined by anything else (see "Not
+  defended"). Output paths are rechecked at file publication. Keep configured
+  roots non-writable by untrusted local users to prevent races.
 
 ### Not defended (by design — read before deploying)
 

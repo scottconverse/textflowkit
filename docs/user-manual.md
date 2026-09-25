@@ -197,6 +197,13 @@ their next stage boundary, not immediately. MCP and HTTP jobs decode under the
 same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 (see [transcribe one file or URL](#2-transcribe-one-file-or-url)).
 
+With `TEXTFLOWKIT_INPUT_ROOT` set, confined inputs must be self-contained
+media: a local playlist or manifest (HLS/M3U, MPEG-DASH, an ffmpeg concat
+script) is refused, because it names other files the decoder would open
+outside the reach of that root. See the
+[adapter guide](adapters.md#input-paths-unconfined-by-default) and
+[SECURITY.md](../SECURITY.md) for the exact guarantee.
+
 ## 7. Release and help
 
 - [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)

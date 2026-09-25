@@ -617,6 +617,14 @@ account:
   which is the point: an agent running on your behalf can reach your files.
 - Once `TEXTFLOWKIT_INPUT_ROOT` is set, paths outside that root, including
   `..` and symlink escapes, are rejected before the file is read.
+- A confined input must be **self-contained media**. A local file whose content
+  is a playlist or manifest — an HLS/M3U playlist (`#EXTM3U`), an MPEG-DASH
+  manifest (`<MPD`), or an ffmpeg concat script (`ffconcat version 1.0`) — is
+  refused even when it is inside the root, because it names other files that the
+  decoder would open, and those references cannot be checked against the root
+  once the input has been copied into scratch. The refusal is by leading bytes:
+  renaming the file does not change it. Without an input root there is no
+  boundary, and such files are decoded as before.
 
 ```bash
 TEXTFLOWKIT_INPUT_ROOT=/srv/media textflowkit-mcp --transport http
