@@ -557,7 +557,7 @@ def test_diarization_resume_reacquires_audio_without_whisper(monkeypatch, tmp_pa
         media.write_bytes(b"media")
         return media
 
-    def extract(media, *, work_dir, check_cancel=None):
+    def extract(media, *, work_dir, check_cancel=None, confined=False):
         calls.append("extract")
         audio = work_dir / "audio.wav"
         audio.write_bytes(b"audio")

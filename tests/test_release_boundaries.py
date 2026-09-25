@@ -378,8 +378,8 @@ def test_unknown_duration_is_stopped_by_decode_byte_boundary(
     monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "production")
     monkeypatch.setenv("TEXTFLOWKIT_MAX_DURATION_SECONDS", "1")
     real_probe = service._probe_duration
-    monkeypatch.setattr(service, "_probe_duration", lambda path: None if path == media
-                        else real_probe(path))
+    monkeypatch.setattr(service, "_probe_duration", lambda path, **kwargs: None
+                        if path == media else real_probe(path, **kwargs))
     rc = cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
                    str(output), "--quiet"])
     assert rc == 1
