@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from textflowkit.core.cancel import CancelledError
-from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
+from textflowkit.core.paths import ENV_INPUT_ROOT, UnsafeInputPathError, opened_file_path
 from textflowkit.core.service import (
     DEFAULT_FFMPEG_TIMEOUT_SECONDS,
     ENV_EGRESS_PROXY,
@@ -32,6 +32,56 @@ class AcquisitionError(RuntimeError):
     """Raised when media cannot be obtained."""
 
 
+# --- indirect media (confined local inputs) --------------------------------
+#
+# A media file can be a *reference* to other files, not media itself: an HLS/M3U
+# playlist, a DASH manifest, an ffmpeg concat script. The demuxer opens every
+# path such a file names while it decodes. Path confinement is checked on the
+# staged copy, and the staged copy is what ffmpeg opens, so a manifest inside the
+# root can still name a file outside it: absolute references survive the copy
+# unchanged, and relative ones resolve against the scratch directory, where `..`
+# walks out. Verified against a real decode: a confined playlist naming a segment
+# outside the root decoded that segment's audio.
+#
+# The signatures are the leading bytes of the manifest formats ffmpeg's own
+# probes auto-detect with no forced demuxer. They are text markers that no
+# container format starts with, so ordinary media is unaffected, and detection
+# does not consult the extension or the source path - both are caller-supplied.
+#
+# Detection is anchored at the file's first non-whitespace byte, one step
+# broader than the probes (which reject a playlist whose signature is not at the
+# very start): a manifest this build would not follow is still refused rather
+# than trusted. A manifest form whose signature is not in this list is not
+# covered - see SECURITY.md, which states the guarantee as it is. SDP is one
+# such form left out deliberately: it names network endpoints rather than local
+# files, and the local-file demuxers that take a protocol whitelist reject those
+# protocols for a file input on the ffmpeg build measured here.
+_INDIRECT_MEDIA_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"#EXT", "HLS/M3U playlist"),
+    (b"ffconcat", "ffmpeg concat script"),
+    (b"<", "XML manifest (MPEG-DASH)"),
+)
+
+_INDIRECT_HEAD_BYTES = 4096  # signatures are a few bytes; whitespace may precede them
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def assert_direct_local_media(head: bytes, *, source: str | Path) -> None:
+    """Refuse a confined local input whose content makes ffmpeg open other files."""
+    lead = head.lstrip()
+    if lead.startswith(_UTF8_BOM):
+        lead = lead[len(_UTF8_BOM):].lstrip()
+    for signature, kind in _INDIRECT_MEDIA_SIGNATURES:
+        if lead.startswith(signature):
+            raise AcquisitionError(
+                f"confined input '{source}' is indirect media ({kind}): the file names "
+                "other files for ffmpeg to open, and a confined input is copied into "
+                "scratch, where those references cannot be checked against the "
+                "configured input root. Supply self-contained media, or decode it with "
+                f"{ENV_INPUT_ROOT} unset."
+            )
+
+
 def stage_confined_local_media(
     source: str | Path, *, work_dir: Path, input_root: str | Path
 ) -> Path:
@@ -46,14 +96,19 @@ def stage_confined_local_media(
             raise UnsafeInputPathError(
                 f"opened input file '{actual}' is outside the allowed root '{base}'"
             )
+        # The bytes decide, not the name: refuse before the copy exists, so a
+        # refused manifest leaves nothing behind for a later stage to open.
+        chunk = opened.read(1024 * 1024)
+        assert_direct_local_media(chunk[:_INDIRECT_HEAD_BYTES], source=path)
         written = 0
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("xb") as destination:
-            while chunk := opened.read(1024 * 1024):
+            while chunk:
                 written += len(chunk)
                 if maximum is not None and written > maximum:
                     raise AcquisitionError("media exceeds the configured size limit")
                 destination.write(chunk)
+                chunk = opened.read(1024 * 1024)
     return out
 
 
