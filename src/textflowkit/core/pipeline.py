@@ -270,7 +270,12 @@ def transcribe(
 
     try:
         transcript = _resume_transcript(resumed, source=source, ref=ref)
-        confined = False
+        # The decoder boundary follows the *source*, not the branch that
+        # acquired the media. A resumed run can carry a still-existing media path
+        # from its checkpoint and skip re-staging entirely, so deriving this
+        # inside that branch would leave that path decoded with no restriction -
+        # under an input root, which is exactly when the boundary must hold.
+        confined = ref.kind == "file" and root is not None
         if resumed is not None:
             media = _existing_path(resumed.media_path)
             audio = _existing_path(resumed.audio_path)
@@ -288,7 +293,6 @@ def transcribe(
             if not can_resume:
                 require_tool("ffmpeg")
                 _stage("fetching")
-                confined = ref.kind == "file" and root is not None
                 if confined:
                     media = stage_confined_local_media(
                         ref.location, work_dir=scratch, input_root=root
@@ -346,7 +350,6 @@ def transcribe(
                         media = stage_confined_local_media(
                             ref.location, work_dir=scratch, input_root=root
                         )
-                        confined = True
                     else:
                         media = fetch_media(
                             ref, work_dir=scratch,
