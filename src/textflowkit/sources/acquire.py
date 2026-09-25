@@ -471,14 +471,50 @@ def fetch_media(
         check_cancel=check_cancel,
     )
 
+# The demuxers a decode may select. `-format_whitelist` is a property of the
+# ffmpeg invocation, so it bounds what a *confined* input can be regardless of
+# how the file was named or what its leading bytes happen to be - unlike the
+# signature refusal above, which only covers shapes in its list.
+#
+# The names are ffmpeg's own, as reported by `ffmpeg -demuxers`; several demuxers
+# own multiple extensions, so the list is not just the product's extension list.
+# Listed here: wav, mp3, mov/mp4/m4a, matroska/webm, ogg, flac, aac. These are
+# the product's documented starting formats, and each was measured to still
+# decode under the whitelist on the ffmpeg build in SECURITY.md.
+#
+# Left out deliberately, with the reference each one follows in brackets: the
+# HLS/M3U demuxer (`hls`, `.m3u8` playlists naming segments), the ffconcat
+# demuxer (`ffconcat`, naming files), and the DASH manifests (`dash`,
+# `webm_dash_manifest`). Any demuxer that opens paths or protocols other than
+# the input itself is out, so the list stays a list of self-contained formats.
+DECODER_FORMAT_WHITELIST: tuple[str, ...] = (
+    "wav", "mp3", "mov,mp4,m4a,3gp,3g2,mj2", "matroska,webm", "ogg", "flac", "aac",
+)
+
+
+def decoder_format_args() -> list[str]:
+    """Restrict a decode to self-contained formats.
+
+    Applied to confined (staged) inputs only: without an input root there is no
+    boundary to protect, and the product's documented workflow must keep
+    decoding whatever ffmpeg already decoded. See SECURITY.md.
+    """
+    return ["-format_whitelist", ",".join(DECODER_FORMAT_WHITELIST)]
+
+
 def extract_audio(
     media_path: str | Path,
     *,
     work_dir: str | Path,
     sample_rate: int = 16000,
     check_cancel: Callable[[], None] | None = None,
+    confined: bool = False,
 ) -> Path:
-    """Decode through a bounded pipe, never an unbounded ffmpeg output file."""
+    """Decode through a bounded pipe, never an unbounded ffmpeg output file.
+
+    ``confined`` says the input was staged from a configured input root, so the
+    decode is restricted to self-contained demuxers (`decoder_format_args`).
+    """
     ffmpeg = require_tool("ffmpeg")
     media = Path(media_path)
     if not media.exists():
@@ -499,10 +535,15 @@ def extract_audio(
     duration_pcm = max_duration * sample_rate * 2 if max_duration is not None else None
     cmd = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+    ]
+    if confined:
+        # Must precede -i: an input option applies to the input it opens.
+        cmd.extend(decoder_format_args())
+    cmd.extend([
         "-i", str(media),
         "-vn", "-ac", "1", "-ar", str(sample_rate),
         "-c:a", "pcm_s16le",
-    ]
+    ])
     if max_duration is not None:
         # The extra second lets the pipe reader distinguish an overlong input
         # from one that ends exactly at the allowed duration. It never lands on

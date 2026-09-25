@@ -125,16 +125,27 @@ def service_work_root() -> str | None:
     return str(Path(os.environ[ENV_WORK_ROOT]).expanduser().resolve())
 
 
-def _probe_duration(media: Path) -> float | None:
-    """Return known duration using a bounded probe; unknown is handled at decode."""
-    from textflowkit.sources.acquire import require_tool
+def _probe_duration(media: Path, *, confined: bool = False) -> float | None:
+    """Return known duration using a bounded probe; unknown is handled at decode.
+
+    ``confined`` restricts the probe to the same self-contained demuxers the
+    decode uses. ffprobe opens the input the same way ffmpeg does, so without
+    this a confined playlist naming outside segments would be followed by the
+    probe before `extract_audio` ever runs.
+    """
+    from textflowkit.sources.acquire import decoder_format_args, require_tool
 
     ffprobe = require_tool("ffprobe")
+    cmd = [ffprobe, "-v", "error"]
+    if confined:
+        cmd.extend(decoder_format_args())
+    cmd.extend([
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(media),
+    ])
     try:
         proc = subprocess.run(
-            [ffprobe, "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(media)],
-            capture_output=True, text=True, timeout=30, check=False,
+            cmd, capture_output=True, text=True, timeout=30, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise ServiceConfigurationError("ffprobe timed out before decode") from exc
@@ -147,25 +158,27 @@ def _probe_duration(media: Path) -> float | None:
     return duration if math.isfinite(duration) and duration >= 0 else None
 
 
-def enforce_predecode_limits(media: Path) -> None:
+def enforce_predecode_limits(media: Path, *, confined: bool = False) -> None:
     """Reject known oversize/overlong media before launching full extraction."""
     if not production_enabled():
         return
     maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
     if media.stat().st_size > maximum:
         raise ServiceConfigurationError("media exceeds the configured size limit")
-    duration = _probe_duration(media)
+    duration = _probe_duration(media, confined=confined)
     if duration is not None and duration > positive_limit(ENV_MAX_DURATION_SECONDS, 4 * 3600):
         raise ServiceConfigurationError("source duration exceeds the configured limit")
 
 
-def enforce_media_limits(media: Path, audio: Path) -> None:
+def enforce_media_limits(media: Path, audio: Path, *, confined: bool = False) -> None:
     """Defense in depth after bounded acquisition and decode."""
     if not production_enabled():
         return
     maximum = positive_limit(ENV_MAX_MEDIA_BYTES, 1024 * 1024 * 1024)
     if media.stat().st_size > maximum or audio.stat().st_size > maximum:
         raise ServiceConfigurationError("media exceeds the configured size limit")
+    # `audio` is the decoded WAV this process wrote, never caller-supplied, so
+    # the whitelist is not needed for it; only the media probe takes `confined`.
     duration = _probe_duration(audio)
     if duration is None:
         raise ServiceConfigurationError("cannot verify source duration with ffprobe")

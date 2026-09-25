@@ -270,6 +270,7 @@ def transcribe(
 
     try:
         transcript = _resume_transcript(resumed, source=source, ref=ref)
+        confined = False
         if resumed is not None:
             media = _existing_path(resumed.media_path)
             audio = _existing_path(resumed.audio_path)
@@ -287,7 +288,8 @@ def transcribe(
             if not can_resume:
                 require_tool("ffmpeg")
                 _stage("fetching")
-                if ref.kind == "file" and root is not None:
+                confined = ref.kind == "file" and root is not None
+                if confined:
                     media = stage_confined_local_media(
                         ref.location, work_dir=scratch, input_root=root
                     )
@@ -303,9 +305,11 @@ def transcribe(
                         resolved_source, input_root=root, content_path=media,
                     )
                 _checkpoint("fetch")
-                enforce_predecode_limits(media)
+                enforce_predecode_limits(media, confined=confined)
                 _stage("extracting")
-                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
+                audio = extract_audio(
+                    media, work_dir=scratch, check_cancel=check_cancel, confined=confined
+                )
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
 
@@ -342,6 +346,7 @@ def transcribe(
                         media = stage_confined_local_media(
                             ref.location, work_dir=scratch, input_root=root
                         )
+                        confined = True
                     else:
                         media = fetch_media(
                             ref, work_dir=scratch,
@@ -349,9 +354,11 @@ def transcribe(
                             check_cancel=check_cancel,
                         )
                     _checkpoint("fetch")
-                enforce_predecode_limits(media)
+                enforce_predecode_limits(media, confined=confined)
                 _stage("extracting")
-                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
+                audio = extract_audio(
+                    media, work_dir=scratch, check_cancel=check_cancel, confined=confined
+                )
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
         except (AcquisitionError, UnsafeInputPathError) as exc:
