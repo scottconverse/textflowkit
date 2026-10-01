@@ -37,7 +37,7 @@ import pytest
 
 from textflowkit.core import submission
 from textflowkit.core.checkpoint import CheckpointRecord, local_source_identity
-from textflowkit.core.executor import JobExecutor
+from textflowkit.core.executor import JobExecutor, QueueFullError
 from textflowkit.core.jobs import JobState, MemoryJobStore
 from textflowkit.core.model import Segment, Transcript
 from textflowkit.core.pipeline import TranscribeResult
@@ -105,7 +105,7 @@ def _settle(executions: list, expected: int, *, timeout: float = 5.0) -> None:
 
 
 class _AttemptScript:
-    """A transcribe double that fails the first attempt and succeeds the second.
+    """A transcribe double that fails the first attempt and succeeds afterwards.
 
     The script is the whole point: the second caller's decision was formed
     against the *first* failure, so if it is honoured it re-enters the engine for
@@ -116,10 +116,12 @@ class _AttemptScript:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.executions: list[str] = []
+        self.failures = 0
 
     def __call__(self, source, *, resume_checkpoint=None, on_checkpoint=None, **kwargs):
         self.executions.append(source)
-        if len(self.executions) == 1:
+        if self.failures == 0:
+            self.failures += 1
             self.entered.set()
             assert self.release.wait(timeout=5)
             raise RuntimeError("controlled first-attempt failure")
@@ -251,14 +253,15 @@ def test_a_job_off_the_deque_is_still_owned_against_a_second_enqueue(monkeypatch
     """A job in the dequeue-to-token gap must not be enqueueable a second time.
 
     The worker removes the queue item *before* it registers the running token, and
-    `enqueue` guards a duplicate by scanning the deque and the token map. Between
-    the dequeue and the token registration a job id is in neither, so a second
-    `enqueue` for it is admitted and the job runs twice.
+    the guard a duplicate enqueue hits (whether a scan of the queue deque or a
+    token-map lookup) sees an id in neither between the dequeue and the token
+    registration - so a second `enqueue` in that window is admitted and the job
+    runs twice.
 
-    The gap is entered deterministically by hooking the worker's first store read
-    after dequeue (that read happens only after the item has left the deque and
-    before `run_job` starts the engine) and holding a second `enqueue` there. No
-    queue internals are touched.
+    The gap is entered deterministically by hooking the worker's pending-slot
+    release, which is the first thing after `self._queue.get()` returned and
+    before the token is registered, and holding a second `enqueue` there. No
+    queue internals are read or written.
     """
     store = MemoryJobStore()
 
@@ -275,6 +278,10 @@ def test_a_job_off_the_deque_is_still_owned_against_a_second_enqueue(monkeypatch
     monkeypatch.setattr(runner, "transcribe", gate_transcribe)
 
     executor = JobExecutor(store, max_concurrency=1)
+    # Start the pool before seeding, exactly as the resume path does: `start()`
+    # reaps PENDING/RUNNING rows as interrupted, so a prepared row must be
+    # created after it (the submission contract calls `start()` before claiming).
+    executor.start()
     # A prepared job for the durable-resume path (already claimed, so PENDING).
     prepared = store.create("https://example.com/v")
     store.update(prepared.id, state=JobState.PENDING)
@@ -343,3 +350,129 @@ def test_a_job_off_the_deque_is_still_owned_against_a_second_enqueue(monkeypatch
         f"the gap admitted a duplicate enqueue: {second!r}"
     )
     assert len(executions) == 1, f"the job executed {len(executions)} times, expected 1"
+
+
+# --- 3. admission failure cleanup ------------------------------------------
+
+
+def test_queue_full_refusal_does_not_clobber_a_newer_claim(monkeypatch, tmp_path):
+    """A refused admission must fail only the row *it* reopened, not a newer owner.
+
+    The refusal writes an ERROR to the row it reopened. If another caller has
+    re-claimed that row in the meantime (a fresh, deliberate retry), the refusal
+    must not overwrite the newer owner's PENDING. The cleanup is conditional on the
+    row still being the PENDING this refusal owns.
+    """
+    media = tmp_path / "media.wav"
+    _wav(media)
+    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    store = SqliteJobStore(tmp_path / "jobs.db")
+    try:
+        job = _seed_terminal_job(store, request, media)
+
+        released = threading.Event()
+        started = threading.Event()
+
+        def slow_transcribe(source, **kwargs):
+            started.set()
+            assert released.wait(timeout=5)
+            return _result(source)
+
+        from textflowkit.core import runner
+        monkeypatch.setattr(runner, "transcribe", slow_transcribe)
+        executor = JobExecutor(store, max_concurrency=1, max_pending=1)
+        monkeypatch.setattr(submission, "get_default_executor", lambda: executor)
+        try:
+            executor.submit(source="occupier")
+            assert started.wait(timeout=5), "worker never picked the occupier up"
+            executor.submit(source="holder")
+            with pytest.raises(QueueFullError):
+                submit_request(store, SubmissionRequest.from_dict(request.to_dict()),
+                               background=True, resume_job_id=job.id)
+
+            after = store.get(job.id)
+            # The row was reopened by our claim, then failed by the cleanup: it is
+            # ERROR, not a PENDING orphan.
+            assert after.state is JobState.ERROR, f"left {after.state}"
+            assert "queue is full" in (after.error or "")
+        finally:
+            released.set()
+            executor.shutdown()
+    finally:
+        store.close()
+
+
+def test_shutdown_refusal_does_not_leave_a_pending_orphan(monkeypatch, tmp_path):
+    """An executor that refuses because it is shut down must not strand the row.
+
+    `enqueue` raises RuntimeError once the pool is shut down. The row was already
+    reopened by the claim, so without cleanup it would sit PENDING with no worker.
+    """
+    media = tmp_path / "media.wav"
+    _wav(media)
+    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    store = MemoryJobStore()
+    job = _seed_terminal_job(store, request, media)
+
+    executor = JobExecutor(store, max_concurrency=1)
+    monkeypatch.setattr(submission, "get_default_executor", lambda: executor)
+    try:
+        executor.shutdown()  # not started: a submit would start it, enqueue refuses
+        with pytest.raises(RuntimeError):
+            submit_request(store, SubmissionRequest.from_dict(request.to_dict()),
+                           background=True, resume_job_id=job.id)
+        after = store.get(job.id)
+        assert after.state is not JobState.PENDING, "shutdown refusal left a PENDING orphan"
+        assert after.state is JobState.ERROR
+    finally:
+        store.close()
+
+
+# --- 4. durable schema migration --------------------------------------------
+
+
+def test_pre_attempt_sqlite_file_opens_and_reads_as_attempt_zero(tmp_path):
+    """A file written before the attempt column existed must migrate cleanly.
+
+    The migration adds the column with default 0, so a terminal row left by the
+    old code reads as attempt 0 - which is exactly what a caller that observed it
+    under the old code would have pinned.
+    """
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE jobs (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE, source TEXT NOT NULL, state TEXT NOT NULL,
+            created_at REAL NOT NULL, updated_at REAL NOT NULL,
+            progress TEXT NOT NULL DEFAULT '', error TEXT, transcript TEXT,
+            outputs TEXT NOT NULL DEFAULT '[]',
+            cancel_requested INTEGER NOT NULL DEFAULT 0,
+            checkpoint TEXT, request TEXT);
+        """
+    )
+    conn.execute(
+        "INSERT INTO jobs (id, source, state, created_at, updated_at, outputs)"
+        " VALUES ('old1', 'https://example.com/v', 'error', 1.0, 1.0, '[]')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteJobStore(db)
+    try:
+        job = store.get("old1")
+        assert job is not None
+        assert job.state is JobState.ERROR
+        assert job.attempt == 0
+        # The migrated row is claimable with the attempt a reader would have seen.
+        claimed = store.claim(
+            "old1", allowed_states={JobState.ERROR}, observed_attempt=0,
+            state=JobState.PENDING,
+        )
+        assert claimed is not None
+        assert claimed.state is JobState.PENDING
+    finally:
+        store.close()
