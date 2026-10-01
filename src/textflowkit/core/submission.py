@@ -439,29 +439,79 @@ def resume_job(
     )
 
 
+def item_source(item: Any) -> str | None:
+    """Best-effort source of a raw batch item, for the error outcome's identity.
+
+    The item is a mapping that may be malformed in the very field the caller
+    wants to see, so this never raises: a missing or non-string source yields
+    ``None`` and the item is still identified by its submitted ``index``.
+    """
+    if isinstance(item, dict):
+        source = item.get("source")
+        return source if isinstance(source, str) else None
+    return None
+
+
+def build_item(item: Any, *, input_root: Any, work_dir: Any) -> SubmissionRequest:
+    """Construct one batch item's request, with item-shape errors made explicit.
+
+    A batch item arrives as a raw mapping from the door, not as an already-built
+    request: HTTP hands over the decoded JSON object, MCP builds the mapping from
+    its own single-source wire. Keeping construction here - inside the per-item
+    boundary rather than in a list comprehension before the loop - is what lets a
+    bad item be *its own* outcome instead of a whole-request refusal. A
+    non-mapping item, or a mapping whose ``source`` is not a string, is a
+    ``TypeError`` (a type is wrong, not a value) - raised here, at the boundary,
+    rather than left to surface as a bare ``AttributeError`` deeper in the
+    contract - and the door catches it alongside ``ValueError`` so the item
+    becomes its own error outcome.
+    """
+    if not isinstance(item, dict):
+        raise TypeError("job entry must be an object")
+    data = dict(item)
+    source = data.get("source")
+    if not isinstance(source, str):
+        raise TypeError("source must be a string")
+    return SubmissionRequest(
+        **data, input_root=input_root, work_dir=work_dir,
+    )
+
+
 def submit_batch(
     store: JobStore, requests: list[SubmissionRequest], *, resume: bool = False
 ) -> list[dict[str, Any]]:
     """Accept each source independently; a bad item never hides later items.
 
-    An engine whose optional package is missing is the one exception, and only
-    for a fresh batch: it is a property of the request rather than of one
-    source, so every item naming it fails identically. Checking it once here,
-    before the loop, is what keeps a batch from queueing half its items and
-    erroring the rest for the same reason. A *resume* batch skips this because
-    reuse is decided per item - a completed transcript needs no engine - and
-    `submit_request` covers the items that do run.
+    Every item is attempted on its own: an item the submission contract refuses
+    (an unknown engine name, a missing optional extra, an unsupported format, an
+    empty or absent source) becomes *that item's* error outcome, carrying its
+    zero-based ``index`` in the submitted list and its best-effort ``source``,
+    while every other item - before and after it - is still attempted and
+    reported in the original order. There is deliberately no whole-batch engine
+    preflight: a request naming an engine whose optional package is absent is
+    that item's failure, checked per item by ``submit_request``
+    (``_require_engine_ready``) on the paths that actually queue work, so one
+    unusable engine can no longer refuse unrelated valid items. A *resume* batch
+    is unchanged: reuse is decided per item and a completed transcript needs no
+    engine. The item count always equals the number of submitted items, and the
+    outcomes are in the submitted order.
     """
-    if not resume:
-        for engine in dict.fromkeys(request.engine for request in requests):
-            require_engine(engine)
     results: list[dict[str, Any]] = []
-    for request in requests:
+    for index, request in enumerate(requests):
         try:
             job = submit_request(store, request, resume=resume)
-            results.append({"source": request.source, "job_id": job.id, "state": job.state.value})
+            results.append({
+                "index": index,
+                "source": request.source,
+                "job_id": job.id,
+                "state": job.state.value,
+            })
         except Exception as exc:  # noqa: BLE001 - one bad item must not stop the batch
-            results.append({"source": request.source, "error": f"{type(exc).__name__}: {exc}"})
+            results.append({
+                "index": index,
+                "source": request.source,
+                "error": f"{type(exc).__name__}: {exc}",
+            })
     return results
 
 

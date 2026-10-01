@@ -65,7 +65,9 @@ replacement. The same choice is available as `engine` on the MCP tools
 `/jobs/batch` request bodies. On every surface an unknown engine name, or a
 missing extra, is rejected before anything is fetched — the install line above
 when the extra is the reason: an exit code on the command line, `{"error": ...}`
-over MCP, HTTP 422 over HTTP. See
+over MCP, HTTP 422 over HTTP for a single submission. A **batch** is admitted
+per item, so one item's unusable engine is that item's error — reported in place
+with a zero-based `index` — and the other items are still queued. See
 [install notes](install.md#optional-cpumac-engine-faster-whisper), including how
 to keep an existing ROCm torch build.
 

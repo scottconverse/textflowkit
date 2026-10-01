@@ -55,6 +55,8 @@ from textflowkit.core.service import ServiceConfigurationError, service_work_roo
 from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
+    build_item,
+    item_source,
     submit_batch,
     submit_request,
 )
@@ -330,12 +332,13 @@ def transcribe_media(
 
 @mcp.tool(annotations=OPEN_WORLD)
 def submit_batch_media(
-    sources: list[str],
+    sources: list[Any],
     language: str | None = None,
     formats: str = "json,srt,txt",
     output_dir: str | None = None,
     model: str = "small",
     device: str | None = None,
+    cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
     resume: bool = False,
@@ -343,8 +346,12 @@ def submit_batch_media(
 ) -> dict[str, Any]:
     """Queue multiple independent media jobs and return each job handle.
 
-    Each source gets its own job, so one bad source cannot hide the others. Poll
-    each returned job_id with get_job_status.
+    `sources` is a list; a top-level value that is not a list at all is refused
+    by the tool schema before this function runs. Each *entry* gets its own job,
+    so one bad source cannot hide the others: a source that cannot be admitted (a
+    non-object entry, or a non-string/empty source) is reported as its own item
+    error, identified by its zero-based `index`, and the remaining sources are
+    still queued. Poll each returned job_id with get_job_status.
 
     Args:
         sources: Media URLs or local file paths; one job per source.
@@ -355,29 +362,55 @@ def submit_batch_media(
         output_dir: Directory to write rendered files into.
         model: Whisper model size - tiny, base, small, medium, or large.
         device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+        cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
+            'firefox'. Only for media you are authorised to access.
         diarize: Label speakers (needs the diarize extra and a gated model).
         translate_to: Target language code; fails loudly if unreachable.
         resume: Reuse matching saved checkpoints and completed transcripts.
         engine: Speech engine, applied to every job. 'whisper' (the default:
             openai-whisper on the torch stack) or the opt-in 'faster-whisper'
-            (CPU/Mac; needs the faster-whisper extra). An unusable engine
-            refuses the whole batch before anything is queued.
+            (CPU/Mac; needs the faster-whisper extra). An unusable engine fails
+            each item that named it; other items are unaffected.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
-    try:
-        requests = [SubmissionRequest(
-            source=source, language=language, formats=fmt_list,
-            output_dir=output_dir, model=model, device=device,
-            diarize=diarize, translate_to=translate_to,
-            input_root=server_input_root(), work_dir=service_work_root(),
-            engine=engine,
-        ) for source in sources]
-        # Fresh batches preflight the engine once, inside submit_batch, before
-        # queueing anything; a resume batch decides reuse per item instead.
-        results = submit_batch(get_default_store(), requests, resume=resume)
-    except ValueError as exc:
-        return {"error": str(exc)}
-    return {"count": len(results), "jobs": results}
+    # One slot per source, in submission order: a source that cannot be admitted
+    # holds its error outcome, an admitted one a placeholder filled from the core
+    # batch result below, so `jobs` mirrors the source list positionally.
+    results: list[dict[str, Any] | None] = []
+    requests: list[SubmissionRequest] = []
+    for index, source in enumerate(sources):
+        try:
+            request = build_item(
+                {
+                    "source": source, "language": language, "formats": fmt_list,
+                    "output_dir": output_dir, "model": model, "device": device,
+                    "cookies_from_browser": cookies_from_browser,
+                    "diarize": diarize, "translate_to": translate_to,
+                    "engine": engine,
+                },
+                input_root=server_input_root(), work_dir=service_work_root(),
+            )
+        except (TypeError, ValueError) as exc:
+            results.append({
+                "index": index,
+                "source": item_source({"source": source}),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        else:
+            requests.append(request)
+            results.append(None)
+    accepted = submit_batch(get_default_store(), requests, resume=resume)
+    # `submit_batch` enumerates only the *accepted* requests, so an accepted
+    # item's own `index` is its position in the compacted list, not the position
+    # it was submitted at. Re-stamp every recombined result with its original
+    # slot index so `index` always names the caller's input position, even when
+    # rejected sources sit before it.
+    accepted_iter = iter(accepted)
+    jobs = []
+    for index, entry in enumerate(results):
+        outcome = next(accepted_iter) if entry is None else entry
+        jobs.append({**outcome, "index": index})
+    return {"count": len(jobs), "jobs": jobs}
 
 
 @mcp.tool(annotations=MUTATING)

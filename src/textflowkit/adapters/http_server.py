@@ -58,6 +58,7 @@ from textflowkit.core.service import (
 from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
+    item_source,
     submit_batch,
     submit_request,
 )
@@ -76,7 +77,7 @@ from textflowkit.render import (
 try:  # optional extra
     from fastapi import FastAPI, HTTPException, Query, Request
     from fastapi.responses import JSONResponse, PlainTextResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, ValidationError
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "The HTTP adapter requires the 'http' extra. Install with: pip install 'textflowkit[http]'"
@@ -256,11 +257,34 @@ class TranscribeRequest(BaseModel):
 
 
 class BatchRequest(BaseModel):
-    jobs: list[TranscribeRequest]
+    # `jobs` is deliberately `list[Any]`, not `list[TranscribeRequest]`: the
+    # envelope contract is "a list" - a top-level `jobs` that is not a list at
+    # all is refused by this model as a whole-request 422 - while each *entry* is
+    # validated against `TranscribeRequest` inside the per-item boundary in
+    # `create_batch` (via `_submission_request`). So a non-object entry, or one
+    # with a malformed, missing, or wrongly-typed field, is that entry's item
+    # error rather than a whole-request 422; only the envelope shape is
+    # enforced here, before the handler runs.
+    jobs: list[Any]
     resume: bool = False
 
 
-def _submission_request(req: TranscribeRequest) -> SubmissionRequest:
+def _submission_request(item: Any) -> SubmissionRequest:
+    """Build one submission request from one decoded batch/job entry.
+
+    The entry is validated as a `TranscribeRequest` here, inside the caller's
+    per-item boundary, so a shape or value error on one batch entry surfaces as
+    that entry's item error rather than aborting the whole list. Pydantic's
+    `ValidationError` is normalised to `ValueError` so every door speaks the one
+    refusal type the submission contract and the HTTP handler already map.
+    """
+    if isinstance(item, TranscribeRequest):
+        req = item
+    else:
+        try:
+            req = TranscribeRequest.model_validate(item)
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
     return SubmissionRequest(
         **req.model_dump(), input_root=server_input_root(), work_dir=service_work_root()
     )
@@ -299,16 +323,46 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
 
 @app.post("/jobs/batch", status_code=202)
 def create_batch(req: BatchRequest) -> dict[str, Any]:
-    """Queue multiple independent jobs through the same core contract."""
-    try:
-        requests = [_submission_request(item) for item in req.jobs]
-        # The engine preflight for a fresh batch runs before the loop, so an
-        # unusable engine refuses the whole request rather than queueing part of
-        # it and erroring the rest for the same reason.
-        results = submit_batch(get_default_store(), requests, resume=req.resume)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"count": len(results), "jobs": results}
+    """Queue multiple independent jobs through the same core contract.
+
+    Each entry of `jobs` is admitted independently: an entry the submission
+    contract refuses (an unsupported format, an empty source, a missing optional
+    engine extra) is reported as its own item error, identified by its zero-based
+    `index`, and the entries after it are still attempted. Only a malformed
+    *envelope* - a body whose `jobs` is not a list (non-objects inside the list
+    are per-entry errors, not envelope errors) - is a 422; the
+    envelope shape itself is enforced by `BatchRequest` before this handler runs.
+    """
+    store = get_default_store()
+    requests: list[SubmissionRequest] = []
+    # One slot per submitted entry, in submission order: a rejected entry holds
+    # its error outcome, an accepted entry a placeholder filled from the core
+    # batch result below, so `jobs` mirrors the request list positionally.
+    results: list[dict[str, Any] | None] = []
+    for index, item in enumerate(req.jobs):
+        try:
+            request = _submission_request(item)
+        except (TypeError, ValueError) as exc:
+            results.append({
+                "index": index,
+                "source": item_source(item),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        else:
+            requests.append(request)
+            results.append(None)  # placeholder, replaced below in order
+    accepted = submit_batch(store, requests, resume=req.resume)
+    # `submit_batch` enumerates only the *accepted* requests, so an accepted
+    # item's own `index` is its position in the compacted list, not the position
+    # it was submitted at. Re-stamp every recombined result with its original
+    # slot index so `index` always names the caller's input position, even when
+    # rejected items sit before it.
+    accepted_iter = iter(accepted)
+    jobs = []
+    for index, entry in enumerate(results):
+        outcome = next(accepted_iter) if entry is None else entry
+        jobs.append({**outcome, "index": index})
+    return {"count": len(jobs), "jobs": jobs}
 
 
 @app.post("/jobs/{job_id}/resume", status_code=202)

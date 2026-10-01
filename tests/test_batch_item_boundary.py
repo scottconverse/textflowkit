@@ -1,14 +1,14 @@
-"""G4B RED: a batch must accept or reject each item independently (ENG008).
+"""G4B: a batch must accept or reject each item independently (ENG008).
 
-The three batch doors build their requests **outside** the per-item loop:
+The three batch doors are:
 
     HTTP  POST /jobs/batch          (`adapters/http_server.py::create_batch`)
     MCP   submit_batch_media        (`adapters/mcp_server.py`)
     core  submit_batch              (`core/submission.py`)
 
-so a single bad item can abort the whole request before any *good* item is
-queued. There are two distinct shapes of "bad item", and the goal (ENG008) draws
-the line between them:
+Each must admit its items one at a time, so a single bad item can never abort the
+whole request before any *good* item is queued. There are two distinct shapes of
+"bad item", and the goal (ENG008) draws the line between them:
 
 1. **Envelope errors.** The top-level body itself is malformed - `jobs` is not a
    list, or a required top-level field is the wrong type. These may legitimately
@@ -21,18 +21,18 @@ the line between them:
    and source, and every *other* item - before and after it - is still attempted
    and reported in the original order.
 
-The current product gets (2) wrong on all three doors:
+The contract these tests pin, now implemented on all three doors:
 
-- HTTP/MCP/core all construct the request list in one comprehension/list before
-  the loop. The first entry whose construction raises `ValueError` (or a
-  `TypeError`) aborts the comprehension, so nothing after it is built, nothing
-  before it that was already built is submitted consistently, and the whole
-  call fails as one error.
-- The core `submit_batch` additionally runs a **fresh-batch engine preflight**
-  before the loop (`for engine in dict.fromkeys(...): require_engine(engine)`),
-  so one item naming an engine whose optional package is absent refuses the
-  *entire* batch, including items naming a perfectly usable engine. That is the
-  exact "a bad item hides later good items" failure this ticket is about.
+- Each door validates its own wire (HTTP's list-of-job-objects, MCP's single
+  source list with one comma `formats` string), then hands each raw item to the
+  one shared admission boundary in `core/submission.py`. A per-item construction
+  or admission refusal is that item's outcome, carrying its zero-based `index`
+  and best-effort `source`; the items before and after it are still attempted
+  and the outcomes stay in the submitted order.
+- The core `submit_batch` runs **no whole-batch engine preflight**: an item
+  naming an engine whose optional package is absent fails only that item
+  (`_require_engine_ready` on the queue path), so a bad item can never hide a
+  later good one.
 
 The tests below drive the **real** construction path of each door. No inference
 runs: `submission.run_job` is stubbed to complete a job inline and record it, so
@@ -40,7 +40,9 @@ runs: `submission.run_job` is stubbed to complete a job inline and record it, so
 from a model. Every local source names a real (empty) file, because the real
 `SubmissionRequest` refuses a missing local source.
 
-RED vs. guard is separated explicitly at the bottom of this module.
+RED vs. guard is separated explicitly at the bottom of this module. The
+section labels are historical (from the RED pass); every listed test now passes
+against the implemented contract.
 """
 
 from __future__ import annotations
@@ -153,8 +155,14 @@ def _store():
 
 
 def _jobs_by_source(store):
-    """Every queued job's source, in the order the store holds them."""
-    return [job.source for job in store.list(limit=100)]
+    """The set of queued job sources the store holds.
+
+    `store.list` is **newest-first** by design, so its order is not the order
+    jobs were created and must never be read as creation order. Membership and
+    counts are what "queued exactly once" needs; the *original input order* is
+    asserted on the batch result list, which the doors preserve positionally.
+    """
+    return sorted(job.source for job in store.list(limit=100))
 
 
 # --------------------------------------------------------------------------
@@ -224,15 +232,19 @@ def test_http_batch_bad_item_reports_its_own_source_and_index(queued, http_clien
     # The good item after the two bad ones still names itself and was queued.
     assert items[3].get("source") == "two.wav"
     assert items[3].get("job_id")
+    # Both good items were stored; `_jobs_by_source` sorts, because `store.list`
+    # is newest-first and must not be read as creation order.
     assert _jobs_by_source(_store()) == ["one.wav", "two.wav"]
+    assert len(queued) == 2, queued
 
 
 def test_http_batch_first_item_bad_does_not_hide_later_good_items(queued, http_client):
     """A single bad *format* on the first entry must not abort the batch.
 
     The bad entry is only a value error inside `SubmissionRequest` - the wire
-    shape is perfectly valid - so it is an item error, and both later entries are
-    queued exactly once.
+    shape is perfectly valid - so it is an item error at position 0, and both
+    later entries are queued exactly once. The stored-job check is a sorted set
+    (`store.list` is newest-first, not creation order).
     """
     response = http_client.post("/jobs/batch", json={"jobs": [
         {"source": "one.wav", "formats": ["xyzzy"]},
@@ -245,7 +257,11 @@ def test_http_batch_first_item_bad_does_not_hide_later_good_items(queued, http_c
     assert len(items) == 3, items
     assert items[0].get("error") and "job_id" not in items[0]
     assert items[1].get("job_id") and items[2].get("job_id")
-    assert _jobs_by_source(_store()) == ["two.wav", "three.wav"]
+    # Both later entries were stored; compare as a sorted set plus a length,
+    # never against `store.list` order (newest-first, not creation order).
+    stored = _jobs_by_source(_store())
+    assert sorted(stored) == ["three.wav", "two.wav"]
+    assert len(stored) == 2, stored
     assert len(queued) == 2, queued
 
 
@@ -362,6 +378,63 @@ def test_mcp_batch_missing_extra_is_reported_per_source(
     assert all(MISSING_HINT in item.get("error", "") for item in items), items
     assert _jobs_by_source(_store()) == []
     assert queued == []
+
+
+def test_mcp_registered_schema_accepts_non_string_items_and_rejects_a_non_list():
+    """The *registered* MCP tool must let a malformed individual source reach the
+    function, which is where the per-item boundary lives.
+
+    A harness reads `tools/list` and validates the call against the published
+    schema before the function runs. If `sources` were typed `list[str]`, a
+    schema-conformant client could never express "one malformed source" - the SDK
+    would reject the whole call before `submit_batch_media` saw it, so the
+    per-item outcome would be unreachable through the real MCP door. The schema
+    must therefore admit non-string entries (item-validation-friendly) while
+    still refusing a top-level `sources` that is not a list at all.
+    """
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import mcp
+
+    tool = mcp._tool_manager._tools["submit_batch_media"]
+    sources = tool.parameters["properties"]["sources"]
+    assert sources["type"] == "array", sources
+    # An item schema pinned to strings would reject `123` before the function.
+    items = sources.get("items", {})
+    if isinstance(items, dict):
+        item_types = items.get("type")
+        assert item_types != "string", sources
+    # A top-level non-list is still an envelope error the schema refuses.
+    assert "anyOf" in sources or sources["type"] == "array", sources
+
+
+def test_mcp_registered_tool_call_reports_a_malformed_source_item(queued):
+    """Call through the *registered* tool, not the bare function.
+
+    The registered entry point is what an MCP client actually invokes; calling it
+    with a malformed individual source must return per-source outcomes rather
+    than raising. This pins the door the client reaches, so a schema that only
+    admits strings cannot silently make the item boundary unreachable.
+
+    Only the tool's own callable is exercised - the same function the SDK
+    registered - never the async transport wrapper, so this stays synchronous and
+    in-process.
+    """
+    pytest.importorskip("mcp")
+    from textflowkit.adapters.mcp_server import mcp
+
+    tool = mcp._tool_manager._tools["submit_batch_media"]
+    call = getattr(tool, "fn", None) or getattr(tool, "func", None)
+    if call is None:  # pragma: no cover - SDK shape guard
+        pytest.skip("this MCP SDK does not expose the registered callable")
+    out = call(sources=["one.wav", 123, "two.wav"], formats="json")
+
+    assert out["count"] == 3, out
+    items = out["jobs"]
+    assert [item["index"] for item in items] == [0, 1, 2], items
+    assert items[0].get("job_id"), items[0]
+    assert items[1].get("error") and "job_id" not in items[1], items[1]
+    assert items[2].get("job_id"), items[2]
+    assert _jobs_by_source(_store()) == ["one.wav", "two.wav"]
 
 
 def test_mcp_batch_retains_comma_format_and_cookie_wire(queued):
@@ -540,10 +613,10 @@ def test_core_submit_batch_reuses_a_done_job_without_a_new_row(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# RED vs. guard, honestly separated
+# Item-boundary specification vs. guard, honestly separated
 # --------------------------------------------------------------------------
 #
-# RED (fail against the current product; the item-boundary specification):
+# The item boundary (the G4B RED demand; now implemented):
 #
 #   HTTP
 #   - test_http_batch_mixed_keeps_every_item_in_order
@@ -554,11 +627,13 @@ def test_core_submit_batch_reuses_a_done_job_without_a_new_row(monkeypatch):
 #   - test_mcp_batch_mixed_keeps_every_item_in_order
 #   - test_mcp_batch_bad_item_reports_its_own_index
 #   - test_mcp_batch_missing_extra_is_reported_per_source
+#   - test_mcp_registered_schema_accepts_non_string_items_and_rejects_a_non_list
+#   - test_mcp_registered_tool_call_reports_a_malformed_source_item
 #   core
 #   - test_core_submit_batch_one_missing_extra_does_not_refuse_valid_engines
 #   - test_core_submit_batch_missing_extra_only_fails_the_items_that_named_it
 #
-# Guards (pass today; pin the boundaries the fix must not over-reach):
+# Guards (pin the boundaries the fix must not over-reach):
 #
 #   - test_http_batch_malformed_envelope_is_422
 #   - test_http_batch_missing_jobs_key_is_422

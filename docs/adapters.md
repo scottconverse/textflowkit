@@ -96,8 +96,11 @@ Read-only tools carry `readOnlyHint: true`. Submission and export tools carry
 `openWorldHint: true`; resume and cancellation are marked as mutating.
 
 `transcribe_media` and `submit_batch_media` take the same options as the HTTP
-bodies above, `engine` included; a name that is unknown, or whose optional
-package is missing, comes back as `{"error": ...}` before any job is queued.
+bodies above, `engine` included. On `transcribe_media` an unknown engine name or
+a missing optional package comes back as `{"error": ...}` before any job is
+queued. On `submit_batch_media` each source is admitted independently, so such a
+refusal is that source's error in the returned `jobs` list - carrying its
+zero-based `index` - and the other sources are still queued.
 
 ### Harness configuration
 
@@ -157,14 +160,21 @@ the same options: `source`, `language`, `formats`, `output_dir`, `model`,
 CUDA on NVIDIA, CPU otherwise — and may be set to `faster-whisper`, the opt-in
 CTranslate2 engine for CPU and Apple Silicon that needs
 `pip install "textflowkit[faster-whisper]"`. The default is unchanged, and no
-speed or accuracy comparison between the engines is claimed. An unknown engine
-name, or a missing extra, is answered with **422 before a job record is written**;
-on `/jobs/batch` that refusal covers the whole request, so a fresh batch is never
-partly queued for one unusable engine. The choice is stored on the durable
-request and checked again when the job is resumed - except for a job that already
-finished, which is answered from its stored transcript and needs no engine. A
-resume refused for an unusable engine leaves the job's terminal state, error, and
-cancellation flag untouched, so nothing is left queued-less in `pending`.
+speed or accuracy comparison between the engines is claimed. On a **single**
+submission (`POST /jobs`) an unknown engine name or a missing extra is answered
+with **422 before a job record is written**. On `/jobs/batch` each item is
+admitted independently: an unusable engine (or any other per-item refusal - an
+unsupported format, an empty source) is reported as that item's error, in place,
+carrying its zero-based `index` and best-effort `source`, and the other items are
+still queued and reported in the submitted order. Only the envelope shape is a
+whole-request error: a batch body whose `jobs` is not a list at all is a 422. An
+individual entry that is not an object (or carries a malformed field) is that
+entry's item error, never a whole-request refusal. The choice is stored on the
+durable request and checked again when the job is resumed - except for a job that
+already finished, which is answered from its stored transcript and needs no
+engine. A resume refused for an unusable engine leaves the job's terminal state,
+error, and cancellation flag untouched, so nothing is left queued-less in
+`pending`.
 
 ### Developer mode and production profile
 
