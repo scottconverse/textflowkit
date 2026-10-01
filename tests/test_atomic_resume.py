@@ -101,6 +101,65 @@ def _stub_engine(monkeypatch, *, executions: list):
     monkeypatch.setattr(runner, "transcribe", fake_transcribe)
 
 
+def _rendezvous_after_read(monkeypatch, *, count: int = 2) -> None:
+    """Force both racers to observe the terminal row before either claims it.
+
+    Without this the winner usually finishes before the loser reads, and the race
+    is not exercised - the test passes even against the racy code. The barrier
+    sits between the matching read and the claim, which is exactly the window the
+    defect lives in: both callers have seen "ERROR, resumable" and may now both
+    act on it. It is the same deterministic interleaving the audit probe used.
+    """
+    original = submission._matching_checkpoint
+    barrier = threading.Barrier(count)
+
+    def matching(*args, **kwargs):
+        result = original(*args, **kwargs)
+        barrier.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(submission, "_matching_checkpoint", matching)
+
+
+def _rendezvous_at_reopen(monkeypatch, store, *, barrier=None, count: int = 2) -> None:
+    """Hold both racers at the reopen write, on either store contract.
+
+    The read rendezvous alone is not enough: between a caller's read and its
+    reopen the other caller can finish the whole job, so the second one then sees
+    DONE and is refused for an unrelated reason - the test would pass against the
+    racy code. Syncing *at* the write that reopens the row puts both callers past
+    their state check with neither having committed, which is the precise window
+    the defect lives in. Wraps whichever transition the store offers (`claim` on
+    the fixed store, `update` on the racy one), so the test does not have to know
+    which the product uses.
+
+    Pass the same `barrier` to two stores to make them rendezvous together (the
+    two-handle case); the default is a fresh one for a single store.
+    """
+    if barrier is None:
+        barrier = threading.Barrier(count)
+    original_claim = getattr(store, "claim", None)
+    original_update = store.update
+
+    def at_reopen(**fields) -> bool:
+        return fields.get("state") is JobState.PENDING
+
+    if original_claim is not None:
+        def claim(job_id, *, allowed_states, **fields):
+            if at_reopen(**fields):
+                barrier.wait(timeout=5)
+            return original_claim(job_id, allowed_states=allowed_states, **fields)
+
+        monkeypatch.setattr(store, "claim", claim, raising=False)
+
+    def update(job_id, **fields):
+        if at_reopen(**fields):
+            barrier.wait(timeout=5)
+        return original_update(job_id, **fields)
+
+    monkeypatch.setattr(store, "update", update)
+
+
 def _settle(executions: list, expected: int, *, timeout: float = 2.0) -> None:
     """Wait until at least `expected` executions, then confirm no extra appears.
 
@@ -154,6 +213,8 @@ def test_concurrent_synchronous_resume_of_one_job_has_a_single_owner(
 
         executions: list = []
         _stub_engine(monkeypatch, executions=executions)
+        _rendezvous_after_read(monkeypatch)
+        _rendezvous_at_reopen(monkeypatch, store)
 
         def call():
             return submit_request(
@@ -236,6 +297,7 @@ def test_concurrent_background_resume_enqueues_one_execution(monkeypatch, tmp_pa
 
     executions: list = []
     _stub_engine(monkeypatch, executions=executions)
+    _rendezvous_after_read(monkeypatch)
 
     try:
         def call():
@@ -248,7 +310,10 @@ def test_concurrent_background_resume_enqueues_one_execution(monkeypatch, tmp_pa
         winners = [r for r in results if not isinstance(r, Exception)]
         losers = [r for r in results if isinstance(r, Exception)]
         assert len(winners) == 1, f"both resumes were accepted: {results!r}"
-        assert losers and "already active" in str(losers[0]).lower(), repr(losers)
+        # The loser is refused with a ValueError (HTTP maps it to a conflict). Its
+        # wording depends on what it sees: "already active" for the queued row,
+        # or a not-resumable message if the winner already finished.
+        assert losers and isinstance(losers[0], ValueError), repr(losers)
 
         # At most one execution ever runs for this one job id.
         assert len(executions) == 1, f"job executed {len(executions)} times, expected 1"
@@ -399,6 +464,11 @@ def test_two_store_handles_over_one_db_claim_one_winner(monkeypatch, tmp_path):
     try:
         executions: list = []
         _stub_engine(monkeypatch, executions=executions)
+        _rendezvous_after_read(monkeypatch)
+        # One barrier shared by both handles: they must meet at the reopen write.
+        reopen_barrier = threading.Barrier(2)
+        _rendezvous_at_reopen(monkeypatch, store_a, barrier=reopen_barrier)
+        _rendezvous_at_reopen(monkeypatch, store_b, barrier=reopen_barrier)
 
         # Two independent handles race the same job with a shared barrier.
         barrier = threading.Barrier(2)
