@@ -504,3 +504,112 @@ def test_two_store_handles_over_one_db_claim_one_winner(monkeypatch, tmp_path):
     finally:
         store_a.close()
         store_b.close()
+
+
+# --- coherent observation: checkpoint replaced between selection and pin -----
+
+
+def test_implicit_selection_loads_the_checkpoint_it_pinned(tmp_path, monkeypatch):
+    """A checkpoint swapped between selection and observation is never served.
+
+    The implicit (no job id) resume selects a job through ``find_resumable_checkpoint``
+    and then re-observes it under the store lock to pin the attempt the claim will
+    be judged against. Those are two reads: a concurrent completed stage or retry
+    can replace the job's checkpoint in the window between them. Returning the
+    *pre-observation* checkpoint under the freshly observed identity would hand the
+    decision two instants - the new identity and the old checkpoint - and resume
+    work that belongs to a row state the caller never observed.
+
+    The fix loads the checkpoint from the snapshot actually pinned. This test
+    drives that exact window: selection returns job J (checkpoint A, matching), a
+    writer then replaces J's checkpoint with B (a different model), and observation
+    sees the new row. The resume must act on B - here, refuse it, because B does not
+    match the request - rather than silently reopen the job with A.
+    """
+    media = tmp_path / "clip.wav"
+    _wav(media)
+    store = MemoryJobStore()
+    request = SubmissionRequest(
+        source=str(media), model="tiny", device="cpu", formats=["txt"],
+    )
+    job = _seed_terminal_job(store, request, media, with_checkpoint=True)
+    stale = _checkpoint_for(request, media, with_transcript=True)
+
+    # A newer checkpoint for the same row that no longer matches this request:
+    # the "completed stage/retry replaced it" case, made deterministic.
+    fresh = _checkpoint_for(request, media, with_transcript=True)
+    fresh.model = "large-v3"
+
+    real_find = submission.find_resumable_checkpoint
+
+    def find_then_replace(*args, **kwargs):
+        found = real_find(*args, **kwargs)
+        if found is not None:
+            store.update(job.id, checkpoint=fresh.to_dict())
+        return found
+
+    monkeypatch.setattr(submission, "find_resumable_checkpoint", find_then_replace)
+    # The row is claimable, so only the checkpoint coherence can stop the resume.
+    executions: list = []
+    _stub_engine(monkeypatch, executions=executions)
+
+    # The stale checkpoint matched, the pinned one does not: the resume must not
+    # fall back to the stale checkpoint. A fresh submission is created instead.
+    result = submit_request(store, request, background=False, resume=True)
+
+    assert result.id != job.id, (
+        "resume adopted the pre-observation checkpoint for a changed row"
+    )
+    current = store.get(job.id)
+    assert current.state is JobState.ERROR, (
+        "the stale-checkpoint row was reopened instead of left terminal"
+    )
+    assert current.checkpoint["model"] == "large-v3", "the newer checkpoint was clobbered"
+    assert stale.to_dict()["model"] == "tiny"
+
+
+def test_implicit_selection_resumes_with_the_pinned_checkpoint(tmp_path, monkeypatch):
+    """The pinned checkpoint is the one handed to the pipeline, not the stale one.
+
+    Companion to the refusal case: when the replacement checkpoint still matches
+    the request, the resume must run on the *replacement* (the coherent snapshot),
+    proving the value threaded through is the pinned one and not merely that a
+    mismatch happens to refuse.
+    """
+    media = tmp_path / "clip.wav"
+    _wav(media)
+    store = MemoryJobStore()
+    request = SubmissionRequest(
+        source=str(media), model="tiny", device="cpu", formats=["txt"],
+    )
+    job = _seed_terminal_job(store, request, media, with_checkpoint=True)
+
+    replacement = _checkpoint_for(request, media, with_transcript=True)
+    replacement.finished_stages = ["source", "fetch", "extract", "transcribe", "diarize"]
+
+    real_find = submission.find_resumable_checkpoint
+
+    def find_then_replace(*args, **kwargs):
+        found = real_find(*args, **kwargs)
+        if found is not None:
+            store.update(job.id, checkpoint=replacement.to_dict())
+        return found
+
+    monkeypatch.setattr(submission, "find_resumable_checkpoint", find_then_replace)
+
+    seen: dict = {}
+    from textflowkit.core import runner
+
+    def fake_transcribe(source, *, resume_checkpoint=None, on_checkpoint=None, **kwargs):
+        seen["checkpoint"] = resume_checkpoint
+        return _result(source)
+
+    monkeypatch.setattr(runner, "transcribe", fake_transcribe)
+
+    result = submit_request(store, request, background=False, resume=True)
+
+    assert result.id == job.id, "the matching replacement should still resume in place"
+    assert seen.get("checkpoint") is not None, "resume did not carry a checkpoint"
+    assert seen["checkpoint"]["finished_stages"] == replacement.finished_stages, (
+        "resume ran with the pre-observation checkpoint instead of the pinned one"
+    )
