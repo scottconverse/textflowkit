@@ -264,8 +264,9 @@ class JobExecutor:
 
         with self._lock:
             self._pending_terminal.pop(pending.job_id, None)
-            if not self._pending_terminal:
-                self._store_failed = None
+            drained = not self._pending_terminal
+        if drained:
+            self._clear_store_failure()
         return True
 
     def _refuse_if_store_failed(self) -> None:
