@@ -17,11 +17,13 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from textflowkit.core.cancel import CancelledError
 from textflowkit.core.jobs import Job, JobState, JobStore, get_default_store
+from textflowkit.core.startup import recover_startup
 
 ENV_CONCURRENCY = "TEXTFLOWKIT_MAX_CONCURRENCY"
 DEFAULT_CONCURRENCY = 1
@@ -319,6 +321,26 @@ class JobExecutor:
                 self._clear_store_failure()
         return drained
 
+    def _refuse_if_still_draining(self) -> None:
+        """Refuse work on a pool that was shut down but still has live workers.
+
+        Called under `self._lock` at the top of the admission path. A shutdown
+        whose bounded join timed out leaves workers of *this* pool alive; the
+        pool is not stopped, so accepting a job here would run one beside a
+        worker still inside a model call - two runs at once, breaking the
+        concurrency bound. The predicate is this pool's *own* workers: a drained
+        pool's list is empty, so the refusal is only about the pool it is asked
+        of and no cross-instance state has to be transferred. This is a
+        transient *infrastructure* state, not backpressure, so it raises the
+        same error class as a store fault rather than `QueueFullError` (which
+        advertises a retry that drains).
+        """
+        if self._shutdown and self._workers and any(t.is_alive() for t in self._workers):
+            raise StoreUnavailableError(
+                "job executor is still shutting down; refusing new work until "
+                f"this pool's {len(self._workers)} worker(s) exit"
+            )
+
     def _refuse_if_store_failed(self) -> None:
         """Gate admission on store health. Called under `self._lock`.
 
@@ -340,20 +362,24 @@ class JobExecutor:
             f"(last failure: {self._store_failed})"
         )
 
+    def _all_workers_exited(self) -> bool:
+        """True when this pool has no live worker. Caller holds `self._lock`."""
+        return not self._workers or not any(t.is_alive() for t in self._workers)
+
+    def _start_locked(self) -> None:
+        """Spawn the pool's workers. Caller holds `self._lock`."""
+        for i in range(self._max_concurrency):
+            t = threading.Thread(
+                target=self._worker,
+                name=f"textflowkit-worker-{i}",
+                daemon=True,
+            )
+            t.start()
+            self._workers.append(t)
+        self._started = True
+
     def start(self) -> None:
         """Start worker threads. Idempotent; called lazily by submit()."""
-
-        def _start_locked() -> None:
-            for i in range(self._max_concurrency):
-                t = threading.Thread(
-                    target=self._worker,
-                    name=f"textflowkit-worker-{i}",
-                    daemon=True,
-                )
-                t.start()
-                self._workers.append(t)
-            self._started = True
-
         with self._lock:
             if self._started or self._shutdown:
                 return
@@ -361,13 +387,32 @@ class JobExecutor:
             # process. They have no worker now, so fail them rather than
             # reporting jobs that can never finish. This assumes one owning
             # process per store, which is the documented deployment model.
-            self._store.reap_incomplete(
-                reason="interrupted by restart; no worker is running this job"
-            )
-            _start_locked()
+            #
+            # Recovery is delegated to the shared per-store owner so it happens
+            # exactly once no matter which lifecycle reaches it first - a lazy
+            # submit here, the HTTP lifespan, or the MCP lifespan. A second
+            # caller is a no-op, and a failed reap raises rather than silently
+            # starting workers over a store whose orphans were never resolved.
+            recover_startup(self._store)
+            self._start_locked()
 
     def shutdown(self, *, wait: bool = True, timeout: float = 5.0) -> None:
-        """Stop accepting work and drain the pool."""
+        """Stop accepting work and drain the pool.
+
+        Sets the shutdown flag, wakes each worker with a sentinel, and joins
+        them - each for at most ``timeout`` seconds, so the wait is bounded by
+        ``timeout`` regardless of how many workers there are (a total budget, not
+        a per-worker one). A worker still alive after its bounded join leaves the
+        pool *draining, not stopped*: ``_shutdown`` is set and its own workers
+        are still alive, so ``submit``/``enqueue`` refuse new work (see
+        ``_refuse_if_still_draining``) and ``start()`` never spawns a second set
+        of workers for it. Because the refused predicate is this pool's own
+        threads, no state has to be copied to a replacement, and the process
+        default keeps this pool cached until its workers have actually exited.
+        ``threading.Thread.is_alive()`` is the authoritative liveness signal
+        here - the same threads this pool holds and joins. The wait total stays
+        bounded at ``timeout`` no matter how many workers there are.
+        """
         with self._lock:
             if self._shutdown:
                 return
@@ -375,8 +420,9 @@ class JobExecutor:
         for _ in self._workers:
             self._queue.put(None)  # sentinel: one per worker
         if wait:
+            deadline = time.monotonic() + timeout
             for t in self._workers:
-                t.join(timeout=timeout)
+                t.join(timeout=max(0.0, deadline - time.monotonic()))
 
     # -- work --------------------------------------------------------------
 
@@ -386,6 +432,7 @@ class JobExecutor:
         """Queue a job and return it immediately."""
         self.start()
         with self._lock:
+            self._refuse_if_still_draining()
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
             self._refuse_if_store_failed()
@@ -421,6 +468,7 @@ class JobExecutor:
         """
         self.start()
         with self._lock:
+            self._refuse_if_still_draining()
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
             self._refuse_if_store_failed()
@@ -584,18 +632,102 @@ _default_executor: JobExecutor | None = None
 _executor_lock = threading.Lock()
 
 
+def _reconcile_before_replace(old: JobExecutor) -> None:
+    """Resolve a draining pool's stranded rows before it is dropped.
+
+    Called under ``_executor_lock`` in ``get_default_executor``, holding the
+    draining pool's lock, once its workers are all gone. The pool was shut down,
+    so it can no longer be reached for admission and its outstanding terminal
+    faults would otherwise be discarded with it - a job whose ERROR row never
+    landed would stay stranded forever. Spend the same bounded write the
+    admission path spends: one ``_reconcile_pending_terminal`` call (never a
+    loop). A row still unresolved after that stays *outstanding* rather than
+    silently forgotten - the failure is carried onto the fresh pool so the next
+    admission keeps refusing until a write lands and the row is healed.
+    """
+    old._reconcile_pending_terminal()
+
+
 def get_default_executor() -> JobExecutor:
+    """The process-default executor, replacing a stopped one only when safe.
+
+    Under ``_executor_lock`` (the same lock every replacement is built and
+    published under, and the one the cache is read and written through):
+
+    - a cached pool that has not been shut down is reused unchanged;
+    - a cached pool that *has* been shut down but still has a live worker is
+      returned as-is. It is still shutting down, so its ``submit``/``enqueue``
+      detect that from its own worker list and refuse (``StoreUnavailableError``)
+      - this function never builds a second pool beside it, so the concurrency
+      bound holds with no state to transfer; and
+    - once every worker has really exited, the old pool can no longer accept
+      work, so any terminal write it could not persist is reconciled (one
+      bounded write) and what remains is carried to the fresh pool before the
+      old owner is dropped. Only then is a new pool built and cached.
+    """
     global _default_executor
     with _executor_lock:
-        if _default_executor is None:
-            _default_executor = JobExecutor(get_default_store())
-        return _default_executor
+        cached = _default_executor
+        if cached is not None and not cached._shutdown:
+            return cached
+        if cached is not None and not cached._all_workers_exited():
+            # Still draining: hand back the same pool so its own admission path
+            # is the one that refuses, and no replacement can run beside it.
+            return cached
+        if cached is not None:
+            _reconcile_before_replace(cached)
+        successor = JobExecutor(get_default_store())
+        if cached is not None:
+            # Nothing is lost with the old owner: any row it could not persist
+            # (or reconcile just now) and its fault latch move to the pool that
+            # will actually be admitted to, so the next admission keeps refusing
+            # until a write lands and the row is healed.
+            with cached._lock:
+                successor._pending_terminal.update(cached._pending_terminal)
+                if cached._store_failed is not None:
+                    successor._store_failed = cached._store_failed
+        _default_executor = successor
+        return successor
 
 
 def reset_default_executor() -> None:
-    """Drop the cached executor (tests, embedding)."""
+    """Drop the cached executor (tests, embedding).
+
+    Tests and embedding only - not the production shutdown path. It stops the
+    cached pool without waiting and clears the cache unconditionally, so a
+    worker still inside a model call would be dropped from the cache; the
+    production path (``shutdown_default_executor``) instead keeps the draining
+    pool cached so no replacement can run beside it.
+    """
     global _default_executor
     with _executor_lock:
         if _default_executor is not None:
             _default_executor.shutdown(wait=False)
         _default_executor = None
+
+
+def shutdown_default_executor(*, wait: bool = True, timeout: float = 5.0) -> bool:
+    """Stop the process-default executor's workers, if one exists.
+
+    Called from an adapter's shutdown path so the workers this process owns are
+    drained rather than left as daemons when the server stops. It never *creates*
+    an executor: a process that never ran a job has nothing to stop, and calling
+    ``get_default_executor`` here would spawn a pool only to shut it down. Returns
+    True when an executor was stopped.
+
+    The cached reference is *not* cleared while any of the pool's workers is
+    still alive. A shutdown whose bounded join times out leaves a worker inside
+    a model call; dropping the reference then would let the next
+    ``get_default_executor`` build a fresh pool that runs beside that worker,
+    breaking the concurrency bound. Instead the draining pool stays cached and
+    refuses work itself (its ``_shutdown`` flag is set and its own workers are
+    still alive), and ``get_default_executor`` replaces it only once every
+    worker has actually exited - the one place a replacement may be built, under
+    the same process-default lock held here. No state is copied between pools.
+    """
+    with _executor_lock:
+        executor = _default_executor
+        if executor is None:
+            return False
+        executor.shutdown(wait=wait, timeout=timeout)
+        return True

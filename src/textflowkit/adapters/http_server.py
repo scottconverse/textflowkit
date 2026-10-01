@@ -19,6 +19,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from textflowkit import __version__
@@ -29,7 +30,11 @@ from textflowkit.core.bind import (
     developer_request_refusal,
     resolve_client_identity,
 )
-from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.executor import (
+    QueueFullError,
+    get_default_executor,
+    shutdown_default_executor,
+)
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -50,6 +55,7 @@ from textflowkit.core.service import (
     service_work_root,
     validate_production_config,
 )
+from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
     submit_batch,
@@ -76,10 +82,33 @@ except ImportError as exc:  # pragma: no cover
         "The HTTP adapter requires the 'http' extra. Install with: pip install 'textflowkit[http]'"
     ) from exc
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Run startup recovery before the app serves any request.
+
+    A durable store can hold jobs a previous process left PENDING/RUNNING. After
+    a restart there is no worker for them, so they must be failed *before* the
+    first read is served - otherwise ``/health`` and ``/jobs`` report a job that
+    will never finish (the audit's QA-001). Recovery is delegated to the shared
+    per-store owner, so it runs exactly once even if a worker's lazy start also
+    reaches it; a reap that cannot be persisted raises and the app fails to
+    start rather than serving a false ready.
+    """
+    recover_startup()
+    try:
+        yield
+    finally:
+        # Drain the workers this process owns. Never creates an executor: a
+        # server that ran no job has nothing to stop.
+        shutdown_default_executor(wait=True)
+
+
 app = FastAPI(
     title="textflowkit",
     version=__version__,
     description="Cross-platform media transcription API. Job-based: submit, poll, fetch.",
+    lifespan=_lifespan,
 )
 
 _RATE_LOCK = threading.Lock()

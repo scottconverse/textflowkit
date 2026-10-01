@@ -26,6 +26,7 @@ long video returns a job id immediately rather than blocking the call.
 from __future__ import annotations
 
 import sys
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any
 
@@ -36,7 +37,11 @@ from textflowkit.core.bind import (
     check_bind_safety,
     developer_request_refusal,
 )
-from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.executor import (
+    QueueFullError,
+    get_default_executor,
+    shutdown_default_executor,
+)
 from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -47,6 +52,7 @@ from textflowkit.core.paths import (
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
 from textflowkit.core.service import service_work_root
+from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
     submit_batch,
@@ -188,7 +194,33 @@ class GuardedMCPServer(MCPServer):
         return app
 
 
-mcp = GuardedMCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
+@asynccontextmanager
+async def _lifespan(server: Any):
+    """Run startup recovery before the server serves any request.
+
+    Both transports enter this lifespan: ``run_stdio_async`` drives the lowlevel
+    server's own lifespan, and the Streamable-HTTP manager owns its lifespan
+    inside ``streamable_http_app``. So a durable store's orphaned jobs are failed
+    exactly once, before the first ``get_job_status``/``list_jobs`` is answered -
+    otherwise a crash/restart followed by status polling leaves a job reading
+    ``running`` forever (the audit's QA-001). Recovery is delegated to the shared
+    per-store owner, so a worker's lazy start that reaches it first is a no-op
+    here, and a reap that cannot be persisted raises so the server fails to start
+    rather than serving a false ready.
+    """
+    recover_startup()
+    try:
+        yield {}
+    finally:
+        # Drain the workers this process owns, if any were ever started. Never
+        # creates an executor: a server that ran no job has nothing to stop.
+        shutdown_default_executor(wait=True)
+
+
+mcp = GuardedMCPServer(
+    "textflowkit", instructions=INSTRUCTIONS, version=__version__, lifespan=_lifespan
+)
+
 
 def _job_payload(job: Job) -> dict[str, Any]:
     return job.to_dict()
