@@ -56,7 +56,11 @@ def run_job(
     if current is not None and current.is_terminal:
         return
 
-    store.update(job.id, state=JobState.RUNNING, progress="starting")
+    # Starting a run both marks the row RUNNING and bumps its attempt, in one
+    # operation, so a terminal row written by this run is distinguishable from
+    # the one it replaced - which is what lets a resume refuse a stale decision.
+    store.begin_attempt(job.id)
+    store.update(job.id, progress="starting")
 
     def _progress(stage: str) -> None:
         """Publish the stage in flight so a polling client sees real progress.

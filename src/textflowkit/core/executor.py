@@ -99,6 +99,21 @@ class JobExecutor:
         self._queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
         self._workers: list[threading.Thread] = []
         self._tokens: dict[str, CancelToken] = {}
+        # Ids the executor owns: queued but not yet picked up, plus running. This
+        # is the authoritative ownership set, and it is updated under `self._lock`
+        # at both ends of a job's life in the pool:
+        #
+        # - `enqueue` records the id *before* it puts the item on the queue, so a
+        #   duplicate enqueue cannot slip in even though the deque itself is not
+        #   lock-protected (a `queue.Queue` has its own internal lock; scanning
+        #   `_queue.queue` by hand is not synchronised against the worker's
+        #   `get`) and even though the worker only registers a cancel token *after*
+        #   it dequeues. The dequeue-to-token gap is exactly the window a
+        #   deque-scan guard misses; an owned-id set does not have that window.
+        # - the worker keeps the id owned across the run and drops it in the same
+        #   critical section that pops the token, so ownership spans the whole
+        #   queued/running lifetime and nothing external can observe a hole.
+        self._owned: set[str] = set()
         self._lock = threading.RLock()
         self._started = False
         self._shutdown = False
@@ -170,10 +185,14 @@ class JobExecutor:
                 raise QueueFullError(
                     f"job queue is full ({self._max_pending} pending); retry later"
                 )
+            job: Job | None = None
             try:
                 job = self._store.create(source, request=request)
+                self._owned.add(job.id)
                 self._queue.put_nowait((job.id, {"source": source, **kwargs}))
             except Exception:
+                if job is not None:
+                    self._owned.discard(job.id)
                 self._pending_slots.release()
                 raise
             return job
@@ -181,28 +200,32 @@ class JobExecutor:
     def enqueue(self, job: Job, *, source: str, **kwargs: Any) -> Job:
         """Queue an existing prepared job (the durable resume path).
 
-        Per-id ownership: a job id already queued or running is not enqueued
-        again. The caller has claimed the row before calling, but a second
-        enqueue for the same id would still put two queue entries (and later two
-        worker tokens) on one job, so this is the last line of defence rather
-        than the claim itself. The check is inside the lock that guards the
-        queue, so it cannot itself race.
+        Per-id ownership: a job id already owned by the pool - queued but not yet
+        picked up, or running - is not enqueued again. The caller has claimed the
+        row before calling, but a duplicate enqueue would put two queue entries
+        (and later two worker tokens) on one job, so this is the last line of
+        defence rather than the claim itself. Ownership is recorded in `_owned`
+        under `self._lock` before the item is put on the queue, and the worker
+        keeps it there until it finishes, so there is no instant in which a live
+        id is unprotected by the lock - unlike a scan of the queue deque, which
+        is not synchronised with the worker's `get` and is empty during the
+        dequeue-to-token gap.
         """
         self.start()
         with self._lock:
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
-            if job.id in self._tokens or any(
-                queued_id == job.id for queued_id, _ in self._queue.queue
-            ):
+            if job.id in self._owned:
                 raise RuntimeError(f"job '{job.id}' is already queued")
             if not self._pending_slots.acquire(blocking=False):
                 raise QueueFullError(
                     f"job queue is full ({self._max_pending} pending); retry later"
                 )
             try:
+                self._owned.add(job.id)
                 self._queue.put_nowait((job.id, {"source": source, **kwargs}))
             except Exception:
+                self._owned.discard(job.id)
                 self._pending_slots.release()
                 raise
             return job
@@ -258,7 +281,10 @@ class JobExecutor:
 
                 # Register the token BEFORE inspecting state, so a concurrent
                 # cancel() always finds a token to trip rather than racing us
-                # into marking the job cancelled while we start it anyway.
+                # into marking the job cancelled while we start it anyway. The id
+                # stays in `_owned` from here until the run finishes, so the
+                # dequeue-to-token window is closed: a duplicate enqueue is
+                # refused for the whole time the item is off the queue.
                 token = CancelToken()
                 with self._lock:
                     self._tokens[job_id] = token
@@ -275,6 +301,7 @@ class JobExecutor:
                 finally:
                     with self._lock:
                         self._tokens.pop(job_id, None)
+                        self._owned.discard(job_id)
             finally:
                 self._queue.task_done()
 

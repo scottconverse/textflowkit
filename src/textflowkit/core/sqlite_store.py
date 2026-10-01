@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     outputs          TEXT    NOT NULL DEFAULT '[]',
     cancel_requested INTEGER NOT NULL DEFAULT 0,
     checkpoint       TEXT,
-    request          TEXT
+    request          TEXT,
+    attempt          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state);
 """
@@ -50,6 +51,7 @@ _MUTABLE = frozenset(
         "cancel_requested",
         "checkpoint",
         "request",
+        "attempt",
     }
 )
 
@@ -64,6 +66,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
     checkpoint = json.loads(raw_checkpoint) if raw_checkpoint else None
     raw_request = row["request"] if "request" in keys else None
     request = json.loads(raw_request) if raw_request else None
+    attempt = row["attempt"] if "attempt" in keys else 0
     return Job(
         id=row["id"],
         source=row["source"],
@@ -77,6 +80,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         cancel_requested=bool(row["cancel_requested"]),
         checkpoint=checkpoint,
         request=request,
+        attempt=int(attempt or 0),
     )
 
 
@@ -114,8 +118,9 @@ class SqliteJobStore(JobStore):
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, source, state, created_at, updated_at,"
-                " progress, error, transcript, outputs, cancel_requested, checkpoint, request)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " progress, error, transcript, outputs, cancel_requested, checkpoint,"
+                " request, attempt)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id,
                     job.source,
@@ -129,6 +134,7 @@ class SqliteJobStore(JobStore):
                     int(job.cancel_requested),
                     None,
                     json.dumps(request) if request is not None else None,
+                    job.attempt,
                 ),
             )
             self._conn.commit()
@@ -167,16 +173,24 @@ class SqliteJobStore(JobStore):
         job_id: str,
         *,
         allowed_states: frozenset[JobState] | set[JobState],
+        observed_attempt: int | None = None,
         **fields: Any,
     ) -> Job | None:
-        """Transition only if the row's state is one of `allowed_states`.
+        """Transition only if the row's state (and attempt) match.
 
-        The state test rides in the UPDATE's WHERE clause, so SQLite's own
-        row-level locking makes the check-and-set indivisible. Two handles over
-        the same file therefore cannot both win: the first commit changes the
-        state, and the second's ``WHERE state IN (...)`` matches nothing and
-        ``rowcount`` is 0. No schema change and no generation column are needed -
-        the state itself is the guard.
+        The state test rides in the UPDATE's WHERE clause, so the check-and-set
+        is one statement. SQLite serializes write transactions: one connection's
+        committed write is visible to the next, so two handles over the same file
+        cannot both win - the first commit changes the row, and the second's
+        ``WHERE state IN (...)`` matches nothing and ``rowcount`` is 0. (SQLite
+        has no row-level locks over the whole row for an UPDATE; it takes a
+        database-wide write lock, which is what makes the second writer wait and
+        then see the first's state.)
+
+        ``observed_attempt``, when given, adds ``AND attempt = ?`` so a claim made
+        against a previously observed failure is refused if the row has since run
+        again and landed back on the same state. State alone cannot tell those two
+        failures apart; the attempt counter can.
         """
         allowed = {state.value if isinstance(state, JobState) else str(state) for state in allowed_states}
         if not allowed:
@@ -188,12 +202,29 @@ class SqliteJobStore(JobStore):
         placeholders = ", ".join("?" for _ in allowed)
         values.append(job_id)
         values.extend(sorted(allowed))
+        attempt_clause = ""
+        if observed_attempt is not None:
+            attempt_clause = " AND attempt = ?"
+            values.append(int(observed_attempt))
 
         with self._lock:
             cur = self._conn.execute(
                 f"UPDATE jobs SET {', '.join(sets)}"
-                f" WHERE id = ? AND state IN ({placeholders})",
+                f" WHERE id = ? AND state IN ({placeholders}){attempt_clause}",
                 values,
+            )
+            self._conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return self.get(job_id)
+
+    def begin_attempt(self, job_id: str) -> Job | None:
+        """Start a run: mark RUNNING and bump the attempt, in one statement."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE jobs SET state = ?, attempt = attempt + 1, updated_at = ?"
+                " WHERE id = ?",
+                (JobState.RUNNING.value, time.time(), job_id),
             )
             self._conn.commit()
         if cur.rowcount == 0:
@@ -252,6 +283,12 @@ class SqliteJobStore(JobStore):
             self._conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint TEXT")
         if "request" not in existing:
             self._conn.execute("ALTER TABLE jobs ADD COLUMN request TEXT")
+        if "attempt" not in existing:
+            # Files written before attempts existed: their terminal rows describe
+            # attempt 0, which is what the counter starts at.
+            self._conn.execute(
+                "ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0"
+            )
 
     def _prune_locked(self) -> None:
         """Drop the oldest terminal jobs once over capacity."""

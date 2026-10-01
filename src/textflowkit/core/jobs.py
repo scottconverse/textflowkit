@@ -74,6 +74,14 @@ class Job:
     cancel_requested: bool = False
     checkpoint: dict[str, Any] | None = None
     request: dict[str, Any] | None = None
+    # Which execution attempt this row currently describes. It starts at 0 and is
+    # bumped every time the job enters RUNNING, so it names the *failure* a
+    # terminal row holds: "ERROR, attempt 1" is a different thing to act on than
+    # "ERROR, attempt 0". A resume that decided against one attempt must say which
+    # one, otherwise its intent is honoured against a later attempt that happens
+    # to share the state - the stale-observation ABA. State alone cannot tell the
+    # two apart; this counter can.
+    attempt: int = 0
 
     @property
     def is_terminal(self) -> bool:
@@ -93,6 +101,9 @@ class Job:
             "outputs": list(self.outputs),
             "cancel_requested": self.cancel_requested,
         }
+        # `attempt` is deliberately absent: it is an internal ownership detail
+        # used to refuse a stale resume, not part of the job payload the adapters
+        # publish. Keeping it out preserves the existing wire fingerprint.
         if include_checkpoint and self.checkpoint is not None:
             data["checkpoint"] = self.checkpoint
         if include_transcript and self.transcript is not None:
@@ -125,6 +136,7 @@ class JobStore(ABC):
         job_id: str,
         *,
         allowed_states: frozenset[JobState] | set[JobState],
+        observed_attempt: int | None = None,
         **fields: Any,
     ) -> Job | None:
         """Atomically transition a job only from `allowed_states`.
@@ -136,9 +148,20 @@ class JobStore(ABC):
         writes progress and terminal results on work it already owns - but any
         transition that *acquires* ownership of a job must go through here.
 
-        Returns the updated job, or None when the job is absent or its current
-        state is not in `allowed_states`. Callers turn None into their own
-        conflict message after re-reading, so it stays actionable.
+        ``observed_attempt`` closes the stale-observation window that state alone
+        leaves open. A caller that read a terminal row to decide on it passes the
+        ``attempt`` it saw; the claim then also requires the row's current
+        ``attempt`` to be that same number. If the row left and returned to the
+        same state in between - an earlier resumer failed it back to ERROR - the
+        attempt has moved on, the observed value no longer matches, and the claim
+        is refused. ``None`` means "I did not pin an attempt" (the caller is not
+        making a decision against a previously observed failure), which keeps the
+        state-only behaviour for callers that do not need it.
+
+        Returns the updated job, or None when the job is absent, its current state
+        is not in `allowed_states`, or its attempt is not the observed one.
+        Callers turn None into their own conflict message after re-reading, so it
+        stays actionable.
         """
 
     @abstractmethod
@@ -148,6 +171,23 @@ class JobStore(ABC):
     @abstractmethod
     def clear(self) -> None:
         """Remove every job."""
+
+    def begin_attempt(self, job_id: str) -> Job | None:
+        """Mark a job RUNNING and bump its attempt counter, as one operation.
+
+        Called by the runner when an execution actually starts. Both shipped
+        stores override this atomically; this default exists only so a third-party
+        store that offers nothing but `update` still works. It is a read-then-write
+        and so is *not* atomic - a store relying on it inherits the very
+        stale-attempt window this method exists to close - which is why the real
+        implementations do not use it.
+        """
+        return self.update(job_id, state=JobState.RUNNING, attempt=self._next_attempt(job_id))
+
+    def _next_attempt(self, job_id: str) -> int:
+        """The attempt number a fresh run should carry (current + 1)."""
+        job = self.get(job_id)
+        return (job.attempt + 1) if job is not None else 0
 
     def reap_incomplete(self, *, reason: str) -> int:
         """Fail any job left mid-flight, returning how many were reaped.
@@ -207,6 +247,7 @@ class MemoryJobStore(JobStore):
         job_id: str,
         *,
         allowed_states: frozenset[JobState] | set[JobState],
+        observed_attempt: int | None = None,
         **fields: Any,
     ) -> Job | None:
         allowed = frozenset(allowed_states)
@@ -214,8 +255,25 @@ class MemoryJobStore(JobStore):
             job = self._jobs.get(job_id)
             if job is None or job.state not in allowed:
                 return None
+            if observed_attempt is not None and job.attempt != observed_attempt:
+                return None
             for key, value in fields.items():
                 setattr(job, key, value)
+            job.updated_at = time.time()
+            return job
+
+    def begin_attempt(self, job_id: str) -> Job | None:
+        """Start a run: mark RUNNING and bump the attempt, atomically.
+
+        A running job's attempt names the execution now in flight, so a terminal
+        row produced by that run is distinguishable from the one it replaced.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            job.state = JobState.RUNNING
+            job.attempt += 1
             job.updated_at = time.time()
             return job
 

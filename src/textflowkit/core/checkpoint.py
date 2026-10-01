@@ -351,6 +351,8 @@ def prepare_resume(
     store: JobStore,
     job: Job,
     checkpoint: CheckpointRecord | dict[str, Any],
+    *,
+    observed_attempt: int | None = None,
 ) -> tuple[Job, dict[str, Any]] | None:
     """Reopen a resumed job for another run, or return None if it is not claimable.
 
@@ -373,6 +375,7 @@ def prepare_resume(
     updated = store.claim(
         job.id,
         allowed_states=RESUMABLE_CLAIM_STATES,
+        observed_attempt=observed_attempt,
         state=JobState.PENDING,
         progress="resuming",
         error=None,

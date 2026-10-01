@@ -129,6 +129,14 @@ class SubmissionRequest:
 
 
 def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: str | None):
+    """Find the job to resume and snapshot the attempt the decision is made on.
+
+    Returns ``(job, checkpoint, observed_attempt)``. The attempt is copied out as
+    an int here, at the instant of the read, rather than read again off the job
+    later: a memory store hands back the live `Job` object, so a later read would
+    see whatever a concurrent run has since written - which is exactly the change
+    the snapshot must be immune to.
+    """
     if job_id is not None:
         job = store.get(job_id)
         if job is None:
@@ -143,19 +151,23 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
                 raise ValueError("resume request does not match the saved request")
         checkpoint = load_checkpoint(job)
         if checkpoint is None:
-            return job, None
+            return job, None, job.attempt
         if not matches(
             checkpoint, source=request.source, model=request.model,
             language=request.language, engine=request.engine, device=request.device,
             options=request.options(),
         ):
             raise ValueError("resume request does not match the saved checkpoint")
-        return job, checkpoint
-    return find_resumable_checkpoint(
+        return job, checkpoint, job.attempt
+    found = find_resumable_checkpoint(
         store, source=request.source, model=request.model,
         language=request.language, engine=request.engine, device=request.device,
         options=request.options(),
     )
+    if found is None:
+        return None
+    job, checkpoint = found
+    return job, checkpoint, job.attempt
 
 
 def _resume_conflict(store: JobStore, job_id: str) -> ValueError:
@@ -172,7 +184,30 @@ def _resume_conflict(store: JobStore, job_id: str) -> ValueError:
         return ValueError(f"job '{job_id}' disappeared before resume")
     if current.state in {JobState.PENDING, JobState.RUNNING}:
         return ValueError(f"job '{job_id}' is already active")
-    return ValueError(f"job '{job_id}' is no longer resumable (state: {current.state.value})")
+    return ValueError(
+        f"job '{job_id}' failed again since this resume decided to retry it; "
+        f"resume again to act on the new failure (state: {current.state.value})"
+    )
+
+
+def _fail_unadmitted(store: JobStore, job_id: str, progress: str, error: str) -> None:
+    """Fail a reopened row the executor refused, without clobbering a newer claim.
+
+    The caller's claim left the row PENDING with no worker queued for it (the
+    queue was full, or the pool was shutting down). Leaving it PENDING would be a
+    permanent orphan that a later resume reads as "already active". But the row
+    could also have been re-claimed by another caller in the meantime, so the
+    revert is conditional: it applies only while the row is still PENDING, which
+    is the state this refusal owns. If it has moved on, that newer owner's state
+    is left alone - this refusal must not overwrite it.
+    """
+    store.claim(
+        job_id,
+        allowed_states={JobState.PENDING},
+        state=JobState.ERROR,
+        progress=progress,
+        error=error,
+    )
 
 
 def _require_engine_ready(engine: str) -> None:
@@ -204,7 +239,7 @@ def submit_request(
         executor.start()
     found = _matching_checkpoint(store, request, resume_job_id) if resume or resume_job_id else None
     if found is not None:
-        prior, checkpoint = found
+        prior, checkpoint, observed_attempt = found
         # A job already claimed by another resume is the most specific reason to
         # refuse, so it is reported first: an ERROR/CANCELLED row that a racing
         # caller has just reopened reads as PENDING here, and "already active" is
@@ -248,15 +283,21 @@ def submit_request(
         # concurrent resumes of one job id both pass the terminal check and both
         # run. A caller that loses the race gets None and is refused below rather
         # than handed a second run.
+        # Pin the attempt the caller decided against (`observed_attempt`, taken at
+        # the matching read). If the row has run again and failed back to the same
+        # state since then, its attempt has moved on and this claim is refused -
+        # the caller's intent was about the previous failure, not this one.
         if checkpoint is None:
             reopened = store.claim(
                 prior.id, allowed_states=RESUMABLE_CLAIM_STATES,
+                observed_attempt=observed_attempt,
                 state=JobState.PENDING, progress="resuming from start",
                 error=None, cancel_requested=False,
             )
             prepared = (reopened, None) if reopened is not None else None
         else:
-            prepared = prepare_resume(store, prior, checkpoint)
+            prepared = prepare_resume(store, prior, checkpoint,
+                                      observed_attempt=observed_attempt)
         if prepared is None:
             raise _resume_conflict(store, prior.id)
         if prepared is not None:
@@ -269,8 +310,15 @@ def submit_request(
                 try:
                     return executor.enqueue(job, **kwargs)
                 except QueueFullError:
-                    store.update(job.id, state=JobState.ERROR, progress="queue full",
-                                 error="resume not queued; job queue is full")
+                    _fail_unadmitted(store, job.id, "queue full",
+                                    "resume not queued; job queue is full")
+                    raise
+                except RuntimeError as exc:
+                    # The pool refused for a reason other than a full queue (it is
+                    # shutting down, or the id is somehow already owned). The row
+                    # was reopened by our claim and has no worker, so it must not
+                    # be left PENDING; fail it without touching a newer attempt.
+                    _fail_unadmitted(store, job.id, "not queued", str(exc))
                     raise
             run_job(job, store, **kwargs)
             return store.get(job.id) or job
