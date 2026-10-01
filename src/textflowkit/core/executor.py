@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+from dataclasses import dataclass, field
 from typing import Any
 
 from textflowkit.core.cancel import CancelledError
@@ -46,6 +47,29 @@ class StoreUnavailableError(RuntimeError):
 # around broad exception handling. This alias keeps the name used everywhere
 # else in the codebase and in tests.
 JobCancelled = CancelledError
+
+
+@dataclass
+class TerminalWrite:
+    """A terminal row a run could not persist, kept for bounded reconciliation.
+
+    ``fields`` is the exact patch the run meant to write (state, progress, error,
+    transcript, outputs). ``attempt`` is the execution identity the run owned, so
+    reconciliation can require the row to still carry it: a row a later resume
+    reopened (attempt advanced) is left to its new owner instead of being
+    overwritten with this run's stale verdict.
+
+    ``allowed_states`` bounds the guarded write further: reconciliation must only
+    land on a row still in the state this run left it in (PENDING/RUNNING), never
+    on one that reached a terminal state by another path (e.g. a cancellation).
+    """
+
+    job_id: str
+    attempt: int
+    fields: dict[str, Any] = field(default_factory=dict)
+    allowed_states: frozenset[JobState] = field(
+        default_factory=lambda: frozenset({JobState.PENDING, JobState.RUNNING})
+    )
 
 
 class CancelToken:
@@ -132,10 +156,23 @@ class JobExecutor:
         # survival policy: a store that cannot record a terminal row is an
         # infrastructure fault, and it is not swallowed - it gates admission
         # (see `submit`/`enqueue`) so the executor does not accept jobs whose
-        # results it could not record. Cleared as soon as the store answers again
-        # (a probe on the admission path, or a successful write from a worker),
-        # so a transient outage does not strand work permanently.
+        # results it could not record.
+        #
+        # A read is not recovery from a write fault: a store can answer `get`
+        # perfectly while rejecting every `update`. So this latch is cleared only
+        # by a *successful write* - the reconciliation of a stranded terminal row
+        # (`_reconcile_pending_terminal`), never by a probe read and never by an
+        # unrelated job's successful write. An unrelated success proves the store
+        # has a write path but says nothing about the row whose terminal state is
+        # still missing, so it must not erase the outstanding failure.
         self._store_failed: str | None = None
+        # Terminal writes a worker could not persist, keyed by job id: the exact
+        # fields the run intended to write, plus the attempt it owned. Bounded by
+        # construction - one entry per stranded job, replaced (never appended) on
+        # a repeat failure for the same id. Each is retried once per refused
+        # admission, guarded by `observed_attempt`, so a row a newer owner moved
+        # on is left alone rather than clobbered with a stale verdict.
+        self._pending_terminal: dict[str, TerminalWrite] = {}
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -154,41 +191,81 @@ class JobExecutor:
 
     @property
     def store_failed(self) -> str | None:
-        """The last unpersisted store failure, or None when the store answered.
+        """The last unpersisted store failure, or None when no row is stranded.
 
-        Set by a terminal-write failure in a worker; cleared when the store next
-        answers (an admission probe or a successful worker write). Callers and
-        adapters read this to report an infrastructure fault instead of a job
-        failure - the job's own row may still read RUNNING because the write that
-        would have failed it never landed.
+        Set by a terminal-write failure in a worker; cleared only when a write
+        lands again (the reconciliation of the stranded row), never by a read and
+        never by an unrelated job's successful write. Callers and adapters read
+        this to report an infrastructure fault instead of a job failure - the
+        job's own row may still read PENDING/RUNNING because the write that would
+        have failed it never landed.
         """
         with self._lock:
             return self._store_failed
 
-    def _record_store_failure(self, exc: BaseException) -> None:
-        """Note a store fault without raising; keeps the worker alive."""
+    def _record_store_failure(
+        self, exc: BaseException, *, pending: TerminalWrite | None = None
+    ) -> None:
+        """Note a store fault without raising; keeps the worker alive.
+
+        When the failed write was a terminal row, its exact patch and attempt are
+        kept in ``_pending_terminal`` so a later recovery write can resolve the
+        row truthfully instead of leaving it RUNNING forever. Recording replaces
+        any earlier entry for the same id rather than appending, so the pending
+        set stays bounded by the number of stranded jobs.
+        """
         with self._lock:
             self._store_failed = f"{type(exc).__name__}: {exc}"
+            if pending is not None:
+                self._pending_terminal[pending.job_id] = pending
 
     def _clear_store_failure(self) -> None:
-        """The store answered again, so admission may reopen."""
+        """A write landed, so admission may reopen."""
         with self._lock:
             self._store_failed = None
 
-    def _store_answers(self) -> bool:
-        """One liveness read; True (and clears the fault) if the store responds.
+    def _reconcile_pending_terminal(self) -> bool:
+        """One bounded write that both tests the write path and heals a row.
 
-        Used only on the admission path *after* a refusal was already decided, so
-        it costs one store call per rejected submit and never runs in a loop. A
-        store that reads but cannot write stays refused: the probe clears the
-        latch, the next admitted job's terminal write fails, and the latch is set
-        again - bounded, one probe per attempt, no retry storm.
+        Called on the admission path while the fault latch is set. It retries the
+        oldest stranded terminal write through the store's guarded ``claim``:
+        the write only lands if the row is still in the state this run left it in
+        *and* still carries the attempt the run owned, so a row a newer owner
+        moved on (a resume, a cancellation) is left alone - the stale verdict is
+        never forced onto it.
+
+        Returns True when the write path is proven healthy (a write landed, or
+        every pending row was already accounted for) so the latch may clear; False
+        when the store still rejects writes, so admission must stay refused. One
+        store call per refused admission, never a loop - no retry storm.
         """
-        try:
-            self._store.get("")  # any read; a broken store raises here
-        except Exception:  # noqa: BLE001 - a failed probe keeps the fault
+        with self._lock:
+            pending = next(iter(self._pending_terminal.values()), None)
+
+        if pending is None:
+            # No stranded row to write, yet the latch is set. Today every latched
+            # failure is a terminal write, so this cannot happen; if it ever does
+            # the write path is unproven, so admission stays refused (fail-safe)
+            # rather than cleared on a read that says nothing about writes.
             return False
-        self._clear_store_failure()
+
+        try:
+            # Guarded: only lands on a row still at the attempt/states this run
+            # left it. None means "row moved on / already terminal" - that is a
+            # *success* of the store (the call completed), so the entry is spent.
+            self._store.claim(
+                pending.job_id,
+                allowed_states=pending.allowed_states,
+                observed_attempt=pending.attempt,
+                **pending.fields,
+            )
+        except Exception:  # noqa: BLE001 - a failed write keeps the fault latched
+            return False
+
+        with self._lock:
+            self._pending_terminal.pop(pending.job_id, None)
+            if not self._pending_terminal:
+                self._store_failed = None
         return True
 
     def _refuse_if_store_failed(self) -> None:
@@ -198,13 +275,14 @@ class JobExecutor:
         refuses new work rather than accepting jobs whose results it cannot
         record - the failure is made visible (this error names it) instead of
         silently accepting work that cannot run. Before refusing we spend one
-        liveness read: if the store answers, the fault was transient, the latch
-        clears, and admission proceeds. If it does not answer, the refusal stands
-        and the caller sees an infrastructure error, not a job failure.
+        bounded *write* (``_reconcile_pending_terminal``): if it lands, the write
+        path is healthy again, the latch clears, and admission proceeds. A read
+        is never accepted as recovery - a store that reads but cannot write stays
+        refused, and the caller sees an infrastructure error, not a job failure.
         """
         if self._store_failed is None:
             return
-        if self._store_answers():
+        if self._reconcile_pending_terminal():
             return
         raise StoreUnavailableError(
             "job store is unavailable; refusing new work until it recovers "
@@ -380,23 +458,46 @@ class JobExecutor:
                         # `store_failed` and it gates admission, so the executor
                         # stops accepting work it cannot record rather than
                         # swallowing the failure. A transient fault needs no
-                        # retry storm - the next admission probe or worker write
-                        # clears it.
+                        # retry storm - a single bounded write on the next refused
+                        # admission clears it.
+                        error_text = f"{type(exc).__name__}: {exc}"
+                        pending = TerminalWrite(
+                            job_id=job_id,
+                            attempt=self._owned_attempt(job_id),
+                            fields={
+                                "state": JobState.ERROR,
+                                "error": error_text,
+                                "progress": "failed",
+                            },
+                        )
                         try:
-                            self._store.update(
-                                job_id,
-                                state=JobState.ERROR,
-                                error=f"{type(exc).__name__}: {exc}",
-                                progress="failed",
-                            )
+                            self._store.update(job_id, **pending.fields)
                         except Exception as store_exc:  # noqa: BLE001
-                            self._record_store_failure(store_exc)
+                            # Keep the failed terminal row so a later recovery
+                            # write can resolve it truthfully rather than leaving
+                            # it RUNNING forever, pinned to the attempt this run
+                            # owned so a newer owner's row is never clobbered.
+                            self._record_store_failure(store_exc, pending=pending)
                 finally:
                     with self._lock:
                         self._tokens.pop(job_id, None)
                         self._owned.discard(job_id)
             finally:
                 self._queue.task_done()
+
+    def _owned_attempt(self, job_id: str) -> int:
+        """The attempt a failed run left on its row, for ownership-pinned repair.
+
+        Best-effort: if the row cannot be read (the store read failed too), fall
+        back to 0. Reconciliation then still requires the row to be in a
+        non-terminal state at attempt 0, which a row that actually advanced past
+        this run will not match - so the fallback refuses rather than clobbers.
+        """
+        try:
+            row = self._store.get(job_id)
+        except Exception:  # noqa: BLE001 - a broken read is handled by the guard
+            return 0
+        return row.attempt if row is not None else 0
 
     def _run_one(self, job_id: str, kwargs: dict[str, Any], token: CancelToken) -> None:
         from textflowkit.core.runner import run_job
