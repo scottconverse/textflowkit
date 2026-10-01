@@ -37,6 +37,13 @@ class JobState(str, Enum):
 
 
 TERMINAL_STATES = frozenset({JobState.DONE, JobState.ERROR, JobState.CANCELLED})
+# A resume may reopen a job only from one of these states. DONE is deliberately
+# excluded even though it is terminal: a finished job is *reused* (its stored
+# transcript is the deliverable), never reopened and re-run. Claiming from DONE
+# is what let a fast winner reach DONE and a racer then reopen it and transcribe
+# the same job a second time - so the claim's allowed set, not TERMINAL_STATES,
+# is the ownership guard.
+RESUMABLE_CLAIM_STATES = frozenset({JobState.ERROR, JobState.CANCELLED})
 MAX_LIST_LIMIT = 1000
 
 
@@ -113,6 +120,28 @@ class JobStore(ABC):
         """Patch fields on a job and bump updated_at. None if absent."""
 
     @abstractmethod
+    def claim(
+        self,
+        job_id: str,
+        *,
+        allowed_states: frozenset[JobState] | set[JobState],
+        **fields: Any,
+    ) -> Job | None:
+        """Atomically transition a job only from `allowed_states`.
+
+        The patch and the state test are one indivisible operation, so two
+        callers racing the same job id cannot both observe an allowed state and
+        both claim it: exactly one applies the transition and the other gets
+        None. `update` deliberately stays unconditional - it is how a worker
+        writes progress and terminal results on work it already owns - but any
+        transition that *acquires* ownership of a job must go through here.
+
+        Returns the updated job, or None when the job is absent or its current
+        state is not in `allowed_states`. Callers turn None into their own
+        conflict message after re-reading, so it stays actionable.
+        """
+
+    @abstractmethod
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
         """Recent jobs, newest first, optionally filtered by state."""
 
@@ -167,6 +196,23 @@ class MemoryJobStore(JobStore):
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
+                return None
+            for key, value in fields.items():
+                setattr(job, key, value)
+            job.updated_at = time.time()
+            return job
+
+    def claim(
+        self,
+        job_id: str,
+        *,
+        allowed_states: frozenset[JobState] | set[JobState],
+        **fields: Any,
+    ) -> Job | None:
+        allowed = frozenset(allowed_states)
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.state not in allowed:
                 return None
             for key, value in fields.items():
                 setattr(job, key, value)

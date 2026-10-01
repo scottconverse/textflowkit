@@ -147,6 +147,62 @@ class SqliteJobStore(JobStore):
         if not patch:
             return self.get(job_id)
 
+        sets, values = self._encode_patch(patch)
+        sets.append("updated_at = ?")
+        values.append(time.time())
+        values.append(job_id)
+
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?",
+                values,
+            )
+            self._conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return self.get(job_id)
+
+    def claim(
+        self,
+        job_id: str,
+        *,
+        allowed_states: frozenset[JobState] | set[JobState],
+        **fields: Any,
+    ) -> Job | None:
+        """Transition only if the row's state is one of `allowed_states`.
+
+        The state test rides in the UPDATE's WHERE clause, so SQLite's own
+        row-level locking makes the check-and-set indivisible. Two handles over
+        the same file therefore cannot both win: the first commit changes the
+        state, and the second's ``WHERE state IN (...)`` matches nothing and
+        ``rowcount`` is 0. No schema change and no generation column are needed -
+        the state itself is the guard.
+        """
+        allowed = {state.value if isinstance(state, JobState) else str(state) for state in allowed_states}
+        if not allowed:
+            return None
+        patch = {k: v for k, v in fields.items() if k in _MUTABLE}
+        sets, values = self._encode_patch(patch)
+        sets.append("updated_at = ?")
+        values.append(time.time())
+        placeholders = ", ".join("?" for _ in allowed)
+        values.append(job_id)
+        values.extend(sorted(allowed))
+
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE jobs SET {', '.join(sets)}"
+                f" WHERE id = ? AND state IN ({placeholders})",
+                values,
+            )
+            self._conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return self.get(job_id)
+
+    @staticmethod
+    def _encode_patch(patch: dict[str, Any]) -> tuple[list[str], list[Any]]:
+        """Turn field values into SET clauses and bound parameters."""
         sets: list[str] = []
         values: list[Any] = []
         for key, value in patch.items():
@@ -163,20 +219,7 @@ class SqliteJobStore(JobStore):
                 values.append(int(bool(value)))
             else:
                 values.append(value)
-
-        sets.append("updated_at = ?")
-        values.append(time.time())
-        values.append(job_id)
-
-        with self._lock:
-            cur = self._conn.execute(
-                f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?",
-                values,
-            )
-            self._conn.commit()
-        if cur.rowcount == 0:
-            return None
-        return self.get(job_id)
+        return sets, values
 
     def list(self, *, limit: int = 50, state: JobState | None = None) -> list[Job]:
         if limit < 0:
