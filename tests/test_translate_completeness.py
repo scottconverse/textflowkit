@@ -44,6 +44,7 @@ numbering/cardinality logic run for real.
 from __future__ import annotations
 
 import pytest
+from test_translate import FakeTranslator
 
 from textflowkit.core.model import Segment, Transcript, WordTiming
 from textflowkit.core.translate import (
@@ -51,8 +52,6 @@ from textflowkit.core.translate import (
     TranslationError,
     translate_segments,
 )
-from test_translate import FakeTranslator  # noqa: E402  (sibling test module)
-
 
 # --- _translate_batch: a blank answer for a nonblank item is not content ----
 
@@ -64,7 +63,7 @@ def test_batch_rejects_blank_answer_for_nonblank_item(monkeypatch):
     translation, not a valid one, and the batch must be refused so the caller
     falls back - exactly as an unnumbered, duplicate, or out-of-range row is.
     """
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
     monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n2.\n3. tres")
     with pytest.raises(TranslationError):
         t._translate_batch(["one", "two", "three"], "es")
@@ -77,14 +76,14 @@ def test_batch_blank_item_refusal_does_not_reject_blank_source(monkeypatch):
     has none, which is the false-error direction. Only a blank answer for a
     source that carries text is a missing translation.
     """
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
     monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n2.\n3. tres")
     assert t._translate_batch(["one", "   ", "three"], "es") == ["uno", "", "tres"]
 
 
 def test_batch_numbered_empty_row_is_not_a_valid_translation(monkeypatch):
     """A numbered row whose text is only whitespace is the empty answer again."""
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
     monkeypatch.setattr(t, "_generate", lambda prompt: "1. uno\n2.   \n3. tres")
     with pytest.raises(TranslationError):
         t._translate_batch(["one", "two", "three"], "es")
@@ -98,7 +97,7 @@ def test_blank_item_in_batch_triggers_per_item_fallback(monkeypatch):
     The batch is refused (its one blank item), and the fallback asks each source
     on its own. The delivered results are complete and no item is blank.
     """
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
     singles: list[str] = []
 
     def fake_generate(prompt):
@@ -123,7 +122,7 @@ def test_blank_item_is_never_cached(monkeypatch):
     must be what is cached, and a later call must serve it without a new round
     trip.
     """
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
     calls = {"n": 0}
 
     def fake_generate(prompt):
@@ -150,7 +149,7 @@ def test_fallback_blank_for_nonblank_source_fails_loudly(monkeypatch):
     refusal is not swallowed by the batch path and that no blank is delivered as
     a translation of nonblank text.
     """
-    t = OllamaTranslator()
+    t = OllamaTranslator(model="test-local")
 
     def fake_generate(prompt):
         if "numbered line" in prompt:
