@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.jobs import Job, JobState, JobStore
+from textflowkit.core.jobs import Job, JobState, JobStore, ObservedJob, _snapshot
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -148,6 +148,20 @@ class SqliteJobStore(JobStore):
             ).fetchone()
         return _row_to_job(row) if row else None
 
+    def observe(self, job_id: str) -> ObservedJob | None:
+        """Snapshot one row under the lock.
+
+        `_row_to_job` already returns a detached `Job` built from a single
+        fetched row, so its fields are one instant's worth; taking the read under
+        the lock and copying keeps the snapshot contract identical to the memory
+        store's and immune to a later `claim`/`update` reusing this row object.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            return _snapshot(_row_to_job(row)) if row else None
+
     def update(self, job_id: str, **fields: Any) -> Job | None:
         patch = {k: v for k, v in fields.items() if k in _MUTABLE}
         if not patch:
@@ -174,6 +188,7 @@ class SqliteJobStore(JobStore):
         *,
         allowed_states: frozenset[JobState] | set[JobState],
         observed_attempt: int | None = None,
+        advance_attempt: bool = False,
         **fields: Any,
     ) -> Job | None:
         """Transition only if the row's state (and attempt) match.
@@ -191,12 +206,19 @@ class SqliteJobStore(JobStore):
         against a previously observed failure is refused if the row has since run
         again and landed back on the same state. State alone cannot tell those two
         failures apart; the attempt counter can.
+
+        ``advance_attempt`` adds ``attempt = attempt + 1`` to the same UPDATE, so
+        the claim acquires its own identity atomically with the transition. The
+        identity is then usable as the exact key a later cleanup or decision
+        names, even for a claim that never reaches RUNNING.
         """
         allowed = {state.value if isinstance(state, JobState) else str(state) for state in allowed_states}
         if not allowed:
             return None
         patch = {k: v for k, v in fields.items() if k in _MUTABLE}
         sets, values = self._encode_patch(patch)
+        if advance_attempt:
+            sets.append("attempt = attempt + 1")
         sets.append("updated_at = ?")
         values.append(time.time())
         placeholders = ", ".join("?" for _ in allowed)

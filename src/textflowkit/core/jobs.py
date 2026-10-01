@@ -111,7 +111,52 @@ class Job:
         return data
 
 
+@dataclass(frozen=True)
+class ObservedJob:
+    """An immutable point-in-time snapshot of a job's identity and state.
+
+    A store may hand callers a *mutable alias* of its live row (`MemoryJobStore`
+    returns the `Job` object itself), so reading fields off a `get()` result
+    after other store operations is not a coherent observation: a concurrent
+    writer can move the attempt or state out from under the reader between the
+    two reads. `JobStore.observe` returns this value instead - a frozen copy
+    taken under the store's own lock, so every field is from the same instant.
+
+    ``attempt`` is the identity a decision is made against; a claim keyed to it
+    is refused once the row has moved on. This is the value a caller pins with
+    ``claim(..., observed_attempt=...)``; it exists at *acquisition* (the claim
+    itself bumps nothing here), not only when inference starts.
+    """
+
+    id: str
+    source: str
+    state: JobState
+    attempt: int
+    error: str | None
+    cancel_requested: bool
+    request: dict[str, Any] | None
+    checkpoint: dict[str, Any] | None
+
+    def is_terminal(self) -> bool:
+        return self.state in TERMINAL_STATES
+
+
+def _snapshot(job: Job) -> ObservedJob:
+    """Copy a job's ownership fields into an immutable observation."""
+    return ObservedJob(
+        id=job.id,
+        source=job.source,
+        state=job.state,
+        attempt=job.attempt,
+        error=job.error,
+        cancel_requested=job.cancel_requested,
+        request=dict(job.request) if job.request is not None else None,
+        checkpoint=dict(job.checkpoint) if job.checkpoint is not None else None,
+    )
+
+
 class JobStore(ABC):
+
     """Storage for jobs.
 
     Implementations must be safe for concurrent use from multiple threads, and
@@ -126,6 +171,23 @@ class JobStore(ABC):
     def get(self, job_id: str) -> Job | None:
         """Fetch one job, or None."""
 
+    def observe(self, job_id: str) -> ObservedJob | None:
+        """A coherent, immutable snapshot of one job's identity and state.
+
+        The default reads through `get` and copies the fields, which is coherent
+        for a store that returns detached rows. A store that hands out a mutable
+        alias of its live row MUST override this to copy under its own lock:
+        otherwise a concurrent write can land between the copy's field reads and
+        the snapshot mixes two instants. `MemoryJobStore` overrides for exactly
+        that reason.
+
+        Ownership decisions are made against this value: it names the attempt the
+        caller observed, which a later `claim(..., observed_attempt=...)` requires
+        the row to still hold.
+        """
+        job = self.get(job_id)
+        return _snapshot(job) if job is not None else None
+
     @abstractmethod
     def update(self, job_id: str, **fields: Any) -> Job | None:
         """Patch fields on a job and bump updated_at. None if absent."""
@@ -137,6 +199,7 @@ class JobStore(ABC):
         *,
         allowed_states: frozenset[JobState] | set[JobState],
         observed_attempt: int | None = None,
+        advance_attempt: bool = False,
         **fields: Any,
     ) -> Job | None:
         """Atomically transition a job only from `allowed_states`.
@@ -157,6 +220,16 @@ class JobStore(ABC):
         is refused. ``None`` means "I did not pin an attempt" (the caller is not
         making a decision against a previously observed failure), which keeps the
         state-only behaviour for callers that do not need it.
+
+        ``advance_attempt`` gives a *claim* its own identity. When true the
+        transition bumps ``attempt`` as part of the same atomic write, so
+        ownership is named at acquisition rather than only when a run reaches
+        RUNNING. That is what lets a decision and a later cleanup be keyed to the
+        claim itself: a claim refused admission before RUNNING (its identity
+        still moves) and a queued claim cancelled and re-claimed (the newest
+        claim carries a distinct identity) are both distinguishable from the
+        observation that preceded them. Callers that want their returned row to
+        reflect the new identity should set it; the returned `Job` carries it.
 
         Returns the updated job, or None when the job is absent, its current state
         is not in `allowed_states`, or its attempt is not the observed one.
@@ -232,6 +305,18 @@ class MemoryJobStore(JobStore):
         with self._lock:
             return self._jobs.get(job_id)
 
+    def observe(self, job_id: str) -> ObservedJob | None:
+        """Snapshot under the lock: `get` here returns the live row itself.
+
+        Copying *inside* the lock is what makes the observation coherent - a
+        caller that copied fields off a `get()` result outside the lock could
+        read `attempt` before a concurrent claim and `state` after it, mixing two
+        instants into a decision.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return _snapshot(job) if job is not None else None
+
     def update(self, job_id: str, **fields: Any) -> Job | None:
         with self._lock:
             job = self._jobs.get(job_id)
@@ -248,6 +333,7 @@ class MemoryJobStore(JobStore):
         *,
         allowed_states: frozenset[JobState] | set[JobState],
         observed_attempt: int | None = None,
+        advance_attempt: bool = False,
         **fields: Any,
     ) -> Job | None:
         allowed = frozenset(allowed_states)
@@ -257,6 +343,8 @@ class MemoryJobStore(JobStore):
                 return None
             if observed_attempt is not None and job.attempt != observed_attempt:
                 return None
+            if advance_attempt:
+                job.attempt += 1
             for key, value in fields.items():
                 setattr(job, key, value)
             job.updated_at = time.time()
