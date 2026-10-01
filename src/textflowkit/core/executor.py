@@ -179,11 +179,23 @@ class JobExecutor:
             return job
 
     def enqueue(self, job: Job, *, source: str, **kwargs: Any) -> Job:
-        """Queue an existing prepared job (the durable resume path)."""
+        """Queue an existing prepared job (the durable resume path).
+
+        Per-id ownership: a job id already queued or running is not enqueued
+        again. The caller has claimed the row before calling, but a second
+        enqueue for the same id would still put two queue entries (and later two
+        worker tokens) on one job, so this is the last line of defence rather
+        than the claim itself. The check is inside the lock that guards the
+        queue, so it cannot itself race.
+        """
         self.start()
         with self._lock:
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
+            if job.id in self._tokens or any(
+                queued_id == job.id for queued_id, _ in self._queue.queue
+            ):
+                raise RuntimeError(f"job '{job.id}' is already queued")
             if not self._pending_slots.acquire(blocking=False):
                 raise QueueFullError(
                     f"job queue is full ({self._max_pending} pending); retry later"

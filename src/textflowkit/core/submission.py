@@ -22,7 +22,7 @@ from textflowkit.core.engine import (
     validate_model,
 )
 from textflowkit.core.executor import QueueFullError, get_default_executor
-from textflowkit.core.jobs import Job, JobState, JobStore
+from textflowkit.core.jobs import RESUMABLE_CLAIM_STATES, Job, JobState, JobStore
 from textflowkit.core.paths import (
     default_input_root,
     resolve_input_path,
@@ -158,6 +158,23 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
     )
 
 
+def _resume_conflict(store: JobStore, job_id: str) -> ValueError:
+    """The error a caller gets when it loses the ownership claim for a resume.
+
+    The claim is atomic, so a None result means another caller owns the job or
+    the job is no longer claimable. Re-reading the row turns that into an
+    actionable message: "already active" for the common race (parsed as a 409 by
+    the HTTP resume route), a disappearance note for an evicted row. Both are
+    ValueError, matching the refusal the submission contract already raises.
+    """
+    current = store.get(job_id)
+    if current is None:
+        return ValueError(f"job '{job_id}' disappeared before resume")
+    if current.state in {JobState.PENDING, JobState.RUNNING}:
+        return ValueError(f"job '{job_id}' is already active")
+    return ValueError(f"job '{job_id}' is no longer resumable (state: {current.state.value})")
+
+
 def _require_engine_ready(engine: str) -> None:
     """Refuse an engine whose optional package is absent, before any work.
 
@@ -188,6 +205,12 @@ def submit_request(
     found = _matching_checkpoint(store, request, resume_job_id) if resume or resume_job_id else None
     if found is not None:
         prior, checkpoint = found
+        # A job already claimed by another resume is the most specific reason to
+        # refuse, so it is reported first: an ERROR/CANCELLED row that a racing
+        # caller has just reopened reads as PENDING here, and "already active" is
+        # both truer and more actionable than any checkpoint message below.
+        if prior.state in {JobState.PENDING, JobState.RUNNING}:
+            raise ValueError(f"job '{prior.id}' is already active")
         if is_local_source(request.source):
             if checkpoint is None:
                 if prior.state is JobState.DONE:
@@ -208,8 +231,6 @@ def submit_request(
                 _transcript, outputs = result
                 updated = store.update(prior.id, outputs=[str(p) for p in outputs])
                 return updated or prior
-        if prior.state in {JobState.PENDING, JobState.RUNNING}:
-            raise ValueError(f"job '{prior.id}' is already active")
         # Reuse of this *job* has been ruled out above, so the resume is about to
         # create or queue work. The check goes before `prepare_resume` and the
         # reopen below, because both un-terminal the row: refusing afterwards
@@ -220,15 +241,24 @@ def submit_request(
         # reopened, and second-guessing it here would mean duplicating its resume
         # logic in the submission contract.
         _require_engine_ready(request.engine)
-        prepared = prepare_resume(store, prior, checkpoint) if checkpoint else None
+        # The reopen is the ownership claim, so both branches take it through the
+        # store's conditional transition: `prepare_resume` for a checkpointed
+        # job, and the same atomic claim here for a job without one. Reopening
+        # with `store.update` after the state was read above would let two
+        # concurrent resumes of one job id both pass the terminal check and both
+        # run. A caller that loses the race gets None and is refused below rather
+        # than handed a second run.
         if checkpoint is None:
-            reopened = store.update(
-                prior.id, state=JobState.PENDING, progress="resuming from start",
+            reopened = store.claim(
+                prior.id, allowed_states=RESUMABLE_CLAIM_STATES,
+                state=JobState.PENDING, progress="resuming from start",
                 error=None, cancel_requested=False,
             )
-            if reopened is None:
-                raise ValueError(f"job '{prior.id}' disappeared before resume")
-            prepared = reopened, None
+            prepared = (reopened, None) if reopened is not None else None
+        else:
+            prepared = prepare_resume(store, prior, checkpoint)
+        if prepared is None:
+            raise _resume_conflict(store, prior.id)
         if prepared is not None:
             job, checkpoint_payload = prepared
             kwargs = request.run_kwargs()
