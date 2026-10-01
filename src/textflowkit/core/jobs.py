@@ -75,12 +75,14 @@ class Job:
     checkpoint: dict[str, Any] | None = None
     request: dict[str, Any] | None = None
     # Which execution attempt this row currently describes. It starts at 0 and is
-    # bumped every time the job enters RUNNING, so it names the *failure* a
-    # terminal row holds: "ERROR, attempt 1" is a different thing to act on than
-    # "ERROR, attempt 0". A resume that decided against one attempt must say which
-    # one, otherwise its intent is honoured against a later attempt that happens
-    # to share the state - the stale-observation ABA. State alone cannot tell the
-    # two apart; this counter can.
+    # bumped when the job enters RUNNING *and* whenever a claim acquires the row
+    # (an explicit resume's reopen). So it names not a literal count of runs but
+    # the identity a decision is pinned against: two acquisitions of the same row
+    # that never reached RUNNING (a refused admission, a queued cancellation and
+    # reclaim) still get distinct attempts. A resume that decided against one
+    # attempt must say which one, otherwise its intent is honoured against a later
+    # attempt that happens to share the state - the stale-observation ABA. State
+    # alone cannot tell the two apart; this counter can.
     attempt: int = 0
 
     @property
@@ -126,6 +128,14 @@ class ObservedJob:
     is refused once the row has moved on. This is the value a caller pins with
     ``claim(..., observed_attempt=...)``; it exists at *acquisition* (the claim
     itself bumps nothing here), not only when inference starts.
+
+    ``transcript`` and ``outputs`` are carried because a snapshot must stand in
+    for the whole row, not only the ownership fields: a DONE job keeps its
+    transcript in the job field and its resume metadata in the checkpoint, so
+    reading the checkpoint out of a snapshot without the transcript half makes a
+    completed job look like it has no reusable checkpoint at all. They are read
+    from the same instant as ``attempt``, which is the point - the checkpoint and
+    the transcript it is paired with must come from one observation.
     """
 
     id: str
@@ -136,13 +146,15 @@ class ObservedJob:
     cancel_requested: bool
     request: dict[str, Any] | None
     checkpoint: dict[str, Any] | None
+    transcript: dict[str, Any] | None = None
+    outputs: tuple[str, ...] = ()
 
     def is_terminal(self) -> bool:
         return self.state in TERMINAL_STATES
 
 
 def _snapshot(job: Job) -> ObservedJob:
-    """Copy a job's ownership fields into an immutable observation."""
+    """Copy a job's fields into an immutable observation."""
     return ObservedJob(
         id=job.id,
         source=job.source,
@@ -152,6 +164,8 @@ def _snapshot(job: Job) -> ObservedJob:
         cancel_requested=job.cancel_requested,
         request=dict(job.request) if job.request is not None else None,
         checkpoint=dict(job.checkpoint) if job.checkpoint is not None else None,
+        transcript=dict(job.transcript) if job.transcript is not None else None,
+        outputs=tuple(job.outputs),
     )
 
 

@@ -161,11 +161,7 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
         checkpoint = _checkpoint_from(observed)
         if checkpoint is None:
             return observed, None
-        if not matches(
-            checkpoint, source=request.source, model=request.model,
-            language=request.language, engine=request.engine, device=request.device,
-            options=request.options(),
-        ):
+        if not _checkpoint_matches(checkpoint, request):
             raise ValueError("resume request does not match the saved checkpoint")
         return observed, checkpoint
     found = find_resumable_checkpoint(
@@ -176,13 +172,33 @@ def _matching_checkpoint(store: JobStore, request: SubmissionRequest, job_id: st
     if found is None:
         return None
     job, checkpoint = found
-    # The selection already read the row, but through an alias whose attempt may
-    # have moved since. Re-observe under the lock so the pinned identity is the
-    # one the claim will be judged against.
+    # The selection read the row through an alias, and the checkpoint it returned
+    # was loaded from that same pre-observation read. Re-observe under the lock:
+    # a concurrent completed stage or retry can replace the checkpoint between the
+    # selection and here, and returning the old checkpoint under the fresh
+    # identity would hand the decision two instants. Load the checkpoint from the
+    # snapshot we actually pin, so identity and checkpoint are one observation.
     observed = store.observe(job.id)
     if observed is None:
         return None
-    return observed, checkpoint
+    pinned = _checkpoint_from(observed)
+    if pinned is None:
+        # The row moved under us and no longer carries a usable checkpoint, or
+        # none matches the request any more. Nothing coherent to resume: refuse
+        # the resume rather than serve a stale checkpoint for a fresh identity.
+        return None
+    if not _checkpoint_matches(pinned, request):
+        return None
+    return observed, pinned
+
+
+def _checkpoint_matches(checkpoint, request: SubmissionRequest) -> bool:
+    """Whether a loaded checkpoint can be safely reused for this request."""
+    return matches(
+        checkpoint, source=request.source, model=request.model,
+        language=request.language, engine=request.engine, device=request.device,
+        options=request.options(),
+    )
 
 
 def _checkpoint_from(observed: ObservedJob):
@@ -198,7 +214,10 @@ def _snapshot_as_job(observed: ObservedJob) -> Job:
     `load_checkpoint` accepts a `Job`; the observation carries every field it
     reads. Building a fresh, private `Job` (never the store's live row) keeps the
     load reading a stable value rather than an alias a concurrent claim can
-    mutate.
+    mutate. The transcript travels with it: a DONE job stores its transcript in
+    the job field and only the matching metadata in the checkpoint, so a view
+    without the transcript would make a completed job's checkpoint unreadable and
+    its reuse look like "no reusable checkpoint".
     """
     return Job(
         id=observed.id,
@@ -207,6 +226,7 @@ def _snapshot_as_job(observed: ObservedJob) -> Job:
         checkpoint=observed.checkpoint,
         request=observed.request,
         attempt=observed.attempt,
+        transcript=observed.transcript,
     )
 
 
