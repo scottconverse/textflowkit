@@ -27,6 +27,11 @@ import pytest
 
 from textflowkit.core import runner
 from textflowkit.core.executor import JobExecutor
+
+try:  # added by this unit's fix; absent at the RED baseline
+    from textflowkit.core.executor import StoreUnavailableError
+except ImportError:  # pragma: no cover - baseline only
+    StoreUnavailableError = None  # type: ignore[assignment]
 from textflowkit.core.jobs import Job, JobState, JobStore, MemoryJobStore
 from textflowkit.core.model import Transcript
 from textflowkit.core.pipeline import TranscribeResult
@@ -141,7 +146,10 @@ def test_transient_get_failure_does_not_strand_future_work(monkeypatch):
     monkeypatch.setattr(runner, "transcribe", lambda source, **kw: _ok_result(source))
 
     try:
-        first = ex.submit(source="first")
+        # Submit a first job; its store read fails once (the flaky get). We do
+        # not assert its terminal state - the transient failure may leave it
+        # PENDING - only that the pool survives and later work still runs.
+        ex.submit(source="first")
         # Give the flaky get a chance to fire on the first job.
         time.sleep(0.1)
         # A subsequent healthy job must run: a single transient failure does not
@@ -156,8 +164,6 @@ def test_transient_get_failure_does_not_strand_future_work(monkeypatch):
     finally:
         ex.shutdown()
         assert not any(w.is_alive() for w in ex._workers)
-        # first is deliberately not asserted terminal (the transient failure may
-        # have left it PENDING); its fate is covered by the sustained case.
 
 
 class _FlakyStore(MemoryJobStore):
@@ -183,23 +189,131 @@ class _FlakyStore(MemoryJobStore):
         return super().get(job_id)
 
 
-def test_sustained_store_failure_becomes_visible_and_refuses_admission(monkeypatch):
-    """Persistent storage failure must be visible, not silently accepted.
+class _AlwaysFailingStore(MemoryJobStore):
+    """A store whose updates always fail (persistent outage)."""
 
-    A store that cannot persist terminal rows makes execution unsafe: accepting
-    jobs would promise results that cannot be recorded. The executor's chosen
-    policy (smallest sound one) is to surface the infrastructure failure and
-    refuse further admission instead of silently accepting work. This test pins
-    that the failure is *visible* in the executor's state; the exact refusal API
-    is asserted by the executor's own tests once the policy exists.
+    def update(self, job_id: str, **fields) -> Job | None:
+        raise RuntimeError("store permanently unavailable")
+
+
+class _SwitchableStore(MemoryJobStore):
+    """A memory store with a togglable outage.
+
+    While ``broken`` is true every ``update`` and ``get`` raises; ``create``
+    still works, so a submit can be attempted while writes are down (the
+    executor's error-write then fails and the fault is latched). Flipping
+    ``broken`` false models the outage healing.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.broken = False
+
+    def get(self, job_id: str) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store read unavailable")
+        return super().get(job_id)
+
+    def update(self, job_id: str, **fields) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store write unavailable")
+        return super().update(job_id, **fields)
+
+
+def test_transient_error_write_failure_recovers_on_next_admission(monkeypatch):
+    """A fault that heals must not keep admission closed.
+
+    The worker's error write fails while the store is down (fault latched). The
+    store then heals. The next submit must be admitted - the admission probe
+    clears the transient fault - and the job must reach DONE. This is the clause
+    "a transient store outage must not permanently strand future healthy work".
+    """
+    from textflowkit.core import runner as runner_mod
+
+    original_run_job = runner_mod.run_job
+
+    def crash_for_broken(job, store, *, source, **kwargs):
+        if source == "broken":
+            raise RuntimeError("runner exploded")
+        return original_run_job(job, store, source=source, **kwargs)
+
+    monkeypatch.setattr(runner_mod, "run_job", crash_for_broken)
+    monkeypatch.setattr(runner_mod, "transcribe", lambda source, **kw: _ok_result(source))
+
+    store = _SwitchableStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        # Bring the store down, then crash a job so its ERROR write cannot land.
+        store.broken = True
+        ex.submit(source="broken")
+
+        # Fault becomes visible.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and ex.store_failed is None:
+            time.sleep(0.01)
+        assert ex.store_failed is not None, "store fault was not recorded"
+        assert all(w.is_alive() for w in ex._workers), "worker died on error-write failure"
+
+        # Store heals; the next submit must be admitted (probe clears the latch).
+        store.broken = False
+        healthy = ex.submit(source="healthy")
+        done = _wait_for_state(store, healthy.id, JobState.DONE, timeout=5.0)
+        assert done.state is JobState.DONE, (
+            f"healthy work stranded after transient outage: state={done.state!r}"
+        )
+        assert ex.store_failed is None, "fault not cleared after store recovered"
+    finally:
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+def test_sustained_store_failure_refuses_admission_visibly(monkeypatch):
+    """While the store stays down, admission is refused with a visible error.
+
+    A persistent outage makes execution unsafe: jobs would be accepted whose
+    results cannot be recorded. The executor refuses with a store-unavailable
+    error (not a silent accept, not a generic queue-full) and keeps its workers.
+    """
+    from textflowkit.core import runner as runner_mod
+
+    original_run_job = runner_mod.run_job
+
+    def crash_for_broken(job, store, *, source, **kwargs):
+        if source == "broken":
+            raise RuntimeError("runner exploded")
+        return original_run_job(job, store, source=source, **kwargs)
+
+    monkeypatch.setattr(runner_mod, "run_job", crash_for_broken)
+    monkeypatch.setattr(runner_mod, "transcribe", lambda source, **kw: _ok_result(source))
+
+    store = _SwitchableStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        store.broken = True
+        ex.submit(source="broken")
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and ex.store_failed is None:
+            time.sleep(0.01)
+        assert ex.store_failed is not None
+
+        # Still down: admission is refused, visibly, and no job is created.
+        assert StoreUnavailableError is not None, "executor has no store-unavailable error"
+        with pytest.raises(StoreUnavailableError, match="store is unavailable"):
+            ex.submit(source="should-not-admit")
+        assert all(w.is_alive() for w in ex._workers)
+    finally:
+        store.broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+def test_sustained_store_failure_becomes_visible_and_refuses_admission(monkeypatch):
+    """Persistent storage failure must be visible, not silently accepted."""
     store = _AlwaysFailingStore()
     ex = JobExecutor(store, max_concurrency=1)
     monkeypatch.setattr(runner, "transcribe", lambda source, **kw: _ok_result(source))
     try:
         ex.submit(source="doomed")
-        # The failure must be recorded as an infrastructure fault on the executor,
-        # not swallowed. (Attribute added by the fix; RED until then.)
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline and ex.store_failed is None:
             time.sleep(0.01)
@@ -207,10 +321,3 @@ def test_sustained_store_failure_becomes_visible_and_refuses_admission(monkeypat
     finally:
         ex.shutdown()
         assert not any(w.is_alive() for w in ex._workers)
-
-
-class _AlwaysFailingStore(MemoryJobStore):
-    """A store whose updates always fail (persistent outage)."""
-
-    def update(self, job_id: str, **fields) -> Job | None:
-        raise RuntimeError("store permanently unavailable")

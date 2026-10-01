@@ -32,6 +32,16 @@ class QueueFullError(RuntimeError):
     """The executor cannot accept another pending job right now."""
 
 
+class StoreUnavailableError(RuntimeError):
+    """The executor is refusing admission because its store failed.
+
+    Distinct from `QueueFullError`: that is backpressure (the queue is full and
+    will drain), this is an infrastructure fault. A caller that retries on full
+    should not retry this the same way - the store must recover first, which the
+    executor re-checks on the next admission attempt.
+    """
+
+
 # The signal itself lives in a leaf module so the source layer can re-raise it
 # around broad exception handling. This alias keeps the name used everywhere
 # else in the codebase and in tests.
@@ -117,6 +127,15 @@ class JobExecutor:
         self._lock = threading.RLock()
         self._started = False
         self._shutdown = False
+        # The last store failure the pool could not persist past, or None when
+        # the store last answered. This is the *visible* half of the worker-
+        # survival policy: a store that cannot record a terminal row is an
+        # infrastructure fault, and it is not swallowed - it gates admission
+        # (see `submit`/`enqueue`) so the executor does not accept jobs whose
+        # results it could not record. Cleared as soon as the store answers again
+        # (a probe on the admission path, or a successful write from a worker),
+        # so a transient outage does not strand work permanently.
+        self._store_failed: str | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -132,6 +151,65 @@ class JobExecutor:
     @property
     def max_pending(self) -> int:
         return self._max_pending
+
+    @property
+    def store_failed(self) -> str | None:
+        """The last unpersisted store failure, or None when the store answered.
+
+        Set by a terminal-write failure in a worker; cleared when the store next
+        answers (an admission probe or a successful worker write). Callers and
+        adapters read this to report an infrastructure fault instead of a job
+        failure - the job's own row may still read RUNNING because the write that
+        would have failed it never landed.
+        """
+        with self._lock:
+            return self._store_failed
+
+    def _record_store_failure(self, exc: BaseException) -> None:
+        """Note a store fault without raising; keeps the worker alive."""
+        with self._lock:
+            self._store_failed = f"{type(exc).__name__}: {exc}"
+
+    def _clear_store_failure(self) -> None:
+        """The store answered again, so admission may reopen."""
+        with self._lock:
+            self._store_failed = None
+
+    def _store_answers(self) -> bool:
+        """One liveness read; True (and clears the fault) if the store responds.
+
+        Used only on the admission path *after* a refusal was already decided, so
+        it costs one store call per rejected submit and never runs in a loop. A
+        store that reads but cannot write stays refused: the probe clears the
+        latch, the next admitted job's terminal write fails, and the latch is set
+        again - bounded, one probe per attempt, no retry storm.
+        """
+        try:
+            self._store.get("")  # any read; a broken store raises here
+        except Exception:  # noqa: BLE001 - a failed probe keeps the fault
+            return False
+        self._clear_store_failure()
+        return True
+
+    def _refuse_if_store_failed(self) -> None:
+        """Gate admission on store health. Called under `self._lock`.
+
+        While the last terminal write could not be persisted, the executor
+        refuses new work rather than accepting jobs whose results it cannot
+        record - the failure is made visible (this error names it) instead of
+        silently accepting work that cannot run. Before refusing we spend one
+        liveness read: if the store answers, the fault was transient, the latch
+        clears, and admission proceeds. If it does not answer, the refusal stands
+        and the caller sees an infrastructure error, not a job failure.
+        """
+        if self._store_failed is None:
+            return
+        if self._store_answers():
+            return
+        raise StoreUnavailableError(
+            "job store is unavailable; refusing new work until it recovers "
+            f"(last failure: {self._store_failed})"
+        )
 
     def start(self) -> None:
         """Start worker threads. Idempotent; called lazily by submit()."""
@@ -181,6 +259,7 @@ class JobExecutor:
         with self._lock:
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
+            self._refuse_if_store_failed()
             if not self._pending_slots.acquire(blocking=False):
                 raise QueueFullError(
                     f"job queue is full ({self._max_pending} pending); retry later"
@@ -215,6 +294,7 @@ class JobExecutor:
         with self._lock:
             if self._shutdown:
                 raise RuntimeError("job executor is shut down")
+            self._refuse_if_store_failed()
             if job.id in self._owned:
                 raise RuntimeError(f"job '{job.id}' is already queued")
             if not self._pending_slots.acquire(blocking=False):
@@ -292,12 +372,25 @@ class JobExecutor:
                     try:
                         self._run_one(job_id, kwargs, token)
                     except Exception as exc:  # noqa: BLE001 - keep the worker alive
-                        self._store.update(
-                            job_id,
-                            state=JobState.ERROR,
-                            error=f"{type(exc).__name__}: {exc}",
-                            progress="failed",
-                        )
+                        # The error write itself goes to the store the runner
+                        # just used, so it can fail too. A failure here must not
+                        # escape the loop - that would kill this worker and
+                        # silently remove a concurrency slot, stranding every
+                        # later job. Record the fault instead: it is visible on
+                        # `store_failed` and it gates admission, so the executor
+                        # stops accepting work it cannot record rather than
+                        # swallowing the failure. A transient fault needs no
+                        # retry storm - the next admission probe or worker write
+                        # clears it.
+                        try:
+                            self._store.update(
+                                job_id,
+                                state=JobState.ERROR,
+                                error=f"{type(exc).__name__}: {exc}",
+                                progress="failed",
+                            )
+                        except Exception as store_exc:  # noqa: BLE001
+                            self._record_store_failure(store_exc)
                 finally:
                     with self._lock:
                         self._tokens.pop(job_id, None)
