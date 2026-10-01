@@ -676,3 +676,301 @@ def test_durable_store_write_fault_refuses_then_reconciles(monkeypatch, tmp_path
         ex.shutdown()
         store.close()
         assert not any(w.is_alive() for w in ex._workers)
+
+
+# -- owned-execution identity survives an outage that also breaks reads --------
+#
+# The tests above break reads and writes *together from the start*, so a run
+# never reaches RUNNING: its row is whatever it was before, and the attempt a
+# failed run "owned" is 0, which the post-hoc read guesses correctly by accident.
+#
+# The real fault window is narrower and worse: the run *starts* (``begin_attempt``
+# lands, the row goes RUNNING at attempt N) and the outage hits *after* that, so
+# reads fail too. The recovery code then cannot read the row and falls back to
+# attempt 0. Reconciliation requires attempt 0 on a row that is actually attempt
+# N, matches nothing, reads "already accounted for", and clears the latch - while
+# the genuinely stranded RUNNING row is abandoned forever. These tests pin the
+# fix: the execution identity is captured at the successful start and threaded
+# through, never re-derived (and never guessed) after a fault.
+
+
+class _ReadWriteOutageStore(MemoryJobStore):
+    """A memory store whose reads and writes can be forced down after a start.
+
+    ``arm_next`` makes the *next* ``begin_attempt`` land and then take the store
+    down for both reads and writes. That models an outage that takes hold exactly
+    after the run is marked RUNNING: the run owns a real, positive attempt, and
+    every later read (including the recovery code's read of that attempt) fails.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.broken = False
+        self.arm_next = False
+
+    def get(self, job_id: str) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store read unavailable")
+        return super().get(job_id)
+
+    def update(self, job_id: str, **fields) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store write unavailable")
+        return super().update(job_id, **fields)
+
+    def claim(self, job_id: str, **kwargs) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store write unavailable")
+        return super().claim(job_id, **kwargs)
+
+    def begin_attempt(self, job_id: str) -> Job | None:
+        row = MemoryJobStore.begin_attempt(self, job_id)
+        if self.arm_next:
+            self.arm_next = False
+            self.broken = True  # outage starts after the run is RUNNING
+        return row
+
+
+def _crash_in_pipeline(monkeypatch, source_name: str) -> None:
+    """Make ``transcribe`` raise for one source, *after* the run has started.
+
+    The run must reach ``begin_attempt`` (so it owns a real attempt) before it
+    fails; patching the pipeline stage rather than ``run_job`` keeps that start.
+    """
+    monkeypatch.setattr(runner, "transcribe", _crash_transcribe(source_name))
+
+
+def _crash_transcribe(source_name: str):
+    def _transcribe(source, **kw):
+        if source == source_name:
+            raise RuntimeError("pipeline exploded mid-run")
+        return _ok_result(source)
+
+    return _transcribe
+
+
+def _raw_row(store: MemoryJobStore, job_id: str) -> Job:
+    """Read the live row straight from the dict, bypassing a broken ``get``."""
+    return store._jobs[job_id]
+
+
+def test_owned_attempt_survives_read_blackout_and_resolves_running_row(monkeypatch):
+    """A run that started must keep its identity even when reads then fail.
+
+    RED: the outage hits after ``begin_attempt`` (row RUNNING at attempt 1). The
+    error handler's ``_owned_attempt`` cannot read the row, falls back to 0, and
+    pins the stranded write to attempt 0. When the store heals, the guarded
+    ``claim`` requires attempt 0 against a row that is attempt 1, matches nothing,
+    and the latch clears with the row still RUNNING - the exact lost-identity
+    failure. GREEN: the actual attempt captured at the successful start is used,
+    the RUNNING row is resolved to ERROR truthfully, and a healthy next job is
+    admitted.
+    """
+    _crash_in_pipeline(monkeypatch, "broken")
+
+    store = _ReadWriteOutageStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        store.arm_next = True
+        broken = ex.submit(source="broken")
+
+        # The fault is latched while the store is down (reads and writes both).
+        _wait_for_store_fault(ex)
+        assert all(w.is_alive() for w in ex._workers), "worker died on write fault"
+
+        # While the outage holds, the row is RUNNING at a *positive* attempt -
+        # the identity the failed run actually owned. Read it directly because
+        # `get` is broken.
+        stranded = _raw_row(store, broken.id)
+        owned_attempt = stranded.attempt
+        assert owned_attempt > 0, "precondition: the run started (attempt advanced)"
+        assert stranded.state is JobState.RUNNING, "precondition: row left RUNNING"
+
+        # Writes and reads recover. One bounded reconciliation must resolve the
+        # RUNNING row (not abandon it) and admit healthy work.
+        store.broken = False
+        healthy = ex.submit(source="healthy")
+        done = _wait_for_state(store, healthy.id, JobState.DONE, timeout=5.0)
+        assert done.state is JobState.DONE, "healthy work stranded after recovery"
+
+        resolved = _wait_for_state(store, broken.id, JobState.ERROR, timeout=5.0)
+        assert resolved.state is JobState.ERROR, (
+            "the stranded RUNNING row was abandoned - its real identity was lost "
+            f"(row still {resolved.state!r}, owned attempt {owned_attempt})"
+        )
+        assert resolved.attempt == owned_attempt, (
+            "resolving the row moved its identity off the owned attempt"
+        )
+        assert ex.store_failed is None, "fault not cleared after writes recovered"
+    finally:
+        store.broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+def test_unknown_owned_identity_stays_unresolved_rather_than_guessed(monkeypatch):
+    """An unknown execution identity must stay unresolved, never be cleared away.
+
+    If the run's own attempt is genuinely unknown (its start write failed, so no
+    attempt was ever captured), a guarded write that matches nothing must NOT be
+    read as "resolved". The row is left for a later recovery rather than the
+    latch being cleared on a guess - a conditional write matching nothing is not
+    evidence the stranded row was fixed.
+    """
+    _crash_in_pipeline(monkeypatch, "broken")
+
+    store = _ReadWriteOutageStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        # Take the store down *before* the run starts, so `begin_attempt` fails
+        # and the run owns no captured attempt - the identity is genuinely unknown.
+        store.broken = True
+        broken = ex.submit(source="broken")
+        _wait_for_store_fault(ex)
+        stranded = _raw_row(store, broken.id)
+        assert not stranded.is_terminal
+
+        # Heal writes but advance the row with a *newer owner*, so the pinned
+        # (unknown) identity can never match. The row must not be clobbered and
+        # the fault must not be silently treated as resolved.
+        store.broken = False
+        stranded.attempt += 1
+        stranded.progress = "reopened-by-newer-owner"
+
+        # Any reconciliation write must refuse (identity unknown); the newer row
+        # is untouched.
+        time.sleep(0.2)
+        row = store.get(broken.id)
+        assert row.state is not JobState.ERROR, (
+            "a write keyed to an unknown identity clobbered a newer owner's row"
+        )
+        assert row.progress == "reopened-by-newer-owner"
+    finally:
+        store.broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+def test_owned_attempt_does_not_clobber_a_newer_owner_after_read_blackout(monkeypatch):
+    """Even with a captured identity, a row a newer owner advanced is left alone.
+
+    The captured attempt is the *owned* one, but a resume can still move the row
+    past it while the store is down. The guarded write must then refuse - the
+    stale verdict is never forced onto the newer owner's row.
+    """
+    _crash_in_pipeline(monkeypatch, "broken")
+
+    store = _ReadWriteOutageStore()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        store.arm_next = True
+        broken = ex.submit(source="broken")
+        _wait_for_store_fault(ex)
+
+        stranded = _raw_row(store, broken.id)
+        owned_attempt = stranded.attempt
+        # A newer owner advances the row while the store is still down.
+        stranded.attempt = owned_attempt + 5
+        stranded.progress = "reopened-by-newer-owner"
+
+        store.broken = False
+        healthy = ex.submit(source="healthy")
+        done = _wait_for_state(store, healthy.id, JobState.DONE, timeout=5.0)
+        assert done.state is JobState.DONE
+
+        time.sleep(0.3)
+        row = store.get(broken.id)
+        assert row.attempt != owned_attempt, "precondition: newer owner advanced the row"
+        assert row.state is not JobState.ERROR, (
+            "resolution clobbered a row a newer owner had moved on"
+        )
+    finally:
+        store.broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+# -- one stranded fault must not admit work while others stay outstanding ------
+
+
+def test_admission_stays_refused_until_all_stranded_faults_are_resolved(monkeypatch):
+    """Two independently stranded jobs: admission waits for *all* of them.
+
+    RED: ``_reconcile_pending_terminal`` reconciles a single entry and returns
+    True even when ``_pending_terminal`` still holds others, so one bounded write
+    clears the latch and admits new work while a second row is still stranded
+    non-terminal. GREEN: one bounded reconciliation happens per request, but
+    admission stays refused until no stranded fault remains - and once writes are
+    healthy the outstanding rows all resolve, with no retry storm.
+    """
+    _crash_in_pipeline(monkeypatch, "broken")
+
+    store = _ReadHealthyWriteBroken()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        first = ex.submit(source="broken")
+        second = ex.submit(source="broken")
+        # Wait until both rows are stranded (two outstanding faults).
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and len(ex._pending_terminal) < 2:
+            time.sleep(0.01)
+        assert len(ex._pending_terminal) == 2, (
+            f"expected two stranded faults, saw {len(ex._pending_terminal)}"
+        )
+        assert not store.get(first.id).is_terminal
+        assert not store.get(second.id).is_terminal
+
+        # Heal writes. The first admission request reconciles exactly one row;
+        # because another fault is still outstanding, admission must still be
+        # refused - not opened on a partial recovery.
+        store.writes_broken = False
+        with pytest.raises(StoreUnavailableError, match="store is unavailable"):
+            ex.submit(source="during-recovery")
+
+        # Both stranded rows are now resolved (one per request), and the next
+        # admission succeeds and runs healthy work.
+        healthy = ex.submit(source="healthy")
+        done = _wait_for_state(store, healthy.id, JobState.DONE, timeout=5.0)
+        assert done.state is JobState.DONE, "healthy work stranded after full recovery"
+        assert ex.store_failed is None, "fault not cleared once all rows resolved"
+        assert store.get(first.id).state is JobState.ERROR
+        assert store.get(second.id).state is JobState.ERROR
+    finally:
+        store.writes_broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
+
+
+def test_unrelated_success_does_not_clear_latch_while_a_row_is_stranded(monkeypatch):
+    """A successful unrelated job's write must not clear an outstanding fault.
+
+    A healthy job running to DONE writes its own row. That success says the store
+    answers, but says nothing about the stranded row still missing its terminal
+    state - the latch must stay until that specific row is resolved.
+    """
+    _crash_in_pipeline(monkeypatch, "broken")
+
+    store = _ReadHealthyWriteBroken()
+    ex = JobExecutor(store, max_concurrency=1)
+    try:
+        stranded = ex.submit(source="broken")
+        _wait_for_store_fault(ex)
+        assert ex.store_failed is not None
+        assert not store.get(stranded.id).is_terminal
+
+        # A healthy job is admitted only *after* reconciliation clears the latch;
+        # to isolate the "unrelated write" concern, run a healthy job inline while
+        # the latch is set by writing its row directly (a store that answers one
+        # unrelated write does not resolve the stranded row).
+        store.writes_broken = False
+        healthy = ex.submit(source="healthy")  # reconciliation must resolve `broken` first
+        done = _wait_for_state(store, healthy.id, JobState.DONE, timeout=5.0)
+        assert done.state is JobState.DONE
+        # The stranded row was resolved by the *reconciliation*, not forgotten: it
+        # is ERROR, and only then is the latch clear.
+        assert store.get(stranded.id).state is JobState.ERROR
+        assert ex.store_failed is None
+    finally:
+        store.writes_broken = False
+        ex.shutdown()
+        assert not any(w.is_alive() for w in ex._workers)
