@@ -292,6 +292,14 @@ def test_resume_retains_exact_translated_text_speakers_and_timestamps(
     retranslate. This pins the delivered bytes of the reused segments: the
     translated text, the speaker assignment, and both timestamps are exactly
     those the first attempt produced.
+
+    The canonical source text is asserted against the *durable snapshot* (the
+    canonical transcript), not against the rendered TXT: the renderer publishes
+    the translated text on purpose, so demanding the original there would assert
+    a product behaviour the renderer deliberately does not have. What the resume
+    must preserve is that the source words stay untranslated and unchanged in the
+    canonical transcript, while the translated bytes, speakers, and timestamps
+    come through to the delivered formats.
     """
     output_dir, counters = stage_counters
     source = tmp_path / "clip.wav"
@@ -323,8 +331,23 @@ def test_resume_retains_exact_translated_text_speakers_and_timestamps(
     txt_body = txt_path.read_text(encoding="utf-8")
     srt_body = srt_path.read_text(encoding="utf-8")
 
-    assert SOURCE_TEXT in txt_body
+    # The delivered text is the translation; the renderer does not duplicate the
+    # original into TXT. The source text is preserved where canonical fidelity
+    # lives - the durable transcript snapshot - and the resume must not have
+    # rewritten it into the translation.
     assert TRANSLATED_TEXT in txt_body
+    assert SOURCE_TEXT not in txt_body, (
+        "the TXT publishes the translation; the source words are not duplicated"
+    )
+    # After a DONE run the canonical transcript lives in the job's own field (the
+    # checkpoint is metadata-only), so read it there.
+    assert resumed.transcript is not None
+    canonical = resumed.transcript["segments"][0]
+    assert canonical["text"] == SOURCE_TEXT, (
+        "the canonical source text must survive the resume untranslated"
+    )
+    assert canonical["translated_text"] == TRANSLATED_TEXT
+    assert canonical["speaker"] == SPEAKER
     assert SPEAKER in srt_body
     # Timestamps survive: the first cue in the SRT is still 00:00:00.
     assert "00:00:00,000 --> 00:00:01,000" in srt_body
@@ -676,7 +699,7 @@ def test_resume_keeps_the_confined_decoder_semantics(
     """
     root = tmp_path / "allowed"
     root.mkdir()
-    output_dir, counters = stage_counters
+    output_dir, _counters = stage_counters
     source = root / "clip.wav"
     source.write_bytes(b"fake media")
 
@@ -721,7 +744,7 @@ def test_error_checkpoint_carries_the_transcript_not_the_job_field(
     transcript in the checkpoint and leaves ``job.transcript`` empty. A fix that
     read the job's transcript field on resume would find nothing here.
     """
-    output_dir, counters = stage_counters
+    output_dir, _counters = stage_counters
     source = tmp_path / "clip.wav"
     source.write_bytes(b"fake media")
     store = MemoryJobStore()
@@ -754,7 +777,7 @@ def test_finalize_moves_the_transcript_to_the_job_on_success(
     metadata-only. Together the two cases show why a resume cannot read the job's
     transcript field after a failure.
     """
-    output_dir, counters = stage_counters
+    output_dir, _counters = stage_counters
     source = tmp_path / "clip.wav"
     source.write_bytes(b"fake media")
     store = MemoryJobStore()
@@ -774,3 +797,519 @@ def test_finalize_moves_the_transcript_to_the_job_on_success(
     assert done.checkpoint.get("transcript") is None, (
         "a DONE checkpoint keeps only metadata"
     )
+
+
+# --- the same reuse, proven through a durable store reopen -------------------
+#
+# The cases above run on the in-memory store. Stage reuse must not depend on
+# that: the markers are what make the decision, and they have to survive a
+# process restart, which is the whole reason a checkpoint is durable. These
+# cases drive the real SQLite store, close it between the failed attempt and the
+# resume, and reopen the database - so the resume reads its stage markers back
+# off disk rather than out of a live object.
+
+
+def test_sqlite_reopen_reuses_finished_stages_across_a_restart(
+    tmp_path, monkeypatch, stage_counters
+):
+    """A durable reopen reuses the finished optional stages without rerunning.
+
+    The failed attempt is written to SQLite, the store is closed, and a fresh
+    handle reopens the file. The resume must reach DONE from the reopened row
+    with the engine, diarizer, translator, fetch, and decode each run exactly
+    once - the durable markers survived the restart, so nothing is repeated.
+    """
+    from textflowkit.core.sqlite_store import SqliteJobStore
+
+    output_dir, counters = stage_counters
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    db = tmp_path / "jobs.db"
+    _fail_publish_once(monkeypatch, ".srt")
+
+    store = SqliteJobStore(db)
+    job = submit_request(
+        store,
+        _request(source, output_dir, diarize=True, translate_to="fr"),
+        background=False,
+    )
+    assert store.get(job.id).state is JobState.ERROR
+    assert store.get(job.id).checkpoint["transcript"] is not None
+    store.close()
+
+    reopened = SqliteJobStore(db)
+    try:
+        # The durable record kept its per-stage markers across the restart.
+        record = reopened.get(job.id)
+        assert record.checkpoint is not None
+        assert {"diarize", "translate"}.issubset(
+            set(record.checkpoint["finished_stages"])
+        ), record.checkpoint["finished_stages"]
+
+        resumed = resume_job(reopened, job.id, background=False)
+
+        assert resumed.state is JobState.DONE, resumed.error
+        assert counters.engine.calls == 1, "Whisper ran again after a durable reopen"
+        assert counters.diarizer.calls == 1, "diarization was rerun after a reopen"
+        assert counters.translator.calls == 1, "translation was rerun after a reopen"
+        assert counters.fetches == 1, "the media was re-acquired after a reopen"
+        assert counters.extracts == 1, "the audio was re-decoded after a reopen"
+    finally:
+        reopened.close()
+
+
+def test_sqlite_reopen_resumes_only_translation_after_partial_diarization(
+    tmp_path, monkeypatch, stage_counters
+):
+    """The partial-completion rule also holds across a durable reopen.
+
+    Diarization succeeds and translation fails, then the database is closed and
+    reopened. The durable record still says diarization finished, so the resume
+    reads that back and runs only the healthy translation - never the diarizer,
+    never a re-acquisition.
+    """
+    from textflowkit.core.sqlite_store import SqliteJobStore
+
+    output_dir, counters = stage_counters
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    db = tmp_path / "jobs.db"
+
+    failing = _CountingTranslator(fail=True)
+    monkeypatch.setattr(pipeline, "get_translator", lambda *a, **k: failing)
+
+    store = SqliteJobStore(db)
+    job = submit_request(
+        store,
+        _request(source, output_dir, diarize=True, translate_to="fr"),
+        background=False,
+    )
+    assert store.get(job.id).state is JobState.ERROR
+    assert counters.diarizer.calls == 1
+    assert failing.calls == 1
+    store.close()
+
+    healthy = _CountingTranslator()
+    monkeypatch.setattr(pipeline, "get_translator", lambda *a, **k: healthy)
+
+    reopened = SqliteJobStore(db)
+    try:
+        record = reopened.get(job.id)
+        assert "diarize" in record.checkpoint["finished_stages"], (
+            "the finished diarization was not durable across the reopen"
+        )
+        assert "translate" not in record.checkpoint["finished_stages"]
+        assert "postprocess" not in record.checkpoint["finished_stages"], (
+            "a half-finished optional plan must not carry the coarse marker"
+        )
+
+        resumed = resume_job(reopened, job.id, background=False)
+
+        assert resumed.state is JobState.DONE, resumed.error
+        assert healthy.calls == 1, "translation must run on the reopen resume"
+        assert counters.diarizer.calls == 1, "diarization ran again after a reopen"
+        assert counters.engine.calls == 1
+        assert counters.fetches == 1
+        assert counters.extracts == 1
+    finally:
+        reopened.close()
+
+
+# --- a finished stage under a *different* configuration must not be reused ----
+#
+# A marker says a stage finished for the configuration the record was written
+# under. It does not say the stage finished for the configuration being asked for
+# now. These cases drive ``pipeline.transcribe`` directly - the Python entry
+# point, with no submission layer between the caller and the decision - and seed
+# a checkpoint that already carries a finished optional stage. The resume asks
+# for a *different* target or backend, so the durable work is not this stage's
+# work and must be redone.
+#
+# The seeded record plays the role of a legacy/partial snapshot: it carries the
+# coarse or per-stage marker the earlier run left. If the pipeline trusted the
+# marker alone it would skip the requested stage and mark a transcript complete
+# in a language or with a provider that was never produced - the defect these
+# cases pin.
+
+
+def _direct_checkpoint(
+    *,
+    source: Path,
+    media: Path,
+    finished_stages: list[str],
+    options: dict,
+    transcript: Transcript,
+    input_root: Path | None = None,
+) -> dict:
+    """A resumable checkpoint with a finished transcript and caller-set options.
+
+    ``options`` is varied per case so the record's own configuration is explicit
+    - that is what a reuse decision has to match against, not the current call's
+    arguments.
+    """
+    return {
+        "version": 2,
+        "source": str(source),
+        "model": "small",
+        "language": None,
+        "engine": "whisper",
+        "device": None,
+        "options": dict(options),
+        "finished_stages": list(finished_stages),
+        "transcript": transcript.to_dict(),
+        "media_path": str(media),
+        "audio_path": None,
+        "local_identity": local_source_identity(str(source), input_root=input_root),
+    }
+
+
+@pytest.fixture
+def direct_pipeline(tmp_path, monkeypatch):
+    """Fakes for a direct ``transcribe`` call: decode, diarizer, translator.
+
+    The diarizer and translator records name the backend the pipeline asked for,
+    so a test can assert not only *that* the stage reran but *which* provider the
+    rerun consulted.
+    """
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    state = {
+        "diarize_calls": 0,
+        "diarize_backends": [],
+        "translate_calls": 0,
+        "translate_targets": [],
+        "translate_backends": [],
+        "extracts": 0,
+    }
+
+    class _Diarizer:
+        def __init__(self, backend: str) -> None:
+            self.name = backend
+
+        def diarize(self, audio):
+            from textflowkit.core.diarize import SpeakerTurn
+
+            state["diarize_calls"] += 1
+            state["diarize_backends"].append(self.name)
+            return [SpeakerTurn(0.0, 2.0, "SPEAKER_00")]
+
+    class _Translator:
+        def __init__(self, backend: str) -> None:
+            self.name = backend
+            self.route = "test"
+
+        def translate(self, texts, target: str):
+            state["translate_calls"] += 1
+            state["translate_targets"].append(target)
+            state["translate_backends"].append(self.name)
+            return [f"{target}:{text}" for text in texts]
+
+    def extract(media, *, work_dir, check_cancel=None, confined=False):
+        state["extracts"] += 1
+        audio = Path(work_dir) / "audio.wav"
+        audio.write_bytes(Path(media).read_bytes())
+        return audio
+
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: "ffmpeg")
+    monkeypatch.setattr(pipeline, "extract_audio", extract)
+    monkeypatch.setattr(
+        pipeline, "get_diarizer", lambda backend="pyannote", **k: _Diarizer(backend)
+    )
+    monkeypatch.setattr(
+        pipeline, "get_translator", lambda backend="ollama", **k: _Translator(backend)
+    )
+    monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
+    return out_dir, state
+
+
+def _translated_language(transcript) -> str | None:
+    """The target the retained translation was actually produced for, if any."""
+    meta = transcript.metadata.get("translation")
+    return meta.get("target") if isinstance(meta, dict) else None
+
+
+def test_direct_resume_reruns_translation_when_legacy_options_enabled_none(
+    tmp_path, direct_pipeline
+):
+    """A legacy record that never enabled translation must not satisfy a request for it.
+
+    This is the coordinator's case in its sharpest form: the checkpoint's only
+    postprocess marker is the coarse ``postprocess`` stage, and its options say
+    ``diarize=False, translate_to=None`` - the earlier run asked for *no* optional
+    stage. A resume that now asks for German must translate, because the record
+    holds no German work. Trusting the coarse marker alone would mark the
+    transcript complete with no translation at all.
+    """
+    out_dir, state = direct_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    media = tmp_path / "retained.wav"
+    media.write_bytes(b"fake media")
+    transcript = Transcript(
+        source=str(source), language="en", segments=[Segment(0.0, 1.0, "hello")]
+    )
+    checkpoint = _direct_checkpoint(
+        source=source,
+        media=media,
+        finished_stages=["source", "fetch", "extract", "transcribe", "postprocess"],
+        options={
+            "formats": ["json"],
+            "diarize": False,
+            "diarizer_backend": "pyannote",
+            "translate_to": None,
+            "translator_backend": "ollama",
+        },
+        transcript=transcript,
+    )
+
+    result = pipeline.transcribe(
+        str(source),
+        formats=["json"],
+        output_dir=out_dir,
+        work_dir=tmp_path / "work",
+        input_root=tmp_path,
+        diarize=False,
+        translate_to="de",
+        resume_checkpoint=checkpoint,
+    )
+
+    assert state["translate_calls"] == 1, (
+        "the record enabled no translation, so the requested German must be produced"
+    )
+    assert state["translate_targets"] == ["de"]
+    assert _translated_language(result.transcript) == "de", (
+        "a marker must not stand in for work the record never requested"
+    )
+
+
+def test_direct_resume_reruns_translation_for_a_different_target(
+    tmp_path, direct_pipeline
+):
+    """A stage finished for French must not satisfy a request for German.
+
+    The record carries a per-stage ``translate`` marker and options that name
+    ``fr``. The resume targets ``de``: the retained French is a different stage's
+    work, so the translator must run and the target must come back German - never
+    the stale French marked complete.
+    """
+    out_dir, state = direct_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    media = tmp_path / "retained.wav"
+    media.write_bytes(b"fake media")
+    transcript = Transcript(
+        source=str(source),
+        language="en",
+        segments=[Segment(0.0, 1.0, "hello", translated_text="bonjour")],
+    )
+    transcript.metadata["translation"] = {
+        "backend": "ollama",
+        "route": "test",
+        "target": "fr",
+        "segments_translated": 1,
+    }
+    checkpoint = _direct_checkpoint(
+        source=source,
+        media=media,
+        finished_stages=["source", "fetch", "extract", "transcribe", "translate", "postprocess"],
+        options={
+            "formats": ["json"],
+            "diarize": False,
+            "diarizer_backend": "pyannote",
+            "translate_to": "fr",
+            "translator_backend": "ollama",
+        },
+        transcript=transcript,
+    )
+
+    result = pipeline.transcribe(
+        str(source),
+        formats=["json"],
+        output_dir=out_dir,
+        work_dir=tmp_path / "work",
+        input_root=tmp_path,
+        diarize=False,
+        translate_to="de",
+        resume_checkpoint=checkpoint,
+    )
+
+    assert state["translate_calls"] == 1, "a different target must rerun the translator"
+    assert state["translate_targets"] == ["de"]
+    assert _translated_language(result.transcript) == "de", (
+        "the resume must not serve French text as though it were German"
+    )
+    # The stale French must be gone, not merely relabelled: the segment now holds
+    # what the German rerun produced.
+    assert result.transcript.segments[0].translated_text == "de:hello", (
+        "the retained French translation must not survive as though it were German"
+    )
+
+
+def test_direct_resume_reruns_translation_for_a_different_backend(
+    tmp_path, direct_pipeline
+):
+    """A stage finished with one translator backend must not satisfy another.
+
+    Same target (``fr``) but the resume names a different translator backend. The
+    retained translation came from the other provider, so it is not this stage's
+    work and must be redone by the requested provider.
+    """
+    out_dir, state = direct_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    media = tmp_path / "retained.wav"
+    media.write_bytes(b"fake media")
+    transcript = Transcript(
+        source=str(source),
+        language="en",
+        segments=[Segment(0.0, 1.0, "hello", translated_text="bonjour")],
+    )
+    transcript.metadata["translation"] = {
+        "backend": "ollama",
+        "route": "test",
+        "target": "fr",
+        "segments_translated": 1,
+    }
+    checkpoint = _direct_checkpoint(
+        source=source,
+        media=media,
+        finished_stages=["source", "fetch", "extract", "transcribe", "translate", "postprocess"],
+        options={
+            "formats": ["json"],
+            "diarize": False,
+            "diarizer_backend": "pyannote",
+            "translate_to": "fr",
+            "translator_backend": "ollama",
+        },
+        transcript=transcript,
+    )
+
+    result = pipeline.transcribe(
+        str(source),
+        formats=["json"],
+        output_dir=out_dir,
+        work_dir=tmp_path / "work",
+        input_root=tmp_path,
+        diarize=False,
+        translate_to="fr",
+        translator_backend="nllb",
+        resume_checkpoint=checkpoint,
+    )
+
+    assert state["translate_calls"] == 1, "a different backend must rerun the translator"
+    assert state["translate_backends"] == ["nllb"], (
+        "the rerun must consult the backend the caller asked for"
+    )
+    assert result.transcript.metadata["translation"]["backend"] == "nllb"
+
+
+def test_direct_resume_reruns_diarization_for_a_different_backend(
+    tmp_path, direct_pipeline
+):
+    """A diarization finished with one backend must not satisfy another.
+
+    The record marks ``diarize`` finished under the ``pyannote`` backend; the
+    resume asks for a different diarizer backend. The retained labels came from
+    the other provider, so the diarizer must run again - and it must be handed
+    the audio, which means the re-acquisition path is exercised, not skipped.
+    """
+    out_dir, state = direct_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    media = tmp_path / "retained.wav"
+    media.write_bytes(b"fake media")
+    transcript = Transcript(
+        source=str(source),
+        language="en",
+        segments=[Segment(0.0, 1.0, "hello", speaker="SPEAKER_00")],
+    )
+    transcript.metadata["diarization"] = {
+        "backend": "pyannote",
+        "speakers": ["SPEAKER_00"],
+        "turns": 1,
+        "segments_labelled": 1,
+    }
+    checkpoint = _direct_checkpoint(
+        source=source,
+        media=media,
+        finished_stages=["source", "fetch", "extract", "transcribe", "diarize", "postprocess"],
+        options={
+            "formats": ["json"],
+            "diarize": True,
+            "diarizer_backend": "pyannote",
+            "translate_to": None,
+            "translator_backend": "ollama",
+        },
+        transcript=transcript,
+    )
+
+    result = pipeline.transcribe(
+        str(source),
+        formats=["json"],
+        output_dir=out_dir,
+        work_dir=tmp_path / "work",
+        input_root=tmp_path,
+        diarize=True,
+        diarizer_backend="pyannote-community",
+        resume_checkpoint=checkpoint,
+    )
+
+    assert state["diarize_calls"] == 1, "a different backend must rerun the diarizer"
+    assert state["diarize_backends"] == ["pyannote-community"]
+    assert result.transcript.metadata["diarization"]["backend"] == "pyannote-community"
+
+
+def test_direct_resume_reuses_a_matching_stage_without_consulting_the_provider(
+    tmp_path, direct_pipeline
+):
+    """Control: when target and backend *do* match, the finished stage is reused.
+
+    The option match must not become a reason to redo everything. With the record
+    and the request naming the same target and backend, the translator must not
+    be consulted at all - the durable translation is served as it stands.
+    """
+    out_dir, state = direct_pipeline
+    source = tmp_path / "clip.wav"
+    source.write_bytes(b"fake media")
+    media = tmp_path / "retained.wav"
+    media.write_bytes(b"fake media")
+    transcript = Transcript(
+        source=str(source),
+        language="en",
+        segments=[Segment(0.0, 1.0, "hello", translated_text="hallo")],
+    )
+    transcript.metadata["translation"] = {
+        "backend": "ollama",
+        "route": "test",
+        "target": "de",
+        "segments_translated": 1,
+    }
+    checkpoint = _direct_checkpoint(
+        source=source,
+        media=media,
+        finished_stages=["source", "fetch", "extract", "transcribe", "translate", "postprocess"],
+        options={
+            "formats": ["json"],
+            "diarize": False,
+            "diarizer_backend": "pyannote",
+            "translate_to": "de",
+            "translator_backend": "ollama",
+        },
+        transcript=transcript,
+    )
+
+    result = pipeline.transcribe(
+        str(source),
+        formats=["json"],
+        output_dir=out_dir,
+        work_dir=tmp_path / "work",
+        input_root=tmp_path,
+        diarize=False,
+        translate_to="de",
+        resume_checkpoint=checkpoint,
+    )
+
+    assert state["translate_calls"] == 0, "a matching finished stage must be reused"
+    assert _translated_language(result.transcript) == "de"
+    assert result.transcript.segments[0].translated_text == "hallo"
