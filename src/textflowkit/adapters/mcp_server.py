@@ -51,7 +51,7 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
-from textflowkit.core.service import service_work_root
+from textflowkit.core.service import ServiceConfigurationError, service_work_root
 from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
@@ -66,7 +66,7 @@ from textflowkit.render import (
     TEXT_FORMATS,
     atomic_write_bytes,
     render,
-    render_bytes,
+    render_requested,
 )
 from textflowkit.sources.detect import PLATFORMS
 
@@ -591,15 +591,17 @@ def export_transcript(
     if tr is None:
         return {"error": "job contains no transcript"}
 
-    fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
-    bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
-    if bad:
-        return {"error": f"unsupported format(s): {', '.join(bad)}"}
-    if len(fmt_list) != len(set(fmt_list)):
-        return {"error": "duplicate output format"}
+    fmt_list = [f.strip() for f in formats.split(",") if f.strip()]
     try:
-        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in fmt_list]
-    except (ValueError, ImportError) as exc:
+        # `render_requested` is the shared preflight: it normalizes and
+        # validates the ENTIRE format list first (so a later unsupported or
+        # duplicate entry is refused before any renderer runs), then checks
+        # every requested binary dependency, then renders all formats and
+        # bounds the whole batch before anything is published - so a refusal is
+        # a structured error with no file created and no existing file
+        # replaced. Publication runs only on the returned batch.
+        rendered = render_requested(tr, fmt_list, title=job.id)
+    except (ValueError, ImportError, ServiceConfigurationError) as exc:
         return {"error": str(exc)}
 
     try:

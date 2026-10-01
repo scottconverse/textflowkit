@@ -70,7 +70,7 @@ from textflowkit.render import (
     TEXT_FORMATS,
     atomic_write_bytes,
     render,
-    render_bytes,
+    render_requested,
 )
 
 try:  # optional extra
@@ -532,15 +532,16 @@ def export(
         raise HTTPException(status_code=500, detail="job contains no transcript")
 
     fmt_list = formats or ["srt", "vtt", "txt", "json"]
-    normalized = [f.lower().lstrip(".") for f in fmt_list]
-    bad = [f for f in normalized if f not in SUPPORTED_FORMATS]
-    if bad:
-        raise HTTPException(status_code=422, detail=f"unsupported format(s): {', '.join(bad)}")
-    if len(normalized) != len(set(normalized)):
-        raise HTTPException(status_code=422, detail="duplicate output format")
     try:
-        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in normalized]
-    except (ValueError, ImportError) as exc:
+        # `render_requested` is the shared preflight: it normalizes and
+        # validates the ENTIRE format list first (so a later unsupported or
+        # duplicate entry is refused before any renderer runs), then checks
+        # every requested binary dependency, then renders all formats and
+        # bounds the whole batch before anything is published. Only after it
+        # returns the full batch does the publication loop below run, so a
+        # refusal leaves no file created and no existing file replaced.
+        rendered = render_requested(tr, fmt_list, title=job.id)
+    except (ValueError, ImportError, ServiceConfigurationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         out = ensure_output_dir(output_dir)

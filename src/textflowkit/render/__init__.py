@@ -182,7 +182,18 @@ _DOCX_UNSUPPORTED_FLAGS = 0x0049
 
 
 def validate_export_requirements(formats: list[str]) -> None:
-    """Fail before acquisition or inference when a requested export is unavailable."""
+    """Fail before acquisition, inference, or rendering when an export is unavailable.
+
+    The names are normalized with the same rule every render path uses, so a
+    caller may pass raw request spellings (`DOCX`, `.pdf`) and still get the
+    dependency checked. The check is a pure capability probe: it imports the
+    optional binary renderers and, for a PDF, resolves its fonts, so a missing
+    extra is refused before any work has been done for the request. A missing
+    dependency is raised as `ValueError` (the same type callers already map to
+    their 422 / structured-error contract), which is also what a malformed name
+    would produce - so the function never returns having silently skipped the
+    check for a format it could not understand.
+    """
     normalized = {fmt.lower().lstrip(".") for fmt in formats}
     try:
         if "docx" in normalized:
@@ -195,20 +206,49 @@ def validate_export_requirements(formats: list[str]) -> None:
         raise ValueError(str(exc)) from exc
 
 
-def _render_requested(
-    transcript: Transcript, formats: list[str], title: str | None
+def render_requested(
+    transcript: Transcript, formats: list[str], title: str | None = None
 ) -> list[tuple[str, bytes]]:
-    """Validate and render every format before touching any destination file."""
-    rendered: list[tuple[str, bytes]] = []
+    """Validate and render every format before touching any destination file.
+
+    This is the shared preflight for *every* surface that publishes rendered
+    output, `write_all`/`ensure_outputs` (the CLI and the submission path) and
+    the HTTP/MCP export doors alike. It has three phases, and the first two
+    cover the **entire** format list before the third runs at all:
+
+    1. **Normalize and validate the whole set.** Every requested name is
+       normalized (`lower().lstrip(".")`) and refused with `ValueError` if it is
+       unsupported or a duplicate - checked across all names up front, so a later
+       unknown (`["srt", "xyzzy"]`) or duplicate (`["srt", "srt"]`) entry is
+       refused before the first renderer runs and before any file is written
+       (normalization is complete for the whole list before any check runs, so
+       the refusal names the raw entry the caller sent).
+    2. **Check every requested dependency.** `validate_export_requirements` is
+       asked with the **normalized** list, so a missing DOCX/PDF extra is a
+       `ValueError` before any renderer is reached.
+    3. **Render, then bound the batch.** Every format is rendered through
+       `render_bytes`, and the **whole batch** is bounded with
+       `enforce_output_limit` - so a `ServiceConfigurationError` for an
+       over-limit aggregate is raised before a single destination is written.
+
+    `title` is the string written into formats that carry one (`md`, docx, pdf);
+    the export doors pass the job id. Raises `ValueError` for an unsupported or
+    duplicated format and for a missing export dependency, `ValueError`/
+    `ImportError` out of a renderer, and `ServiceConfigurationError` when the
+    rendered aggregate exceeds the configured output-byte limit.
+    """
+    normalized = [fmt.lower().lstrip(".") for fmt in formats]
     seen: set[str] = set()
-    for fmt in formats:
-        norm = fmt.lower().lstrip(".")
+    for fmt, norm in zip(formats, normalized):
         if norm not in SUPPORTED_FORMATS:
             raise ValueError(f"unsupported format: {fmt}")
         if norm in seen:
             raise ValueError(f"duplicate output format: {fmt}")
         seen.add(norm)
-        rendered.append((norm, render_bytes(transcript, norm, title=title)))
+    validate_export_requirements(normalized)
+    rendered: list[tuple[str, bytes]] = [
+        (norm, render_bytes(transcript, norm, title=title)) for norm in normalized
+    ]
     enforce_output_limit(sum(len(data) for _, data in rendered))
     return rendered
 
@@ -825,7 +865,7 @@ def ensure_outputs(
     from textflowkit.core.paths import ensure_output_dir
 
     out_dir = ensure_output_dir(str(output_dir))
-    rendered = _render_requested(transcript, formats, title)
+    rendered = render_requested(transcript, formats, title)
     by_suffix: dict[str, Path] = {}
     for raw in existing or []:
         path = Path(raw)
@@ -871,7 +911,7 @@ def write_all(
     from textflowkit.core.paths import ensure_output_dir
 
     out_dir = ensure_output_dir(str(output_dir))
-    rendered = _render_requested(transcript, formats, title)
+    rendered = render_requested(transcript, formats, title)
     written: list[Path] = []
     for norm, data in rendered:
         path = out_dir / f"{stem}.{norm}"
@@ -892,6 +932,7 @@ __all__ = [
     "render",
     "render_bytes",
     "render_markdown",
+    "render_requested",
     "render_srt",
     "render_txt",
     "render_vtt",

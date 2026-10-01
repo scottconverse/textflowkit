@@ -37,6 +37,14 @@ any real encoding. Publication is never bypassed: the surfaces still call the
 real `atomic_write_bytes`, which is what these tests check leaves the disk
 untouched.
 
+The shared preflight works in three phases over the **whole** format list: it
+normalizes and validates every name first (so a later unknown or duplicate entry
+is refused before the first renderer runs), then checks the requested binary
+dependencies, then renders and bounds the aggregate. The per-door controls
+reflect that: the unknown/duplicate tests assert the renderer was **never
+called**, and the single-oversized tests assert a one-element over-budget batch
+is refused by the preflight before the destination is touched.
+
 Nothing here claims transactional rollback for a *filesystem* failure
 mid-publish (a full disk, a permission error on the third of five files). The
 claim is narrower and exact: the aggregate-limit refusal, and the render /
@@ -130,19 +138,20 @@ def production_output_budget(monkeypatch, tmp_path):
 def _patch_render_sizes(monkeypatch, sizes: dict[str, int]):
     """Make `render_bytes` return `sizes[fmt]` bytes, real limit still enforced.
 
-    The renderer is the only thing replaced. `len()` of the returned batch is
-    what `enforce_output_limit` sees, so the production byte budget is still the
-    real one from the environment.
+    The preflight calls the renderer through the `render` package's module global
+    (both doors share `textflowkit.render.render_requested`), so patching it on
+    `textflowkit.render` reaches the shared boundary whichever door is driven.
+    Everything else in the preflight is real: the normalized-set validation and
+    the aggregate `enforce_output_limit`, so the production byte budget is still
+    the real one from the environment.
     """
-    from textflowkit.adapters import http_server as http_mod
-    from textflowkit.adapters import mcp_server as mcp_mod
+    from textflowkit import render as render_mod
 
     def fake_render_bytes(transcript, fmt, *, title=None):
         fmt = fmt.lower().lstrip(".")
         return b"x" * sizes[fmt]
 
-    monkeypatch.setattr(http_mod, "render_bytes", fake_render_bytes)
-    monkeypatch.setattr(mcp_mod, "render_bytes", fake_render_bytes)
+    monkeypatch.setattr(render_mod, "render_bytes", fake_render_bytes)
 
 
 def _http_client():
@@ -245,12 +254,12 @@ def test_http_export_under_budget_is_allowed(production_output_budget, monkeypat
 
 def test_http_export_render_valueerror_maps_to_422(production_output_budget, monkeypatch):
     """A `ValueError` raised while rendering is a 422, not a 500 - and no file."""
-    from textflowkit.adapters import http_server as http_mod
+    from textflowkit import render as render_mod
 
     def boom(transcript, fmt, *, title=None):
         raise ValueError("render failed for this transcript")
 
-    monkeypatch.setattr(http_mod, "render_bytes", boom)
+    monkeypatch.setattr(render_mod, "render_bytes", boom)
     out_root = production_output_budget / "output"
     job = _seed_done_job(get_default_store())
 
@@ -269,12 +278,12 @@ def test_http_export_missing_dependency_importerror_maps_to_422(
     production_output_budget, monkeypatch
 ):
     """A missing export extra surfaces as a 422 the caller can read."""
-    from textflowkit.adapters import http_server as http_mod
+    from textflowkit import render as render_mod
 
     def missing(transcript, fmt, *, title=None):
         raise ImportError("The 'export' extra is required: pip install 'textflowkit[export]'")
 
-    monkeypatch.setattr(http_mod, "render_bytes", missing)
+    monkeypatch.setattr(render_mod, "render_bytes", missing)
     job = _seed_done_job(get_default_store())
 
     r = _http_client().post(
@@ -292,13 +301,13 @@ def test_http_export_unknown_format_rejected_before_rendering(
 ):
     """An unknown format is refused before any render or publication."""
     calls: list[str] = []
-    from textflowkit.adapters import http_server as http_mod
+    from textflowkit import render as render_mod
 
     def recording(transcript, fmt, *, title=None):
         calls.append(fmt)
         return b"x"
 
-    monkeypatch.setattr(http_mod, "render_bytes", recording)
+    monkeypatch.setattr(render_mod, "render_bytes", recording)
     job = _seed_done_job(get_default_store())
 
     r = _http_client().post(
@@ -317,13 +326,13 @@ def test_http_export_duplicate_format_rejected_before_rendering(
 ):
     """A duplicate format is refused before any render or publication."""
     calls: list[str] = []
-    from textflowkit.adapters import http_server as http_mod
+    from textflowkit import render as render_mod
 
     def recording(transcript, fmt, *, title=None):
         calls.append(fmt)
         return b"x"
 
-    monkeypatch.setattr(http_mod, "render_bytes", recording)
+    monkeypatch.setattr(render_mod, "render_bytes", recording)
     job = _seed_done_job(get_default_store())
 
     r = _http_client().post(
@@ -334,6 +343,36 @@ def test_http_export_duplicate_format_rejected_before_rendering(
 
     assert r.status_code == 422, r.text
     assert calls == [], "rendering ran before the duplicate format was rejected"
+
+
+def test_http_export_single_oversized_file_refused_before_writing(
+    production_output_budget, monkeypatch
+):
+    """A single file over the budget is refused by the preflight, not the writer.
+
+    Distinguishes the aggregate bound from the per-file one: a *one-element*
+    batch that is over budget must still be refused **before** the publication
+    loop, so no destination is created and an existing one is not replaced.
+    Budget is 10 bytes; `srt` renders to 12. The refusal must come from the
+    shared preflight (`ServiceConfigurationError` mapped to 422), leaving the
+    seeded `ORIGINAL` untouched.
+    """
+    out_root = production_output_budget / "output"
+    out_dir = out_root / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    job = _seed_done_job(get_default_store())
+    prior = out_dir / f"{job.id}.srt"
+    prior.write_bytes(b"ORIGINAL")
+
+    _patch_render_sizes(monkeypatch, {"srt": 12})
+    r = _http_client().post(
+        f"/jobs/{job.id}/export",
+        params={"formats": ["srt"], "output_dir": "out"},
+        headers=_auth_headers(),
+    )
+
+    assert r.status_code == 422, r.text
+    assert prior.read_bytes() == b"ORIGINAL", "an over-budget file replaced an existing one"
 
 
 # --- HTTP: defaults, empty, explicit replacement --------------------------
@@ -420,12 +459,12 @@ def test_http_export_render_failure_replaces_no_existing_file(
     prior = out_dir / f"{job.id}.srt"
     prior.write_bytes(b"ORIGINAL")
 
-    from textflowkit.adapters import http_server as http_mod
+    from textflowkit import render as render_mod
 
     def boom(transcript, fmt, *, title=None):
         raise ValueError("render failed for this transcript")
 
-    monkeypatch.setattr(http_mod, "render_bytes", boom)
+    monkeypatch.setattr(render_mod, "render_bytes", boom)
     r = _http_client().post(
         f"/jobs/{job.id}/export",
         params={"formats": ["srt"], "output_dir": "out"},
@@ -503,12 +542,12 @@ def test_mcp_export_render_valueerror_is_a_structured_error(
     production_output_budget, monkeypatch
 ):
     """A render `ValueError` becomes `{"error": ...}`, never a raise."""
-    from textflowkit.adapters import mcp_server as mcp_mod
+    from textflowkit import render as render_mod
 
     def boom(transcript, fmt, *, title=None):
         raise ValueError("render failed for this transcript")
 
-    monkeypatch.setattr(mcp_mod, "render_bytes", boom)
+    monkeypatch.setattr(render_mod, "render_bytes", boom)
     job = _seed_done_job(get_default_store())
 
     result = _call_export_transcript(job.id, "out", "srt")
@@ -525,12 +564,12 @@ def test_mcp_export_missing_dependency_is_a_structured_error(
     for one without the extra must return `{"error": ...}` naming the install,
     not raise an `ImportError` out of the tool.
     """
-    from textflowkit.adapters import mcp_server as mcp_mod
+    from textflowkit import render as render_mod
 
     def missing(transcript, fmt, *, title=None):
         raise ImportError("The 'export' extra is required: pip install 'textflowkit[export]'")
 
-    monkeypatch.setattr(mcp_mod, "render_bytes", missing)
+    monkeypatch.setattr(render_mod, "render_bytes", missing)
     job = _seed_done_job(get_default_store())
 
     result = _call_export_transcript(job.id, "out", "docx")
@@ -539,20 +578,86 @@ def test_mcp_export_missing_dependency_is_a_structured_error(
     assert "export" in result["error"]
 
 
-def test_mcp_export_duplicate_format_is_a_structured_error(production_output_budget):
-    """A duplicate format is a structured error, before any render."""
+def test_mcp_export_duplicate_format_is_a_structured_error(
+    production_output_budget, monkeypatch
+):
+    """A duplicate format is a structured error raised before any rendering.
+
+    The control mirrors the HTTP one (`..._duplicate_format_rejected_before_
+    rendering`): the *whole* list is validated first, so the duplicate in
+    `srt,srt` is refused before the first `srt` is ever rendered. A recording
+    renderer proves nothing ran and no file was published.
+    """
+    out_root = production_output_budget / "output"
+    calls: list[str] = []
+    from textflowkit import render as render_mod
+
+    def recording(transcript, fmt, *, title=None):
+        calls.append(fmt)
+        return b"x"
+
+    monkeypatch.setattr(render_mod, "render_bytes", recording)
     job = _seed_done_job(get_default_store())
+
     result = _call_export_transcript(job.id, "out", "srt,srt")
-    assert "error" in result
+
+    assert "error" in result, result
     assert "duplicate" in result["error"]
+    assert calls == [], "rendering ran before the duplicate format was rejected"
+    assert not (out_root / "out" / f"{job.id}.srt").exists()
 
 
-def test_mcp_export_unknown_format_is_a_structured_error(production_output_budget):
-    """An unknown format is a structured error, before any render."""
+def test_mcp_export_unknown_format_is_a_structured_error(
+    production_output_budget, monkeypatch
+):
+    """An unknown format is a structured error raised before any rendering.
+
+    The control mirrors the HTTP one (`..._unknown_format_rejected_before_
+    rendering`): a later unknown entry in `srt,xyzzy` is caught by the upfront
+    list validation, so the valid `srt` ahead of it is not rendered and no file
+    is published.
+    """
+    out_root = production_output_budget / "output"
+    calls: list[str] = []
+    from textflowkit import render as render_mod
+
+    def recording(transcript, fmt, *, title=None):
+        calls.append(fmt)
+        return b"x"
+
+    monkeypatch.setattr(render_mod, "render_bytes", recording)
     job = _seed_done_job(get_default_store())
+
     result = _call_export_transcript(job.id, "out", "srt,xyzzy")
-    assert "error" in result
+
+    assert "error" in result, result
     assert "xyzzy" in result["error"]
+    assert calls == [], "rendering ran before the unknown format was rejected"
+    assert not (out_root / "out" / f"{job.id}.srt").exists()
+
+
+def test_mcp_export_single_oversized_file_refused_before_writing(
+    production_output_budget, monkeypatch
+):
+    """A single MCP file over the budget is refused before publication.
+
+    MCP counterpart of the HTTP single-oversized control: a one-element batch
+    over the 10-byte budget is refused by the shared preflight with a structured
+    error, leaving a seeded destination file exactly as it was.
+    """
+    out_root = production_output_budget / "output"
+    out_dir = out_root / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    job = _seed_done_job(get_default_store())
+    prior = out_dir / f"{job.id}.srt"
+    prior.write_bytes(b"ORIGINAL")
+
+    _patch_render_sizes(monkeypatch, {"srt": 12})
+    result = _call_export_transcript(job.id, "out", "srt")
+
+    assert isinstance(result, dict) and "error" in result, result
+    assert "written" not in result
+    assert prior.read_bytes() == b"ORIGINAL", "an over-budget file replaced an existing one"
 
 
 def test_mcp_export_omitted_formats_uses_the_declared_default(
