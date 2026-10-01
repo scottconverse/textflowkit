@@ -48,10 +48,21 @@ def run_job(
     translate_to: str | None = None,
     translator_backend: str = "ollama",
     resume_checkpoint: dict[str, Any] | None = None,
+    on_started: Callable[[int], None] | None = None,
 ) -> None:
-    """Execute a job, recording its terminal state. Callers decide the thread."""
+    """Execute a job, recording its terminal state. Callers decide the thread.
+
+    ``on_started`` is called once with the exact attempt this run owns, the
+    instant the row is marked RUNNING. The executor uses it to pin the run's
+    execution identity *before* any pipeline fault can strike, so a later error
+    (or a store outage that also breaks reads) does not force it to re-derive the
+    identity from a possibly-broken store - the identity-loss failure. Optional:
+    an inline caller with no recovery concern passes nothing.
+    """
     # Do not start work that has already been cancelled or otherwise finished.
     # `submit` only hands us fresh jobs; explicit resume prepares the row first.
+    # This read is also the best available pre-start identity: if the start write
+    # below fails, the row still carries this attempt (the run never advanced it).
     current = store.get(job.id)
     if current is not None and current.is_terminal:
         return
@@ -59,7 +70,19 @@ def run_job(
     # Starting a run both marks the row RUNNING and bumps its attempt, in one
     # operation, so a terminal row written by this run is distinguishable from
     # the one it replaced - which is what lets a resume refuse a stale decision.
-    store.begin_attempt(job.id)
+    #
+    # The identity the run owns is reported the instant it is known, *before* any
+    # work, so a later fault never has to re-derive it from a possibly-broken
+    # store:
+    #   - start landed  -> the run owns the new attempt (``started.attempt``);
+    #   - start did not land -> the runner reports nothing, and the caller keeps
+    #     the pre-start identity it already holds (the row's attempt before the
+    #     run, which the run never advanced past) - or ``None`` if it could not
+    #     read the row either, so recovery refuses to guess it rather than
+    #     clearing a stranded row on a no-match.
+    started = store.begin_attempt(job.id)
+    if on_started is not None and started is not None:
+        on_started(started.attempt)
     store.update(job.id, progress="starting")
 
     def _progress(stage: str) -> None:

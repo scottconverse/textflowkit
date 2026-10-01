@@ -59,13 +59,21 @@ class TerminalWrite:
     reopened (attempt advanced) is left to its new owner instead of being
     overwritten with this run's stale verdict.
 
+    ``attempt`` may be ``None``: the run's start write never landed, so the
+    identity it owned is *unknown* - it was never captured. An unknown identity
+    must stay unresolved rather than be guessed, because a guarded write pinned
+    to a guessed identity that matches nothing would read as "already resolved"
+    and clear the latch while the row is still stranded. ``None`` therefore makes
+    reconciliation refuse to spend the entry (it stays outstanding) rather than
+    treat a no-match as success.
+
     ``allowed_states`` bounds the guarded write further: reconciliation must only
     land on a row still in the state this run left it in (PENDING/RUNNING), never
     on one that reached a terminal state by another path (e.g. a cancellation).
     """
 
     job_id: str
-    attempt: int
+    attempt: int | None
     fields: dict[str, Any] = field(default_factory=dict)
     allowed_states: frozenset[JobState] = field(
         default_factory=lambda: frozenset({JobState.PENDING, JobState.RUNNING})
@@ -148,6 +156,15 @@ class JobExecutor:
         #   critical section that pops the token, so ownership spans the whole
         #   queued/running lifetime and nothing external can observe a hole.
         self._owned: set[str] = set()
+        # The execution identity each live run owns, keyed by job id: the attempt
+        # its row carries, captured from the successful start (`begin_attempt`)
+        # and, before that, from the worker's own pre-start read. Held under
+        # `self._lock` and dropped when the run ends. It exists so a run's error
+        # handler pins repair to the identity the run actually owned instead of
+        # re-reading the store after a fault - a store outage that also breaks
+        # reads would otherwise force a guess (0) and lose ownership of a row that
+        # is really at a positive attempt, the identity-loss failure.
+        self._owned_attempts: dict[str, int | None] = {}
         self._lock = threading.RLock()
         self._started = False
         self._shutdown = False
@@ -234,10 +251,19 @@ class JobExecutor:
         moved on (a resume, a cancellation) is left alone - the stale verdict is
         never forced onto it.
 
-        Returns True when the write path is proven healthy (a write landed, or
-        every pending row was already accounted for) so the latch may clear; False
-        when the store still rejects writes, so admission must stay refused. One
-        store call per refused admission, never a loop - no retry storm.
+        Returns True only when *every* stranded row has been resolved (the write
+        path is proven healthy and nothing remains outstanding) so the latch may
+        clear; False when the store still rejects writes, or when a stranded row
+        remains (this call resolved one, but others are still outstanding), so
+        admission stays refused. One store call per refused admission, never a
+        loop - no retry storm; each later refused admission spends one more.
+
+        A row whose owned identity is unknown (``attempt is None``) is handled
+        without a guess: recovery tries to *read* the row to learn the attempt
+        currently on it, and pins the guarded write to that. Reading to pin a
+        write is not the forbidden "read as recovery" - the latch still clears
+        only when a *write* lands. If the read also fails, the entry stays
+        outstanding (unresolved) rather than being cleared on a guessed identity.
         """
         with self._lock:
             pending = next(iter(self._pending_terminal.values()), None)
@@ -249,6 +275,30 @@ class JobExecutor:
             # rather than cleared on a read that says nothing about writes.
             return False
 
+        observed_attempt = pending.attempt
+        if observed_attempt is None:
+            # The run's start never landed and no pre-start identity was captured,
+            # so pinning is not yet possible. Learn the row's current attempt from
+            # a read so the guarded write can be keyed to a real identity - a read
+            # here only *pinpoints* the write, it never clears the latch. If the
+            # read fails too, the identity stays unknown and the entry stays
+            # outstanding: a conditional write that matches nothing must not be
+            # read as "resolved" when we do not know what it should have matched.
+            try:
+                row = self._store.get(pending.job_id)
+            except Exception:  # noqa: BLE001 - a broken read leaves it unresolved
+                return False
+            observed_attempt = None if row is None else row.attempt
+
+        if observed_attempt is None:
+            # Row absent: there is nothing left to resolve for this id.
+            with self._lock:
+                self._pending_terminal.pop(pending.job_id, None)
+                drained = not self._pending_terminal
+                if drained:
+                    self._clear_store_failure()
+            return drained
+
         try:
             # Guarded: only lands on a row still at the attempt/states this run
             # left it. None means "row moved on / already terminal" - that is a
@@ -256,7 +306,7 @@ class JobExecutor:
             self._store.claim(
                 pending.job_id,
                 allowed_states=pending.allowed_states,
-                observed_attempt=pending.attempt,
+                observed_attempt=observed_attempt,
                 **pending.fields,
             )
         except Exception:  # noqa: BLE001 - a failed write keeps the fault latched
@@ -265,9 +315,9 @@ class JobExecutor:
         with self._lock:
             self._pending_terminal.pop(pending.job_id, None)
             drained = not self._pending_terminal
-        if drained:
-            self._clear_store_failure()
-        return True
+            if drained:
+                self._clear_store_failure()
+        return drained
 
     def _refuse_if_store_failed(self) -> None:
         """Gate admission on store health. Called under `self._lock`.
@@ -462,9 +512,18 @@ class JobExecutor:
                         # retry storm - a single bounded write on the next refused
                         # admission clears it.
                         error_text = f"{type(exc).__name__}: {exc}"
+                        with self._lock:
+                            # The execution identity captured by `_run_one` from
+                            # the successful start (`begin_attempt`). It was
+                            # recorded *before* the fault struck, so the error
+                            # handler never re-derives it from a store read the
+                            # same outage may have broken - the identity-loss
+                            # failure. `None` means the start never landed and no
+                            # pre-start read was possible: genuinely unknown.
+                            owned_attempt = self._owned_attempts.pop(job_id, None)
                         pending = TerminalWrite(
                             job_id=job_id,
-                            attempt=self._owned_attempt(job_id),
+                            attempt=owned_attempt,
                             fields={
                                 "state": JobState.ERROR,
                                 "error": error_text,
@@ -477,28 +536,17 @@ class JobExecutor:
                             # Keep the failed terminal row so a later recovery
                             # write can resolve it truthfully rather than leaving
                             # it RUNNING forever, pinned to the attempt this run
-                            # owned so a newer owner's row is never clobbered.
+                            # owned so a newer owner's row is never clobbered. An
+                            # unknown attempt stays None so recovery refuses to
+                            # guess it.
                             self._record_store_failure(store_exc, pending=pending)
                 finally:
                     with self._lock:
                         self._tokens.pop(job_id, None)
                         self._owned.discard(job_id)
+                        self._owned_attempts.pop(job_id, None)
             finally:
                 self._queue.task_done()
-
-    def _owned_attempt(self, job_id: str) -> int:
-        """The attempt a failed run left on its row, for ownership-pinned repair.
-
-        Best-effort: if the row cannot be read (the store read failed too), fall
-        back to 0. Reconciliation then still requires the row to be in a
-        non-terminal state at attempt 0, which a row that actually advanced past
-        this run will not match - so the fallback refuses rather than clobbers.
-        """
-        try:
-            row = self._store.get(job_id)
-        except Exception:  # noqa: BLE001 - a broken read is handled by the guard
-            return 0
-        return row.attempt if row is not None else 0
 
     def _run_one(self, job_id: str, kwargs: dict[str, Any], token: CancelToken) -> None:
         from textflowkit.core.runner import run_job
@@ -506,7 +554,29 @@ class JobExecutor:
         job = self._store.get(job_id)
         if job is None or job.is_terminal:
             return  # cancelled or reaped before we got to it
-        run_job(job, self._store, check_cancel=token.checkpoint, **kwargs)
+
+        # Seed the owned identity with the attempt this read saw: it is the row's
+        # attempt *before* the run, which is what repair must pin if the start
+        # never lands (the run did not advance past it). A start that does land
+        # overrides this with the new attempt. Kept under `self._lock` and keyed
+        # by id (like `_tokens`), so the worker's error handler can read it back
+        # without `_run_one` having to return anything.
+        with self._lock:
+            self._owned_attempts[job_id] = job.attempt
+
+        def _on_started(attempt: int | None) -> None:
+            # Called by the runner the instant the row is marked RUNNING, with the
+            # exact attempt it owns - or ``None`` when neither the start nor the
+            # pre-start read was possible. Recorded here, before the pipeline can
+            # fail, so the error handler pins repair to the real identity rather
+            # than re-reading (and possibly misreading) it after a fault.
+            if attempt is not None:
+                with self._lock:
+                    self._owned_attempts[job_id] = attempt
+
+        run_job(
+            job, self._store, check_cancel=token.checkpoint, on_started=_on_started, **kwargs
+        )
 
 
 # Process-wide default executor, shared by the adapters.
