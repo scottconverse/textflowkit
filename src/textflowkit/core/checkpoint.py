@@ -376,6 +376,7 @@ def prepare_resume(
         job.id,
         allowed_states=RESUMABLE_CLAIM_STATES,
         observed_attempt=observed_attempt,
+        advance_attempt=True,
         state=JobState.PENDING,
         progress="resuming",
         error=None,
