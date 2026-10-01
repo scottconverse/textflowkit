@@ -392,10 +392,33 @@ def write_checkpoint(
     store: JobStore,
     job_id: str,
     checkpoint: CheckpointRecord | dict[str, Any],
+    *,
+    observed_attempt: int | None = None,
 ) -> Job | None:
-    """Persist a checkpoint through the existing store update path."""
+    """Persist a checkpoint through the existing store update path.
+
+    ``observed_attempt`` is the generation a *run* owns. When given, the write
+    goes through the store's guarded run-owned path, so a checkpoint produced by
+    an old attempt cannot overwrite the checkpoint of a newer generation that has
+    taken the row over, nor contaminate a row that has since reached a terminal
+    state. It deliberately does *not* refuse an accepted cancellation: a run that
+    has been asked to stop still publishes the work it has completed, because
+    that checkpoint is the resume material a later attempt reads - discarding it
+    would throw away the reason the cancellation is cooperative at all.
+
+    Omitting ``observed_attempt`` keeps the original three-argument contract for
+    callers that are not a run owning a generation (tests, adapters, embedding):
+    those write unconditionally, exactly as before.
+    """
     payload = checkpoint.to_dict() if isinstance(checkpoint, CheckpointRecord) else dict(checkpoint)
-    return store.update(job_id, checkpoint=payload)
+    if observed_attempt is None:
+        return store.update(job_id, checkpoint=payload)
+    return store.update_owned(
+        job_id,
+        observed_attempt=observed_attempt,
+        refuse_if_cancelled=False,
+        checkpoint=payload,
+    )
 
 
 def transcript_for_job(job: Job | None) -> Transcript | None:

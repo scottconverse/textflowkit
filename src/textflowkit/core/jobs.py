@@ -18,6 +18,7 @@ loop share a timestamp, and tie-breaking by insertion order silently inverts
 
 from __future__ import annotations
 
+import copy
 import os
 import threading
 import time
@@ -259,22 +260,167 @@ class JobStore(ABC):
     def clear(self) -> None:
         """Remove every job."""
 
-    def begin_attempt(self, job_id: str) -> Job | None:
-        """Mark a job RUNNING and bump its attempt counter, as one operation.
+    def update_owned(
+        self,
+        job_id: str,
+        *,
+        observed_attempt: int,
+        allowed_states: frozenset[JobState] | set[JobState] = frozenset(
+            {JobState.PENDING, JobState.RUNNING}
+        ),
+        refuse_if_cancelled: bool = True,
+        **fields: Any,
+    ) -> Job | None:
+        """Patch a *run-owned* row atomically, pinned to the owning generation.
 
-        Called by the runner when an execution actually starts. Both shipped
-        stores override this atomically; this default exists only so a third-party
-        store that offers nothing but `update` still works. It is a read-then-write
-        and so is *not* atomic - a store relying on it inherits the very
-        stale-attempt window this method exists to close - which is why the real
-        implementations do not use it.
+        A run writes progress and checkpoints while it is running; those writes
+        are not ownership transitions, so ``update`` (unconditional by design)
+        was used for them. That left a read-then-write: the runner read the row,
+        tested it, then wrote, and a newer generation - a resume claim, which
+        advances ``attempt``, or an accepted cancellation landing between the two
+        - was silently overwritten. This is the guarded form.
+
+        Refuses (``None``) when the row is absent, no longer carries
+        ``observed_attempt`` (a newer owner has it), is in a state outside
+        ``allowed_states`` (terminal rows are never rewritten by a run), or -
+        when ``refuse_if_cancelled`` is true - already carries an accepted
+        cancellation. The last guard is what keeps an accepted cancellation's
+        ``cancelling`` label from being replaced by the next stage name: the
+        flag and the progress write are tested and applied in one operation, so
+        no acceptance can slip between them.
+
+        ``refuse_if_cancelled=False`` is for the *checkpoint* write: a run that
+        has been asked to stop keeps writing the work it has completed, because
+        that checkpoint is exactly the resume material a later attempt reads. A
+        cancellation must not throw away work in flight, so the checkpoint is
+        allowed to land on a cancelling row - but still only on the row this run
+        owns, and never on a terminal or newer one.
+
+        Returns the updated job, or ``None`` when the guard refuses. The default
+        reads and then writes through ``update`` and so is *not* atomic; both
+        shipped stores override it with the guarded transition in one write.
         """
-        return self.update(job_id, state=JobState.RUNNING, attempt=self._next_attempt(job_id))
+        current = self.get(job_id)
+        if current is None:
+            return None
+        allowed = frozenset(allowed_states)
+        if current.state not in allowed:
+            return None
+        if current.attempt != observed_attempt:
+            return None
+        if refuse_if_cancelled and current.cancel_requested:
+            return None
+        return self.update(job_id, **fields)
 
-    def _next_attempt(self, job_id: str) -> int:
-        """The attempt number a fresh run should carry (current + 1)."""
+    def begin_attempt(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Atomically start a run: mark RUNNING and bump the attempt in one write.
+
+        The start is a *guarded* transition - it refuses (None) unless the row is
+        still PENDING, still carries no accepted cancellation, and still holds the
+        generation the caller acquired. That is what makes a queued cancellation
+        final: ``cancel`` on a still-queued row lands CANCELLED (terminal) through
+        ``accept_cancel``, and the worker that later dequeues it finds a start
+        that refuses rather than a job resurrected into RUNNING after it was
+        already cancelled. The runner treats a refused start as "do not run" and
+        returns without entering the engine.
+
+        ``observed_attempt`` pins the generation the submit/enqueue actually
+        acquired. A stale queue entry for an id that was cancelled and then
+        resumed names the *old* generation, so its start is refused and it cannot
+        run beside the newer owner. ``None`` means "the caller did not pin one",
+        which keeps the state-and-flag guard alone.
+
+        The returned row carries the run's owned attempt (its execution identity);
+        a caller reports it *before* any pipeline fault can strike, so a later
+        error never has to re-derive it from a possibly-broken store.
+
+        Both shipped stores override this atomically; this default delegates to
+        the store's own ``claim``, so a store whose ``claim`` is atomic inherits a
+        correct start. A store that implements neither atomically inherits the
+        window this method exists to close.
+        """
+        return self.claim(
+            job_id,
+            allowed_states=frozenset({JobState.PENDING}),
+            observed_attempt=observed_attempt,
+            advance_attempt=True,
+            state=JobState.RUNNING,
+            cancel_requested=False,
+        )
+
+    def accept_cancel(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Atomically accept a cancellation against one named generation.
+
+        Refuses (None) when the row is absent, already terminal (including
+        already CANCELLED - a second cancel changes nothing and is not a new
+        acceptance), or no longer carries ``observed_attempt``. Otherwise:
+
+        - **PENDING** (queued, or a claimed row no worker has started): land
+          CANCELLED immediately. The row is honestly finished - no work is in
+          flight to stop - and the terminal state is what stops a later start
+          from resurrecting it.
+        - **RUNNING**: record ``cancel_requested`` and progress ``cancelling``
+          but stay NON-terminal. Cancellation is cooperative and a single long
+          model call cannot be interrupted mid-call, so publishing CANCELLED here
+          would claim a stop that has not happened. The token drives the actual
+          stop; the runner's finalize lands the terminal CANCELLED when the call
+          really returns.
+
+        The default is a read-then-write and so is *not* atomic; both shipped
+        stores override it with the check-and-set in one write.
+        """
         job = self.get(job_id)
-        return (job.attempt + 1) if job is not None else 0
+        if job is None or job.is_terminal:
+            return None
+        if observed_attempt is not None and job.attempt != observed_attempt:
+            return None
+        if job.state is JobState.PENDING:
+            return self.update(
+                job_id,
+                state=JobState.CANCELLED,
+                progress="cancelled",
+                cancel_requested=True,
+            )
+        return self.update(job_id, cancel_requested=True, progress="cancelling")
+
+    def finalize_done(
+        self, job_id: str, *, observed_attempt: int, **fields: Any
+    ) -> Job | None:
+        """Atomically choose the terminal row for a successful run.
+
+        Lands CANCELLED when the *same owned generation* carries an accepted
+        cancellation (``cancel_requested`` true and still non-terminal), and DONE
+        with ``fields`` otherwise. The choice is made in the same atomic write as
+        the row update, so there is no window between "read the cancellation
+        flag" and "write DONE" - the exact race that let a finished-looking DONE
+        row carry ``cancel_requested: true``.
+
+        Refuses (None) when the row is absent, has already reached a terminal
+        state (completion landed first, so a later cancel is refused at
+        ``cancel`` - it never reaches here), or no longer carries
+        ``observed_attempt`` (a newer retry owns the row). It must not return None
+        for a row it could still resolve: an accepted cancellation on the owned
+        generation is written CANCELLED, never left RUNNING.
+
+        On the CANCELLED branch the run keeps its *resume work*: the checkpoint is
+        left exactly as the pipeline wrote it (with its full transcript) and any
+        outputs already rendered are recorded, because those artifacts are really
+        on disk and deleting or hiding them would misreport the run. Only the DONE
+        branch moves the transcript onto the job field and reduces the checkpoint
+        to metadata - the single-copy rule.
+
+        The default is a read-then-write and so is *not* atomic; both shipped
+        stores override it with the guarded transition in one write.
+        """
+        job = self.get(job_id)
+        if job is None or job.is_terminal or job.attempt != observed_attempt:
+            return None
+        if job.cancel_requested:
+            patch: dict[str, Any] = {"state": JobState.CANCELLED, "progress": "cancelled"}
+            if "outputs" in fields:
+                patch["outputs"] = list(fields["outputs"] or [])
+            return self.update(job_id, **patch)
+        return self.update(job_id, state=JobState.DONE, **fields)
 
     def reap_incomplete(self, *, reason: str) -> int:
         """Fail any job left mid-flight, returning how many were reaped.
@@ -364,18 +510,100 @@ class MemoryJobStore(JobStore):
             job.updated_at = time.time()
             return job
 
-    def begin_attempt(self, job_id: str) -> Job | None:
-        """Start a run: mark RUNNING and bump the attempt, atomically.
+    def update_owned(
+        self,
+        job_id: str,
+        *,
+        observed_attempt: int,
+        allowed_states: frozenset[JobState] | set[JobState] = frozenset(
+            {JobState.PENDING, JobState.RUNNING}
+        ),
+        refuse_if_cancelled: bool = True,
+        **fields: Any,
+    ) -> Job | None:
+        """One locked write: the ownership test and the patch are indivisible.
 
-        A running job's attempt names the execution now in flight, so a terminal
-        row produced by that run is distinguishable from the one it replaced.
+        The test cannot be split from the write, so an acceptance or a newer
+        claim that lands first makes this refuse rather than be overwritten.
+        """
+        allowed = frozenset(allowed_states)
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.state not in allowed:
+                return None
+            if job.attempt != observed_attempt:
+                return None
+            if refuse_if_cancelled and job.cancel_requested:
+                return None
+            for key, value in fields.items():
+                setattr(job, key, value)
+            job.updated_at = time.time()
+            return job
+
+    def begin_attempt(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Start a run atomically, only from a still-PENDING, uncancelled row.
+
+        The guard is the whole point: a queued cancellation moves the row to
+        CANCELLED first, so the start refuses and the worker does not resurrect
+        it. ``observed_attempt`` additionally pins the acquired generation so a
+        stale queue entry cannot start a newer owner's row.
+
+        Returns a *detached* snapshot of the row the atomic start produced (its
+        ``attempt`` is the run's owned identity), or None when the start is
+        refused. The copy is taken under the lock and then returned, so it is
+        one instant's worth of the row: a later write by another owner - a resume
+        claim advancing the attempt, a cancellation, a rewritten
+        checkpoint/request - cannot mutate the identity this run pins its
+        terminal decision to. (Returning the live row would alias the run's
+        identity to whatever the row becomes next.)
         """
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
+            if job is None or job.is_terminal or job.state is not JobState.PENDING:
+                return None
+            if observed_attempt is not None and job.attempt != observed_attempt:
+                return None
+            if job.cancel_requested:
                 return None
             job.state = JobState.RUNNING
             job.attempt += 1
+            job.updated_at = time.time()
+            return copy.deepcopy(job)
+
+    def accept_cancel(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Cancel atomically: CANCELLED when still PENDING, flag-only when RUNNING."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.is_terminal:
+                return None
+            if observed_attempt is not None and job.attempt != observed_attempt:
+                return None
+            job.cancel_requested = True
+            if job.state is JobState.PENDING:
+                job.state = JobState.CANCELLED
+                job.progress = "cancelled"
+            else:
+                job.progress = "cancelling"
+            job.updated_at = time.time()
+            return job
+
+    def finalize_done(
+        self, job_id: str, *, observed_attempt: int, **fields: Any
+    ) -> Job | None:
+        """Choose CANCELLED/DONE for the owned generation in one locked write."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.is_terminal or job.attempt != observed_attempt:
+                return None
+            if job.cancel_requested:
+                job.state = JobState.CANCELLED
+                job.progress = "cancelled"
+                if "outputs" in fields:
+                    job.outputs = list(fields["outputs"] or [])
+            else:
+                for key, value in fields.items():
+                    setattr(job, key, value)
+                job.state = JobState.DONE
             job.updated_at = time.time()
             return job
 

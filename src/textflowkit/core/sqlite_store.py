@@ -18,7 +18,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.jobs import Job, JobState, JobStore, ObservedJob, _snapshot
+from textflowkit.core.jobs import (
+    TERMINAL_STATES,
+    Job,
+    JobState,
+    JobStore,
+    ObservedJob,
+    _snapshot,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -56,6 +63,23 @@ _MUTABLE = frozenset(
 )
 
 _CHECKPOINT_COLUMN = "checkpoint"
+
+
+def _supports_returning(conn: sqlite3.Connection) -> bool:
+    """Whether this SQLite runtime understands ``UPDATE ... RETURNING``.
+
+    Needed because the project supports Python 3.10 and up, and the SQLite a
+    given interpreter is linked against is not the interpreter's version: a
+    CPython build can ship an SQLite older than 3.35, where ``RETURNING`` is a
+    syntax error. The probe is a real statement that cannot match a row
+    (``WHERE 0``), so running it has no effect on any data; a syntax error is
+    the only failure it should ever raise on an unsupported runtime.
+    """
+    try:
+        conn.execute("UPDATE jobs SET seq = seq WHERE 0 RETURNING seq").fetchall()
+        return True
+    except sqlite3.OperationalError:
+        return False
 
 
 def _row_to_job(row: sqlite3.Row) -> Job:
@@ -100,6 +124,10 @@ class SqliteJobStore(JobStore):
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._migrate_locked()
+            # Probing here means the schema exists, so the harmless ``WHERE 0``
+            # statement inside has a table to name. The probe may open a write
+            # transaction, so it is committed away with the rest of the setup.
+            self._returning = _supports_returning(self._conn)
             self._conn.commit()
         self._max_jobs = max_jobs
 
@@ -211,6 +239,12 @@ class SqliteJobStore(JobStore):
         the claim acquires its own identity atomically with the transition. The
         identity is then usable as the exact key a later cleanup or decision
         names, even for a claim that never reaches RUNNING.
+
+        The returned row is the row the write actually produced (``RETURNING *``,
+        or a read taken inside the same open transaction where that is
+        unavailable), not a later re-read - so the ``attempt`` a resume pins its
+        cleanup to is the generation the claim really acquired, even if another
+        writer moves the row on immediately afterwards.
         """
         allowed = {state.value if isinstance(state, JobState) else str(state) for state in allowed_states}
         if not allowed:
@@ -230,9 +264,56 @@ class SqliteJobStore(JobStore):
             values.append(int(observed_attempt))
 
         with self._lock:
-            cur = self._conn.execute(
+            written = self._write_and_return_locked(
                 f"UPDATE jobs SET {', '.join(sets)}"
                 f" WHERE id = ? AND state IN ({placeholders}){attempt_clause}",
+                values,
+                job_id,
+            )
+        if written is None:
+            return None
+        return _row_to_job(written)
+
+    def update_owned(
+        self,
+        job_id: str,
+        *,
+        observed_attempt: int,
+        allowed_states: frozenset[JobState] | set[JobState] = frozenset(
+            {JobState.PENDING, JobState.RUNNING}
+        ),
+        refuse_if_cancelled: bool = True,
+        **fields: Any,
+    ) -> Job | None:
+        """Patch a run-owned row in one guarded statement.
+
+        Every ownership test rides in the UPDATE's ``WHERE``: the row must still
+        be at ``observed_attempt``, still in an allowed (non-terminal) state, and
+        - unless the caller is writing a checkpoint - still uncancelled. Because
+        the test and the write are one statement, an acceptance or a newer claim
+        that commits first makes this match nothing and return ``None``, so a
+        stale stage label or an old attempt's checkpoint can never land on the
+        newer row or replace an accepted ``cancelling`` label.
+        """
+        allowed = {state.value if isinstance(state, JobState) else str(state) for state in allowed_states}
+        if not allowed:
+            return None
+        patch = {k: v for k, v in fields.items() if k in _MUTABLE}
+        sets, values = self._encode_patch(patch)
+        # `updated_at` alone is always patchable, so the SET clause is never
+        # empty even when no recognized field was passed.
+        sets.append("updated_at = ?")
+        values.append(time.time())
+        placeholders = ", ".join("?" for _ in allowed)
+        values.append(job_id)
+        values.append(int(observed_attempt))
+        values.extend(sorted(allowed))
+        cancel_clause = " AND cancel_requested = 0" if refuse_if_cancelled else ""
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE jobs SET {', '.join(sets)}"
+                f" WHERE id = ? AND attempt = ? AND state IN ({placeholders})"
+                + cancel_clause,
                 values,
             )
             self._conn.commit()
@@ -240,16 +321,185 @@ class SqliteJobStore(JobStore):
             return None
         return self.get(job_id)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
-        """Start a run: mark RUNNING and bump the attempt, in one statement."""
+    def begin_attempt(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Start a run atomically, only from a still-PENDING, uncancelled row.
+
+        The state/flag/generation tests ride in the UPDATE's WHERE clause, so the
+        check-and-set is one statement: a queued cancellation that already landed
+        CANCELLED makes the start match nothing and the worker does not resurrect
+        it. ``observed_attempt`` adds ``AND attempt = ?`` so a stale queue entry
+        cannot start a newer owner's generation.
+
+        The returned row is the *actual row the write produced*, not a later
+        read of the table. The attempt is read (under the lock) before the
+        guarded write so the value the write produced is known locally, and the
+        update re-pins that same attempt in its ``WHERE`` - so a concurrent
+        writer that commits in between makes the update match nothing. The write
+        then returns the row it wrote (``RETURNING *``, or - on a runtime without
+        it - a re-read taken inside the same still-open transaction, before the
+        commit), decoded through the normal row-to-job path. Nothing is
+        fabricated onto a later read: every field of the returned snapshot is one
+        the atomic write left on the row, so a concurrent writer that advances
+        the row (or rewrites its checkpoint/request) after the commit cannot leak
+        into an identity the run will pin a terminal decision to.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT attempt FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            previous = int(row["attempt"] or 0)
+            if observed_attempt is not None and previous != int(observed_attempt):
+                return None
+            written = previous + 1
+            written_row = self._write_and_return_locked(
+                "UPDATE jobs SET state = ?, attempt = ?, updated_at = ?"
+                " WHERE id = ? AND state = ? AND cancel_requested = 0"
+                " AND attempt = ?",
+                (
+                    JobState.RUNNING.value,
+                    written,
+                    time.time(),
+                    job_id,
+                    JobState.PENDING.value,
+                    previous,
+                ),
+                job_id,
+            )
+        if written_row is None:
+            return None
+        return _row_to_job(written_row)
+
+    def _write_and_return_locked(
+        self, sql: str, values: list[Any], job_id: str
+    ) -> sqlite3.Row | None:
+        """Run one guarded UPDATE and return the row it actually wrote.
+
+        Caller holds ``self._lock``. The returned row is the write's own row, not
+        a later table read: with ``RETURNING *`` the database hands back the
+        post-update row as part of the statement, and on a runtime without it the
+        row is re-read *before* the commit, inside the same transaction, while
+        this connection still holds SQLite's write lock - so no other writer can
+        commit in between and the read sees exactly this write. Either way the
+        snapshot cannot be a later generation. Returns ``None`` when the guard
+        matched no row (nothing was written).
+        """
+        with self._lock:
+            if self._returning:
+                cur = self._conn.execute(sql + " RETURNING *", values)
+                row = cur.fetchone()
+                self._conn.commit()
+                return row
+            cur = self._conn.execute(sql, values)
+            if cur.rowcount == 0:
+                self._conn.commit()
+                return None
+            # Same transaction, pre-commit: the write lock is still held, so this
+            # read cannot observe another connection's later write.
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            self._conn.commit()
+            return row
+
+    def accept_cancel(self, job_id: str, *, observed_attempt: int | None = None) -> Job | None:
+        """Cancel atomically, choosing the patch from the row's own state.
+
+        One statement, so the "still PENDING" test and the write it selects are
+        indivisible. SQLite evaluates every SET expression against the row's
+        *pre-update* values, so the CASE on ``state`` reads the state the WHERE
+        clause just admitted. A PENDING row becomes CANCELLED; a RUNNING row only
+        records the accepted flag and progress, staying non-terminal until the run
+        really stops.
+        """
+        attempt_clause = ""
+        values: list[Any] = [
+            # SET: the flag, then the state/progress chosen from the pre-update state.
+            JobState.PENDING.value,
+            JobState.CANCELLED.value,
+            JobState.PENDING.value,
+            "cancelled",
+            "cancelling",
+            time.time(),
+            # WHERE: one row, still live, at the named generation.
+            job_id,
+            JobState.PENDING.value,
+            JobState.RUNNING.value,
+            JobState.DONE.value,
+            JobState.ERROR.value,
+            JobState.CANCELLED.value,
+        ]
+        if observed_attempt is not None:
+            attempt_clause = " AND attempt = ?"
+            values.append(int(observed_attempt))
         with self._lock:
             cur = self._conn.execute(
-                "UPDATE jobs SET state = ?, attempt = attempt + 1, updated_at = ?"
-                " WHERE id = ?",
-                (JobState.RUNNING.value, time.time(), job_id),
+                "UPDATE jobs SET cancel_requested = 1,"
+                " state = CASE WHEN state = ? THEN ? ELSE state END,"
+                " progress = CASE WHEN state = ? THEN ? ELSE ? END,"
+                " updated_at = ?"
+                " WHERE id = ? AND state IN (?, ?)"
+                " AND state NOT IN (?, ?, ?)" + attempt_clause,
+                values,
             )
             self._conn.commit()
         if cur.rowcount == 0:
+            return None
+        return self.get(job_id)
+
+    def finalize_done(
+        self, job_id: str, *, observed_attempt: int, **fields: Any
+    ) -> Job | None:
+        """Choose CANCELLED/DONE for the owned generation, atomically.
+
+        The DONE write is guarded on the owned attempt, a non-terminal row, and no
+        accepted cancellation, so an accepted cancellation always wins. When it
+        does not land, a second guarded write lands CANCELLED if - and only if -
+        the *same* generation carries the accepted flag. Both writes are pinned to
+        the same attempt and both refuse a terminal row, so neither can clobber a
+        newer owner; a row that moved on gets None.
+        """
+        done_patch = {k: v for k, v in fields.items() if k in _MUTABLE}
+        done_patch["state"] = JobState.DONE
+        terminal = sorted(state.value for state in TERMINAL_STATES)
+        placeholders = ", ".join("?" for _ in terminal)
+        with self._lock:
+            sets, values = self._encode_patch(done_patch)
+            sets.append("updated_at = ?")
+            values.append(time.time())
+            values.append(job_id)
+            values.append(int(observed_attempt))
+            values.extend(terminal)
+            cur = self._conn.execute(
+                f"UPDATE jobs SET {', '.join(sets)}"
+                f" WHERE id = ? AND attempt = ? AND cancel_requested = 0"
+                f" AND state NOT IN ({placeholders})",
+                values,
+            )
+            self._conn.commit()
+            if cur.rowcount == 0:
+                # An accepted cancellation owns this same generation. Land the
+                # terminal CANCELLED, keeping any rendered outputs on the record.
+                cancel_sets = ["state = ?", "progress = ?"]
+                cancel_values: list[Any] = [JobState.CANCELLED.value, "cancelled"]
+                if "outputs" in done_patch:
+                    cancel_sets.append("outputs = ?")
+                    cancel_values.append(json.dumps(list(done_patch["outputs"] or [])))
+                cancel_sets.append("updated_at = ?")
+                cancel_values.append(time.time())
+                cancel_values.append(job_id)
+                cancel_values.append(int(observed_attempt))
+                cancel_values.extend(terminal)
+                cur = self._conn.execute(
+                    f"UPDATE jobs SET {', '.join(cancel_sets)}"
+                    f" WHERE id = ? AND attempt = ? AND cancel_requested = 1"
+                    f" AND state NOT IN ({placeholders})",
+                    cancel_values,
+                )
+                self._conn.commit()
+            landed = cur.rowcount
+        if landed == 0:
             return None
         return self.get(job_id)
 

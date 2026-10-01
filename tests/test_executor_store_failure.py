@@ -94,11 +94,11 @@ class FailingUpdateStore(MemoryJobStore):
             raise RuntimeError("store unavailable")
         return super().claim(job_id, **kwargs)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
         if self._reject_for(job_id):
             self.failed_updates.append(job_id)
             raise RuntimeError("store unavailable")
-        return super().begin_attempt(job_id)
+        return super().begin_attempt(job_id, **kwargs)
 
 
 def _wait_for_state(store: JobStore, job_id: str, state: JobState, timeout: float = 5.0) -> Job:
@@ -237,10 +237,13 @@ class _AlwaysFailingStore(MemoryJobStore):
     def update(self, job_id: str, **fields) -> Job | None:
         raise RuntimeError("store permanently unavailable")
 
+    def update_owned(self, job_id: str, **fields) -> Job | None:
+        raise RuntimeError("store permanently unavailable")
+
     def claim(self, job_id: str, **kwargs) -> Job | None:
         raise RuntimeError("store permanently unavailable")
 
-    def begin_attempt(self, job_id: str) -> Job | None:
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
         raise RuntimeError("store permanently unavailable")
 
 
@@ -268,15 +271,20 @@ class _SwitchableStore(MemoryJobStore):
             raise RuntimeError("store write unavailable")
         return super().update(job_id, **fields)
 
+    def update_owned(self, job_id: str, **fields) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store write unavailable")
+        return super().update_owned(job_id, **fields)
+
     def claim(self, job_id: str, **kwargs) -> Job | None:
         if self.broken:
             raise RuntimeError("store write unavailable")
         return super().claim(job_id, **kwargs)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
         if self.broken:
             raise RuntimeError("store write unavailable")
-        return super().begin_attempt(job_id)
+        return super().begin_attempt(job_id, **kwargs)
 
 
 def test_transient_error_write_failure_recovers_on_next_admission(monkeypatch):
@@ -414,17 +422,23 @@ class _ReadHealthyWriteBroken(MemoryJobStore):
             raise OSError("store_failed='controlled persistent write failure'")
         return super().update(job_id, **fields)
 
+    def update_owned(self, job_id: str, **fields) -> Job | None:
+        if self.writes_broken:
+            self.failed_updates.append(job_id)
+            raise OSError("store_failed='controlled persistent write failure'")
+        return super().update_owned(job_id, **fields)
+
     def claim(self, job_id: str, **kwargs) -> Job | None:
         if self.writes_broken:
             self.failed_updates.append(job_id)
             raise OSError("store_failed='controlled persistent write failure'")
         return super().claim(job_id, **kwargs)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
         if self.writes_broken:
             self.failed_updates.append(job_id)
             raise OSError("store_failed='controlled persistent write failure'")
-        return super().begin_attempt(job_id)
+        return super().begin_attempt(job_id, **kwargs)
 
 
 def _crash_on(monkeypatch, source_name: str) -> None:
@@ -626,15 +640,20 @@ class _BrokenSqliteStore(SqliteJobStore):
             raise OSError("store_failed='durable write failure'")
         return super().update(job_id, **fields)
 
+    def update_owned(self, job_id: str, **fields) -> Job | None:
+        if self.broken:
+            raise OSError("store_failed='durable write failure'")
+        return super().update_owned(job_id, **fields)
+
     def claim(self, job_id: str, **kwargs) -> Job | None:
         if self.broken:
             raise OSError("store_failed='durable write failure'")
         return super().claim(job_id, **kwargs)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
         if self.broken:
             raise OSError("store_failed='durable write failure'")
-        return super().begin_attempt(job_id)
+        return super().begin_attempt(job_id, **kwargs)
 
 
 def test_durable_store_write_fault_refuses_then_reconciles(monkeypatch, tmp_path):
@@ -718,13 +737,18 @@ class _ReadWriteOutageStore(MemoryJobStore):
             raise RuntimeError("store write unavailable")
         return super().update(job_id, **fields)
 
+    def update_owned(self, job_id: str, **fields) -> Job | None:
+        if self.broken:
+            raise RuntimeError("store write unavailable")
+        return super().update_owned(job_id, **fields)
+
     def claim(self, job_id: str, **kwargs) -> Job | None:
         if self.broken:
             raise RuntimeError("store write unavailable")
         return super().claim(job_id, **kwargs)
 
-    def begin_attempt(self, job_id: str) -> Job | None:
-        row = MemoryJobStore.begin_attempt(self, job_id)
+    def begin_attempt(self, job_id: str, **kwargs) -> Job | None:
+        row = MemoryJobStore.begin_attempt(self, job_id, **kwargs)
         if self.arm_next:
             self.arm_next = False
             self.broken = True  # outage starts after the run is RUNNING

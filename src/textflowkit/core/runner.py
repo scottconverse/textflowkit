@@ -7,8 +7,22 @@
 Cancellation contract:
 
 - `JobCancelled` is an orderly stop, not a failure. The job ends CANCELLED.
-- A job that finishes while a cancellation is in flight must not overwrite the
-  cancelled state with DONE, so the final transition re-reads the job first.
+- A job that finishes while an accepted cancellation is in flight must not
+  publish DONE. The terminal row is chosen by one atomic store operation
+  (`finalize_done`) against the generation this run owns: CANCELLED when that
+  generation carries the accepted flag, DONE otherwise. Reading the flag and
+  writing the state cannot be split, so the "DONE with cancel_requested: true"
+  race cannot occur.
+- The start is guarded too: a run begins only from a still-PENDING, uncancelled
+  row at the acquired generation, so a queued cancellation cannot be resurrected
+  into RUNNING by the worker that later picks the job up.
+- Every *other* run-owned write is guarded the same way. Progress and checkpoint
+  writes go through `update_owned`, pinned to the generation the run started, in
+  one store operation - so a resume claim or an accepted cancellation that lands
+  first is never overwritten by a stale stage label or an old attempt's
+  checkpoint. Progress additionally refuses a row carrying an accepted
+  cancellation, so `cancelling` survives the next stage; the checkpoint is
+  allowed to land on a cancelling row, because that work is the resume material.
 - Explicit resume of an interrupted job is the one path allowed past the
   terminal-state guard. Callers use `prepare_resume` first, which resets the job
   to PENDING while preserving its checkpoint.
@@ -49,8 +63,17 @@ def run_job(
     translator_backend: str = "ollama",
     resume_checkpoint: dict[str, Any] | None = None,
     on_started: Callable[[int], None] | None = None,
+    expected_attempt: int | None = None,
 ) -> None:
     """Execute a job, recording its terminal state. Callers decide the thread.
+
+    ``expected_attempt`` is the immutable acquisition identity the caller queued
+    this run under: the attempt the row carried when it was created or claimed
+    (`submit`/`enqueue`), captured *before* the worker read the store. The start
+    is pinned to it, so a stale queue entry whose id was cancelled and then
+    resumed cannot start the newer generation. ``None`` means the caller has no
+    acquisition identity to pin (an inline direct call), which keeps the
+    state-and-flag guard alone.
 
     ``on_started`` is called once with the exact attempt this run owns, the
     instant the row is marked RUNNING. The executor uses it to pin the run's
@@ -61,41 +84,44 @@ def run_job(
     """
     # Do not start work that has already been cancelled or otherwise finished.
     # `submit` only hands us fresh jobs; explicit resume prepares the row first.
-    # This read is also the best available pre-start identity: if the start write
-    # below fails, the row still carries this attempt (the run never advanced it).
     current = store.get(job.id)
     if current is not None and current.is_terminal:
         return
 
-    # Starting a run both marks the row RUNNING and bumps its attempt, in one
-    # operation, so a terminal row written by this run is distinguishable from
-    # the one it replaced - which is what lets a resume refuse a stale decision.
+    # Starting a run marks the row RUNNING and bumps its attempt in one *guarded*
+    # operation. The guard refuses a row that is no longer PENDING (a queued
+    # cancellation already landed CANCELLED), already carries an accepted
+    # cancellation, or is no longer the acquired generation. A refusal means this
+    # run does not own the row and must not enter the engine - returning here is
+    # what stops a cancelled queued job from being resurrected into RUNNING.
     #
     # The identity the run owns is reported the instant it is known, *before* any
     # work, so a later fault never has to re-derive it from a possibly-broken
-    # store:
-    #   - start landed  -> the run owns the new attempt (``started.attempt``);
-    #   - start did not land -> the runner reports nothing, and the caller keeps
-    #     the pre-start identity it already holds (the row's attempt before the
-    #     run, which the run never advanced past) - or ``None`` if it could not
-    #     read the row either, so recovery refuses to guess it rather than
-    #     clearing a stranded row on a no-match.
-    started = store.begin_attempt(job.id)
-    if on_started is not None and started is not None:
-        on_started(started.attempt)
-    store.update(job.id, progress="starting")
+    # store. When the start does not land, the caller keeps the acquisition
+    # identity it captured before queueing; if it captured none, recovery refuses
+    # to guess rather than clearing a stranded row on a no-match.
+    started = store.begin_attempt(job.id, observed_attempt=expected_attempt)
+    if started is None:
+        return
+    owned = started.attempt
+    if on_started is not None:
+        on_started(owned)
+    # Guarded like every other run-owned write: pinned to the generation this run
+    # started, so an accepted cancellation that landed in the same instant keeps
+    # its `cancelling` label instead of being overwritten by `starting`.
+    store.update_owned(job.id, observed_attempt=owned, progress="starting")
 
     def _progress(stage: str) -> None:
         """Publish the stage in flight so a polling client sees real progress.
 
-        A cancellation already in flight owns the label: the job is
-        `cancelling`, not whichever stage the worker is about to start. Terminal
-        jobs are left alone for the same reason.
+        One guarded write, not a read-then-write: the store refuses a row that is
+        no longer this run's generation, has reached a terminal state, or carries
+        an accepted cancellation. That last case is the point - once a
+        cancellation is accepted the job is `cancelling`, not whichever stage the
+        worker is about to start, and a write that tested the row first could
+        still lose the acceptance that landed between the test and the write.
         """
-        latest = store.get(job.id)
-        if latest is None or latest.is_terminal or latest.cancel_requested:
-            return
-        store.update(job.id, progress=stage)
+        store.update_owned(job.id, observed_attempt=owned, progress=stage)
 
     try:
         result = transcribe(
@@ -116,49 +142,69 @@ def run_job(
             translate_to=translate_to,
             translator_backend=translator_backend,
             resume_checkpoint=resume_checkpoint,
-            on_checkpoint=lambda record: write_checkpoint(store, job.id, record),
+            on_checkpoint=lambda record: write_checkpoint(
+                store, job.id, record, observed_attempt=owned
+            ),
             on_stage=_progress,
             output_id=job.id,
         )
     except JobCancelled:
-        store.update(job.id, state=JobState.CANCELLED, progress="cancelled")
+        # Guarded on the owned generation: a row a newer retry took over must not
+        # be failed by this run's stale verdict.
+        store.claim(
+            job.id,
+            allowed_states={JobState.PENDING, JobState.RUNNING},
+            observed_attempt=owned,
+            state=JobState.CANCELLED,
+            progress="cancelled",
+        )
         return
     except PipelineError as exc:
-        store.update(job.id, state=JobState.ERROR, error=str(exc), progress="failed")
+        store.claim(
+            job.id,
+            allowed_states={JobState.PENDING, JobState.RUNNING},
+            observed_attempt=owned,
+            state=JobState.ERROR,
+            error=str(exc),
+            progress="failed",
+        )
         return
     # Last-resort guard: a job must never be left stuck in RUNNING because of an
     # unexpected exception type. The error is recorded on the job, not swallowed.
     # Narrower catches above handle the expected failure modes.
     except Exception as exc:  # noqa: BLE001
-        store.update(
+        store.claim(
             job.id,
+            allowed_states={JobState.PENDING, JobState.RUNNING},
+            observed_attempt=owned,
             state=JobState.ERROR,
             error=f"{type(exc).__name__}: {exc}",
             progress="failed",
         )
         return
 
-    # A cancellation that arrived while the last stage ran must win over DONE.
+    # The terminal row is chosen atomically against the generation this run owns:
+    # CANCELLED if the same owned generation carries an accepted cancellation,
+    # DONE otherwise. A row a newer retry moved on is left alone (None). This is
+    # the single place the completion/cancellation race is decided, so there is no
+    # window in which a finished-looking DONE row can carry an accepted cancel.
     latest = store.get(job.id)
-    if latest is not None and latest.state is JobState.CANCELLED:
-        return
-
-    # The transcript is stored once, in the job's own field: the checkpoint that
-    # carried it through the run keeps only the metadata a later request is
-    # matched against. Both go in one update, so no reader can catch the row
-    # holding neither copy.
     fields: dict[str, Any] = {
-        "state": JobState.DONE,
         "progress": "complete",
         "transcript": result.transcript.to_dict(),
         "outputs": [str(p) for p in result.outputs],
     }
+    # The transcript is stored once, in the job's own field: the checkpoint that
+    # carried it through the run keeps only the metadata a later request is
+    # matched against. Both go in the same atomic finalize, so no reader can catch
+    # the row holding neither copy. On the CANCELLED branch the checkpoint is left
+    # with its full transcript - that is the resume work, and it is not deleted.
     metadata = metadata_only_checkpoint(
         latest.checkpoint if latest is not None else job.checkpoint
     )
     if metadata is not None:
         fields["checkpoint"] = metadata
-    store.update(job.id, **fields)
+    store.finalize_done(job.id, observed_attempt=owned, **fields)
 
 
 def submit(
