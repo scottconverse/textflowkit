@@ -106,12 +106,20 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
 ):
     """The exact sequence the coordinator reproduced, driven end to end.
 
-    old attempt 0 (ERROR) -> old claim (PENDING, queued) -> cancellation
-    (CANCELLED) -> new claim (PENDING, still attempt 0) -> the *old* claim's
+    old attempt 0 (ERROR) -> old claim (PENDING, queued-but-unadmitted) ->
+    cancellation (CANCELLED) -> new claim (PENDING, *still attempt 0* under the
+    old code, since no worker started either claim) -> the *old* claim's
     admission refusal fires its cleanup. That cleanup owns the row it reopened;
-    it must not write its stale ERROR over the newer owner's PENDING. The newer
-    owner is a genuine fresh retry, so once it is admitted it must still run and
-    reach DONE, with the saved checkpoint preserved.
+    it must not write its stale ERROR over the newer owner's PENDING.
+
+    Admission and release here are entirely legitimate: no semaphore is poked by
+    hand. ``occupier`` holds the single worker (so nothing is picked up while we
+    arrange the interleaving); ``filler`` legitimately holds the single pending
+    slot, which is what refuses A's enqueue with the real ``QueueFullError``.
+    The newer reclaim is then admitted because the worker *naturally* frees the
+    slot by dequeuing ``filler`` when ``occupier`` is released. Every wait is
+    bounded, and the newer owner is a genuine fresh retry that must still run to
+    DONE with its saved checkpoint intact.
     """
     media = tmp_path / "media.wav"
     _wav(media)
@@ -121,51 +129,52 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
         job = _seed_terminal_job(store, request, media, with_checkpoint=True)
         saved_checkpoint = store.get(job.id).checkpoint
 
-        # Occupier holds the one worker; holder fills the one pending slot so a
-        # third admission (the *old* resume) is refused with QueueFullError.
-        holder_release = threading.Event()
+        # Occupier holds the one worker; filler holds the one pending slot. Both
+        # block in the engine so the worker cannot advance past them on its own.
         occupier_started = threading.Event()
+        occupier_release = threading.Event()
+        filler_started = threading.Event()
+        filler_release = threading.Event()
         entered_engine = threading.Event()
 
-        def gate_transcribe(source, **kwargs):
-            entered_engine.set()
-            return _result(source)
-
         def block_transcribe(source, **kwargs):
-            occupier_started.set()
-            assert holder_release.wait(timeout=5)
+            if source == "occupier":
+                occupier_started.set()
+                assert occupier_release.wait(timeout=5)
+            elif source == "filler":
+                filler_started.set()
+                assert filler_release.wait(timeout=5)
+            else:
+                entered_engine.set()
             return _result(source)
 
         from textflowkit.core import runner
-        monkeypatch.setattr(runner, "transcribe", gate_transcribe)
+        monkeypatch.setattr(runner, "transcribe", block_transcribe)
 
         executor = JobExecutor(store, max_concurrency=1, max_pending=1)
         monkeypatch.setattr(submission, "get_default_executor", lambda: executor)
         try:
-            # Occupier (never completes) and holder (the one pending slot). The
-            # occupier uses the blocking engine; swap the engine only for it.
-            monkeypatch.setattr(runner, "transcribe", block_transcribe)
             executor.submit(source="occupier")
             assert occupier_started.wait(timeout=5), "worker never picked the occupier up"
-            executor.submit(source="holder")
+            # Fills the one pending slot: A's enqueue is now refused for real.
+            executor.submit(source="filler")
 
             # --- old claim + its admission refusal, deferred ------------------
             # A is the first resume: it reopens the row to PENDING and *fails
-            # admission* (queue full). Hold it right before enqueue so its
-            # reopen is committed but its cleanup has not yet fired, letting the
-            # cancellation and the newer reclaim happen in between.
+            # admission* (queue full). Hold it right before its cleanup runs so
+            # its reopen is committed but the cleanup has not yet fired, letting
+            # the cancellation and the newer reclaim happen in between.
             at_cleanup = threading.Event()
             release_cleanup = threading.Event()
             original_fail_unadmitted = submission._fail_unadmitted
 
-            def gated_fail_unadmitted(store_arg, job_id, progress, error):
+            def gated_fail_unadmitted(store_arg, job_id, progress, error, **kwargs):
                 at_cleanup.set()
                 assert release_cleanup.wait(timeout=5)
-                return original_fail_unadmitted(store_arg, job_id, progress, error)
+                return original_fail_unadmitted(store_arg, job_id, progress, error, **kwargs)
 
             monkeypatch.setattr(submission, "_fail_unadmitted", gated_fail_unadmitted)
 
-            monkeypatch.setattr(runner, "transcribe", gate_transcribe)
             result_a: list = []
 
             def old_resume():
@@ -182,28 +191,25 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
             thread_a.start()
             assert at_cleanup.wait(timeout=5), "A's admission refusal never fired"
 
-            # The old claim reopened the row to PENDING (queued but unstarted).
+            # The old claim reopened the row to PENDING (claimed, never queued).
             assert store.get(job.id).state is JobState.PENDING
 
             # --- cancellation before any worker starts it ---------------------
             assert executor.cancel(job.id) is True
             assert store.get(job.id).state is JobState.CANCELLED
 
-            # --- newer claim: a fresh retry observes CANCELLED and reclaims ----
-            # This uses its *own* executor seam for the reclaim, but the same
-            # store; it reopens the row to PENDING (attempt still 0, since no
-            # worker started it) and queues it behind the busy pool.
-            monkeypatch.setattr(submission, "get_default_executor", lambda: executor)
+            # --- the worker naturally frees the pending slot ------------------
+            # Releasing the occupier lets the worker finish it and dequeue the
+            # filler, which frees the one pending slot *through the product*, not
+            # by poking the semaphore. The filler then blocks, keeping the worker
+            # busy so the newer reclaim stays queued (PENDING) rather than running.
+            occupier_release.set()
+            assert filler_started.wait(timeout=5), "the worker never freed the pending slot"
 
-            # Free the pending slot the holder occupies so the new reclaim can be
-            # admitted; then drain the holder so the new reclaim becomes runnable.
-            # (The reclaim itself is what we protect; admission ordering is not.)
+            # --- newer claim: a fresh retry observes CANCELLED and reclaims ----
             new_pending = threading.Event()
 
             def new_resume():
-                # Admit the reclaim: it reopens to PENDING and is queued. It will
-                # not run until the occupier finishes, which is after this test's
-                # assertion window - that is the point (PENDING, not RUNNING).
                 try:
                     value = submit_request(
                         store, SubmissionRequest.from_dict(request.to_dict()),
@@ -214,9 +220,6 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
                 new_pending.set()
                 return value
 
-            # Free the single pending slot so the newer claim is admitted. The
-            # holder job is a distinct id; releasing its slot does not run it.
-            executor._pending_slots.release()
             thread_new = threading.Thread(target=new_resume, name="caller-new")
             thread_new.start()
             assert new_pending.wait(timeout=5), "the newer reclaim never returned"
@@ -240,7 +243,11 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
             assert after.checkpoint == saved_checkpoint, "the saved checkpoint was lost"
 
             # --- the newer owner still runs, exactly once, to DONE -------------
-            holder_release.set()  # let the occupier finish, freeing the worker
+            # Release the filler; the worker then dequeues the newer owner. The
+            # saved transcript checkpoint means it completes without re-entering
+            # the engine, but it must reach a terminal DONE rather than being left
+            # PENDING (or having the stale ERROR land on it).
+            filler_release.set()
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and store.get(job.id).state is not JobState.DONE:
                 time.sleep(0.01)
@@ -249,7 +256,8 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
             )
             assert entered_engine.is_set()
         finally:
-            holder_release.set()
+            occupier_release.set()
+            filler_release.set()
             executor.shutdown()
     finally:
         store.close()
@@ -283,10 +291,10 @@ def test_observation_is_refused_after_an_unadmitted_claim(monkeypatch, tmp_path,
         release_a = threading.Event()
         original_fail_unadmitted = submission._fail_unadmitted
 
-        def gated(store_arg, job_id, progress, error):
+        def gated(store_arg, job_id, progress, error, **kwargs):
             at_unadmitted.set()
             assert release_a.wait(timeout=5)
-            return original_fail_unadmitted(store_arg, job_id, progress, error)
+            return original_fail_unadmitted(store_arg, job_id, progress, error, **kwargs)
 
         monkeypatch.setattr(submission, "_fail_unadmitted", gated)
         # A's admission must fail *before* any RUNNING, the way a queue-full or
