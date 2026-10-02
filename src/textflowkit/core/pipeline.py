@@ -252,6 +252,7 @@ def transcribe(
     media: Path | None = None
     audio: Path | None = None
     transcript: Transcript | None = None
+    scratch: Path | None = None
     local_identity: dict[str, Any] | None = resumed.local_identity if resumed else None
 
     def _checkpoint(stage: str | None = None) -> CheckpointRecord | None:
@@ -275,37 +276,13 @@ def transcribe(
                 "translator_backend": translator_backend,
             },
             finished_stages=list(finished_stages),
-            transcript=_snapshot_transcript(),
+            transcript=transcript.to_dict() if isinstance(transcript, Transcript) else None,
             media_path=_recordable(media),
             audio_path=_recordable(audio),
             local_identity=local_identity,
         )
         on_checkpoint(snapshot.to_dict())
         return snapshot
-
-    def _snapshot_transcript() -> dict[str, Any] | None:
-        """The transcript a checkpoint snapshot should carry.
-
-        A local transcript object is the current run's work; a resumed
-        transcript hydrated from the previous snapshot is that same *previous*
-        work, carried so a later stage's snapshot keeps it. The one case that
-        must never publish ``None`` over usable work is a replacement snapshot
-        whose stage marker still claims completion: that would leave a
-        checkpoint that reads as finished but holds nothing, and the next retry
-        would recompute everything. So when there is no local transcript but the
-        durable snapshot already carried a finished one, that previous transcript
-        is carried forward verbatim rather than dropped.
-
-        This is a defensive invariant, not the primary fix: hydration now happens
-        before any checkpoint is published, so a setup failure cannot reach here
-        with an empty local transcript. It closes the same window for any other
-        path that snapshots a stage after reuse was decided.
-        """
-        if isinstance(transcript, Transcript):
-            return transcript.to_dict()
-        if resumed is not None and resumed.transcript is not None:
-            return resumed.transcript
-        return None
 
     def _stage(name: str) -> None:
         """Announce the stage now starting, or stop if cancellation arrived.
@@ -374,24 +351,21 @@ def transcribe(
     except (FileNotFoundError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
-    _checkpoint("source")
-
+    # Validate and hydrate reusable work *before* publishing anything. Every
+    # snapshot this run hands to `on_checkpoint` replaces the durable one, so a
+    # source checkpoint published before validation/hydration would overwrite a
+    # completed transcript with the local `transcript` - still ``None`` here -
+    # leaving a record that still lists ``transcribe`` as finished but holds
+    # nothing. Publishing the source checkpoint only after reuse is read from the
+    # previous snapshot is what keeps a changed local source refused (below) and
+    # a setup failure from destroying usable work: nothing is written until the
+    # prior coherent snapshot has been validated and its reusable parts adopted.
     if resumed is not None and ref.kind == "file":
         try:
             validate_local_resume(resumed, resolved_source, input_root=root)
         except ValueError as exc:
             raise PipelineError(str(exc)) from exc
 
-    # Hydrate and validate reusable work *before* any directory setup or scratch
-    # creation. The runner persists every checkpoint snapshot through a guarded
-    # write, so a snapshot this run publishes replaces the durable one - and a
-    # setup failure (a `work_dir` that is a file, a failing `mkdtemp`) after the
-    # source checkpoint would then have replaced a completed transcript with the
-    # local `transcript` value, still ``None`` at that point, leaving a record
-    # that still lists ``transcribe`` as finished but holds no transcript.
-    # Deciding reuse here means a setup failure cannot destroy usable work: the
-    # durable snapshot is never overwritten until reuse has been read from it.
-    #
     # Resuming means "the transcript already exists, do not transcribe again".
     # The media files are a separate question: they live in scratch and are
     # deleted after every run, so requiring them would make resume impossible.
@@ -400,8 +374,12 @@ def transcribe(
     transcript = _resume_transcript(resumed, source=source, ref=ref)
     can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
     if not can_resume:
+        # Only adopt reusable paths when the transcript actually resumes; a
+        # half-usable snapshot must not carry stale media paths into a new one.
         transcript = None
-    if resumed is not None and can_resume:
+        media = None
+        audio = None
+    else:
         media = _existing_path(resumed.media_path)
         audio = _existing_path(resumed.audio_path)
 
@@ -416,6 +394,11 @@ def transcribe(
         diarizer_backend=diarizer_backend,
         translator_backend=translator_backend,
     )
+
+    # The source is now resolved, validated, and its reusable work hydrated, so
+    # the replacement snapshot is coherent: it carries the reused transcript and
+    # markers rather than an empty local value.
+    _checkpoint("source")
 
     if work_dir is not None:
         Path(work_dir).mkdir(parents=True, exist_ok=True)
