@@ -275,13 +275,37 @@ def transcribe(
                 "translator_backend": translator_backend,
             },
             finished_stages=list(finished_stages),
-            transcript=transcript.to_dict() if isinstance(transcript, Transcript) else None,
+            transcript=_snapshot_transcript(),
             media_path=_recordable(media),
             audio_path=_recordable(audio),
             local_identity=local_identity,
         )
         on_checkpoint(snapshot.to_dict())
         return snapshot
+
+    def _snapshot_transcript() -> dict[str, Any] | None:
+        """The transcript a checkpoint snapshot should carry.
+
+        A local transcript object is the current run's work; a resumed
+        transcript hydrated from the previous snapshot is that same *previous*
+        work, carried so a later stage's snapshot keeps it. The one case that
+        must never publish ``None`` over usable work is a replacement snapshot
+        whose stage marker still claims completion: that would leave a
+        checkpoint that reads as finished but holds nothing, and the next retry
+        would recompute everything. So when there is no local transcript but the
+        durable snapshot already carried a finished one, that previous transcript
+        is carried forward verbatim rather than dropped.
+
+        This is a defensive invariant, not the primary fix: hydration now happens
+        before any checkpoint is published, so a setup failure cannot reach here
+        with an empty local transcript. It closes the same window for any other
+        path that snapshots a stage after reuse was decided.
+        """
+        if isinstance(transcript, Transcript):
+            return transcript.to_dict()
+        if resumed is not None and resumed.transcript is not None:
+            return resumed.transcript
+        return None
 
     def _stage(name: str) -> None:
         """Announce the stage now starting, or stop if cancellation arrived.
@@ -358,42 +382,52 @@ def transcribe(
         except ValueError as exc:
             raise PipelineError(str(exc)) from exc
 
+    # Hydrate and validate reusable work *before* any directory setup or scratch
+    # creation. The runner persists every checkpoint snapshot through a guarded
+    # write, so a snapshot this run publishes replaces the durable one - and a
+    # setup failure (a `work_dir` that is a file, a failing `mkdtemp`) after the
+    # source checkpoint would then have replaced a completed transcript with the
+    # local `transcript` value, still ``None`` at that point, leaving a record
+    # that still lists ``transcribe`` as finished but holds no transcript.
+    # Deciding reuse here means a setup failure cannot destroy usable work: the
+    # durable snapshot is never overwritten until reuse has been read from it.
+    #
+    # Resuming means "the transcript already exists, do not transcribe again".
+    # The media files are a separate question: they live in scratch and are
+    # deleted after every run, so requiring them would make resume impossible.
+    # If a later stage (diarization) genuinely needs the audio and it is gone,
+    # re-acquire it - that is far cheaper than re-running Whisper.
+    transcript = _resume_transcript(resumed, source=source, ref=ref)
+    can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
+    if not can_resume:
+        transcript = None
+    if resumed is not None and can_resume:
+        media = _existing_path(resumed.media_path)
+        audio = _existing_path(resumed.audio_path)
+
+    # Which optional stages still need to run is decided *before* any
+    # acquisition, because it is also the answer to "is the audio needed at
+    # all". A resume whose optional work is already durable must not fetch or
+    # decode media just to reach a provider it is not going to consult.
+    run_diarize, run_translate, needs_audio_for_resume = _optional_stage_plan(
+        resumed if can_resume else None,
+        diarize=diarize,
+        translate_to=translate_to,
+        diarizer_backend=diarizer_backend,
+        translator_backend=translator_backend,
+    )
+
     if work_dir is not None:
         Path(work_dir).mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix="textflowkit-", dir=work_dir))
 
     try:
-        transcript = _resume_transcript(resumed, source=source, ref=ref)
         # The decoder boundary follows the *source*, not the branch that
         # acquired the media. A resumed run can carry a still-existing media path
         # from its checkpoint and skip re-staging entirely, so deriving this
         # inside that branch would leave that path decoded with no restriction -
         # under an input root, which is exactly when the boundary must hold.
         confined = ref.kind == "file" and root is not None
-        if resumed is not None:
-            media = _existing_path(resumed.media_path)
-            audio = _existing_path(resumed.audio_path)
-
-        # Resuming means "the transcript already exists, do not transcribe again".
-        # The media files are a separate question: they live in scratch and are
-        # deleted after every run, so requiring them would make resume impossible.
-        # If a later stage (diarization) genuinely needs the audio and it is gone,
-        # re-acquire it - that is far cheaper than re-running Whisper.
-        can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
-        if not can_resume:
-            transcript = None
-
-        # Which optional stages still need to run is decided *before* any
-        # acquisition, because it is also the answer to "is the audio needed at
-        # all". A resume whose optional work is already durable must not fetch or
-        # decode media just to reach a provider it is not going to consult.
-        run_diarize, run_translate, needs_audio_for_resume = _optional_stage_plan(
-            resumed if can_resume else None,
-            diarize=diarize,
-            translate_to=translate_to,
-            diarizer_backend=diarizer_backend,
-            translator_backend=translator_backend,
-        )
 
         try:
             if not can_resume:
