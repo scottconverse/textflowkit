@@ -19,11 +19,9 @@ already complete or because resume is refused, so no inference happens.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
-import textwrap
 import wave
 from pathlib import Path
 
@@ -44,12 +42,12 @@ def _wav(path: Path) -> None:
         out.writeframes(bytes(16000 * 2))
 
 
-def _seed_checkpoint(source: Path, **kwargs) -> CheckpointRecord:
+def _seed_checkpoint(source: Path, request: SubmissionRequest, **kwargs) -> CheckpointRecord:
     return CheckpointRecord(
         source=str(source),
-        model="tiny",
-        device="cpu",
-        options=SubmissionRequest(source=str(source), model="tiny", device="cpu").options(),
+        model=request.model,
+        device=request.device,
+        options=request.options(),
         finished_stages=["source", "fetch", "extract", "transcribe"],
         transcript=Transcript(
             source=str(source), segments=[Segment(0.0, 1.0, "already transcribed")],
@@ -100,7 +98,7 @@ def test_single_resume_recovers_orphaned_running_row_in_fresh_process(tmp_path):
     job = store.create(str(source), request=request.to_dict())
     store.update(
         job.id, state=JobState.RUNNING, attempt=1,
-        checkpoint=_seed_checkpoint(source).to_dict(),
+        checkpoint=_seed_checkpoint(source, request).to_dict(),
     )
     store.close()  # the "old process" is gone; no worker exists for this row
 
@@ -117,7 +115,7 @@ def test_single_resume_recovers_orphaned_running_row_in_fresh_process(tmp_path):
     reopened = SqliteJobStore(db)
     try:
         after = reopened.get(job.id)
-        assert after.state is JobState.DONE, after.state
+        assert after.state is JobState.DONE, (after.state, after.error, result.stderr)
         # The saved transcript survives: the run reused the expensive work.
         assert after.transcript["segments"][0]["text"] == "already transcribed"
     finally:
@@ -139,7 +137,7 @@ def test_batch_resume_recovers_orphaned_pending_row_in_fresh_process(tmp_path):
     job = store.create(str(source), request=request.to_dict())
     store.update(
         job.id, state=JobState.PENDING, attempt=1,
-        checkpoint=_seed_checkpoint(source).to_dict(),
+        checkpoint=_seed_checkpoint(source, request).to_dict(),
     )
     store.close()
 
@@ -161,35 +159,62 @@ def test_batch_resume_recovers_orphaned_pending_row_in_fresh_process(tmp_path):
         reopened.close()
 
 
-def test_recovery_runs_once_per_owning_process_not_per_submission(tmp_path):
-    """Recovery must not run on every embedded ``background=False`` submit.
+def test_submit_request_does_not_reap_unconditionally(tmp_path, monkeypatch):
+    """An embedded ``submit_request(background=False)`` must not reap.
 
-    A library caller holding genuinely live work must not have its rows reaped
-    by an unrelated ``submit_request(background=False)``. Only the CLI's owning
-    boundary recovers, and only once — a second submit in the same process does
-    not reap rows created after the first.
+    The AL-001 fix is deliberately *not* an unconditional reap in every
+    ``background=False`` call: a library or test process can hold genuinely live
+    work, and reaping it would fail rows the caller owns. Recovery is a property
+    of the CLI's process/store ownership boundary, not of the submission
+    contract.
     """
-    db = tmp_path / "jobs.db"
+    from textflowkit.core import pipeline
+    from textflowkit.core.submission import submit_request
+
     source = tmp_path / "clip.wav"
     _wav(source)
-    store = SqliteJobStore(db)
+    store = SqliteJobStore(tmp_path / "jobs.db")
+
+    # A genuinely live row this process owns.
+    live = store.create("still-live")
+    store.update(live.id, state=JobState.RUNNING, attempt=1)
+
+    # A stub engine so no model is loaded; the point is that the *other* row
+    # is not reaped by the submit itself.
+    class _Engine:
+        def transcribe(self, audio, *, language=None):
+            return Transcript(source=str(audio), segments=[])
+
+    monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: _Engine())
+    monkeypatch.setattr(pipeline, "require_tool", lambda *a, **k: "ffmpeg")
     try:
-        from textflowkit.core.submission import submit_request
-
-        # A row this process created after startup must survive a later submit.
-        other = store.create("still-live")
-        store.update(other.id, state=JobState.RUNNING, attempt=1)
-
-        # Even with resume requested, the plain submission contract must not
-        # reap: embedding processes are not store owners.
-        from textflowkit.core.checkpoint import find_resumable_checkpoint  # noqa: F401
-
-        assert store.get(other.id).state is JobState.RUNNING
+        # Patch acquisition so the run needs no ffmpeg/network: a resume with a
+        # complete checkpoint would skip it, but this submit is a plain one.
+        monkeypatch.setattr(
+            pipeline, "resolve_source",
+            lambda src: type("R", (), {"kind": "file", "location": src, "platform": "local"})(),
+        )
+        monkeypatch.setattr(
+            pipeline, "stage_confined_local_media",
+            lambda loc, *, work_dir, input_root: Path(loc),
+        )
+        monkeypatch.setattr(
+            pipeline, "extract_audio",
+            lambda media, *, work_dir, check_cancel=None, confined=False: Path(media),
+        )
+        job = submit_request(
+            store, SubmissionRequest(source=str(source), model="tiny", device="cpu",
+                                     formats=["json"]),
+            background=False,
+        )
+        assert job.state is JobState.DONE
     finally:
+        # The live row was never reaped by the submission path.
+        assert store.get(live.id).state is JobState.RUNNING
         store.close()
 
 
-def test_recovery_failure_in_cli_surfaces_nonzero_not_a_traceback(tmp_path, monkeypatch):
+def test_recovery_failure_in_cli_surfaces_nonzero_not_a_traceback(tmp_path, monkeypatch, capsys):
     """A recovery write failure must be a clear CLI error and nonzero exit.
 
     The CLI must not report success while orphans still read RUNNING, and it
@@ -199,7 +224,6 @@ def test_recovery_failure_in_cli_surfaces_nonzero_not_a_traceback(tmp_path, monk
     from textflowkit.core import startup
 
     db = tmp_path / "jobs.db"
-    store_cls = SqliteJobStore
 
     class _Broken(SqliteJobStore):
         def reap_incomplete(self, **kwargs):
@@ -207,15 +231,25 @@ def test_recovery_failure_in_cli_surfaces_nonzero_not_a_traceback(tmp_path, monk
 
     broken = _Broken(str(db))
 
-    # Model the CLI's owning-store seam.
+    # A durable store is what makes recovery meaningful, and the CLI resolves it
+    # through the process default. Model both seams.
+    monkeypatch.setenv("TEXTFLOWKIT_DB", str(db))
     monkeypatch.setattr(cli_mod, "get_default_store", lambda: broken)
     monkeypatch.setattr(startup, "get_default_store", lambda: broken)
 
     source = tmp_path / "clip.wav"
     _wav(source)
-    rc = cli_mod.main([
-        "transcribe", str(source), "--resume", "--model", "tiny", "--device", "cpu",
-        "--formats", "json", "--quiet",
-    ])
-    assert rc != 0
-    store_cls  # keep the import used
+    try:
+        rc = cli_mod.main([
+            "transcribe", str(source), "--resume", "--model", "tiny", "--device", "cpu",
+            "--formats", "json", "--quiet",
+        ])
+    finally:
+        broken.close()
+
+    assert rc != 0, "recovery failure must be a nonzero exit"
+    err = capsys.readouterr().err
+    assert "error:" in err, err
+    assert "Traceback" not in err, "recovery failure must not dump a raw traceback"
+    # No run happened: the pipeline was never entered.
+    assert "transcrib" not in err.lower()

@@ -81,7 +81,7 @@ def test_work_dir_that_is_a_file_keeps_the_previous_checkpoint(tmp_path):
     before = load_checkpoint(store.get(job.id))
     assert before is not None and before.transcript is not None
 
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         transcribe(
             str(source), formats=["json"], model="small",
             work_dir=str(blocked),
@@ -126,13 +126,15 @@ def test_resume_setup_failure_through_submission_keeps_the_checkpoint(tmp_path):
     store.close()
 
 
-def test_source_checkpoint_callback_failure_window_preserves_snapshot(tmp_path, monkeypatch):
-    """A crash between the source checkpoint and hydration must not lose work.
+def test_source_checkpoint_snapshot_keeps_the_previous_transcript(tmp_path):
+    """The pre-setup source snapshot must carry the reusable transcript.
 
-    The window the audit named is the callback that persists the *source*
-    snapshot. Whatever a run does inside that window, the previously durable
-    transcript must survive: the replacement may only be published once the
-    hydrated work is actually represented.
+    The audit window is the callback that persists the *source* snapshot, which
+    fires before scratch setup. Before the fix that snapshot serialized the
+    local ``transcript`` (still ``None``) while still listing ``transcribe`` as
+    finished, so an interrupt in this window left a record that looked complete
+    but held nothing. The snapshot published here must instead carry the
+    previous transcript.
     """
     source = tmp_path / "clip.wav"
     source.write_bytes(b"audit fixture; no inference required")
@@ -146,28 +148,31 @@ def test_source_checkpoint_callback_failure_window_preserves_snapshot(tmp_path, 
 
     seen: list[dict] = []
 
-    def _boom(record: dict) -> None:
+    def _capture(record: dict) -> None:
         seen.append(record)
-        # The first callback is the pre-hydration source snapshot. Failing here
-        # models an interrupted resume inside the setup window.
+        # Fail at the first (source) snapshot, before scratch setup runs. This is
+        # the window the finding names.
         raise RuntimeError("interrupted after source checkpoint")
 
-    # Drive the pipeline directly through its public callback so the failure
-    # lands inside the window the finding names.
     from textflowkit.core.pipeline import transcribe as _transcribe
 
-    # Make the work_dir setup fail deterministically at mkdtemp.
-    monkeypatch.setattr(
-        "textflowkit.core.pipeline.tempfile.mkdtemp",
-        lambda **kwargs: (_ for _ in ()).throw(OSError("mkdtemp failed")),
-    )
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         _transcribe(
             str(source), formats=["json"], resume_checkpoint=original,
-            on_checkpoint=_boom,
+            on_checkpoint=_capture,
         )
 
-    # Nothing was written to the store; the durable snapshot is untouched.
+    # The very first snapshot published is the source snapshot, and it must not
+    # drop the finished transcript it is replacing.
+    assert seen, "no checkpoint was published at all"
+    first = seen[0]
+    assert "source" in first["finished_stages"]
+    assert first["transcript"] is not None, (
+        "source snapshot dropped the previous transcript while claiming transcribe"
+    )
+    assert first["transcript"]["segments"][0]["text"] == TRANSCRIPT_TEXT
+
+    # And the durable snapshot in the store was never touched by this run.
     store.close()
     reopened = SqliteJobStore(tmp_path / "jobs.db")
     try:
@@ -197,7 +202,7 @@ def test_healthy_retry_after_setup_failure_reuses_recognized_work(tmp_path, monk
 
     blocked = tmp_path / "work"
     blocked.write_text("not a directory")
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         pipeline_mod.transcribe(
             str(source), formats=["json"], work_dir=str(blocked),
             resume_checkpoint=load_checkpoint(store.get(job.id)).to_dict(),

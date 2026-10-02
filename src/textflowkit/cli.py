@@ -18,6 +18,7 @@ from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
 from textflowkit.core.pipeline import TranscribeResult
 from textflowkit.core.runner import transcript_for
+from textflowkit.core.startup import StartupRecoveryError, recover_startup
 from textflowkit.core.submission import SubmissionRequest, submit_request
 from textflowkit.render import (
     BINARY_FORMATS,
@@ -168,6 +169,38 @@ def _store_is_durable() -> bool:
     silently redoing the work.
     """
     return bool(os.environ.get("TEXTFLOWKIT_DB"))
+
+
+def _recover_owned_store() -> int:
+    """Recover orphaned rows once for the store this CLI process owns.
+
+    A CLI invocation owns its store for the duration of the command: the jobs
+    this process runs are created after this call, so any PENDING/RUNNING row
+    already in a durable store is an orphan from a process that died - it has no
+    worker, and without recovery a ``--resume`` reads it as "already active" and
+    refuses to reuse the saved work (audit finding AL-001).
+
+    This belongs at the CLI's process/store ownership boundary, *not* inside
+    ``submit_request(background=False)``: an embedding process can hold
+    genuinely live work, so an unconditional reap there would fail rows it does
+    not own. Recovery is delegated to the shared per-store owner, so a single
+    CLI process reaps exactly once even if both the transcribe and batch paths
+    were to ask. It runs only against a durable store; an in-memory store is
+    fresh per process and has no orphans to recover.
+
+    Returns 0 when recovery ran or was unnecessary, and 1 (with a clear message
+    on stderr, no traceback) when the store rejected the recovery write: the
+    command must fail rather than proceed over a store whose orphans still read
+    ``running``.
+    """
+    if not _store_is_durable():
+        return 0
+    try:
+        recover_startup(get_default_store())
+    except StartupRecoveryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _preflight_engine(name: str) -> str | None:
@@ -569,8 +602,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "transcribe":
+        # Recover the durable store this process owns before resume selection,
+        # so an interrupted job from a dead process is reusable rather than
+        # refused as "already active". Only the commands that submit and resume
+        # work need this; `export`, `sources`, `doctor` and `selftest` neither
+        # own nor select jobs and are left with their existing side effects.
+        recovery = _recover_owned_store()
+        if recovery != 0:
+            return recovery
         return _cmd_transcribe(args)
     if args.command == "batch":
+        recovery = _recover_owned_store()
+        if recovery != 0:
+            return recovery
         return _cmd_batch(args)
     if args.command == "export":
         return _cmd_export(args)
