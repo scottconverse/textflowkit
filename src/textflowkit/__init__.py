@@ -3,6 +3,6 @@
 from textflowkit.core.model import Segment, Transcript, WordTiming
 from textflowkit.core.pipeline import PipelineError, transcribe
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 __all__ = ["PipelineError", "Segment", "Transcript", "WordTiming", "__version__", "transcribe"]

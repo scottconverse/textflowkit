@@ -1,6 +1,6 @@
 # Adapters and integration
 
-Current published release: [v0.1.7](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7).
+Current published release: [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.

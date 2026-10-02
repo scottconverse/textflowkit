@@ -1,9 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.1.8 — 2026-10-02
 
-Fixes for the post-release audit-lite of 2026-10-01 (findings AL-001 – AL-004).
-No version bump, no publication; the v0.1.7 tag and its notes remain immutable.
+The 2026-10-02 audit-lite repair release. Core version: 0.1.8; unchanged optional fonts: 0.1.6. It carries the four fixes for the post-release audit-lite of 2026-10-01 (findings AL-001 – AL-004). Release artifacts and publication status are recorded on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8). Local source-candidate verification does not establish installed-package or individual harness compatibility.
 
 ### Engineering fixes
 
@@ -145,5 +144,6 @@ for the complete list and completion criteria. The current repair goal still
 covers decoder confinement, job lifecycle, publication/resume, translation and
 batch correctness, major terminal guidance/documentation, and its final gate.
 
-This changelog starts with the v0.1.7 release notes; published historical
+This changelog starts with the v0.1.8 release notes, followed by the v0.1.7
+release notes; published historical
 release notes remain on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases).

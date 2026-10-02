@@ -105,6 +105,19 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   identity, per-request completed-stage reuse, an aggregate export preflight,
   translation completeness and per-item batch validation, live terminal
   feedback, and the DOC-001 – DOC-006 documentation corrections. Implementation verification is complete; publication and its exact-commit CI are tracked by the [v0.1.7 release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml). Fonts remain 0.1.6 and are reused without republishing. Historical release evidence above remains scoped to its stated version.
+- [x] Ship v0.1.8 review follow-ups: the 2026-10-01 post-release audit-lite
+  follow-ups (AL-001 – AL-004). AL-001 gives the CLI owning-process startup
+  recovery at its process/store boundary, so an interrupted job's saved work can
+  be resumed instead of being refused as "already active"; AL-002 validates and
+  rehydrates reusable work **before** publishing a checkpoint, so a resume setup
+  failure can no longer replace a durable completed transcript with an empty one;
+  AL-003 corrects the MCP batch cookie-capability documentation and its
+  schema-consistency test; AL-004 corrects roadmap evidence receipts. These are
+  the four fixes recorded for [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8),
+  whose publication and exact-commit CI are tracked by the [release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml).
+  Fonts remain 0.1.6 and are reused without republishing. This entry does not
+  restate or rewrite the historical v0.1.7 achievements below, whose evidence
+  remains scoped to its stated version.
 - [x] Normalize exported file permissions on POSIX to respect the process
   umask. The mode is measured and applied before publication, with regression
   tests for it. The POSIX behaviour is now verified on live POSIX hosts: the
