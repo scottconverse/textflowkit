@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.6
+# TextFlowKit user manual — v0.1.7
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -12,7 +12,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.6'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.7'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -244,11 +244,11 @@ See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
 
 ## 7. Release and help
 
-- [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
-- [Core package 0.1.6 on PyPI](https://pypi.org/project/textflowkit/0.1.6/) and
-  [optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
-- [Release verification procedure](release-checklist.md),
-  [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
+- [v0.1.7 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7)
+- [Core package 0.1.7 on PyPI](https://pypi.org/project/textflowkit/0.1.7/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
+
+Local source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.7 installed-package or harness verification.
 
 The v0.1.6 release passed the Windows/Linux/macOS CI matrix on the tagged
 commit, and a fresh Windows Python 3.12 install of

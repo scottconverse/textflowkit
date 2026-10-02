@@ -99,6 +99,12 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   and sdist digests match the GitHub release assets, the landing page serves
   v0.1.6, and a fresh install passed `doctor`, `selftest`, and a CPU
   transcription to JSON and PDF.
+- [x] Ship v0.1.7 review follow-ups: the 2026-10-01 audit repair set — a confined
+  decoder boundary for rooted local inputs, atomic job-attempt ownership and
+  cancellation finalization, atomic worker startup, DOCX completed-output
+  identity, per-request completed-stage reuse, an aggregate export preflight,
+  translation completeness and per-item batch validation, live terminal
+  feedback, and the DOC-001 – DOC-006 documentation corrections. Implementation verification is complete; publication and its exact-commit CI are tracked by the [v0.1.7 release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml). Fonts remain 0.1.6 and are reused without republishing. Historical release evidence above remains scoped to its stated version.
 - [ ] Follow-up: normalize exported file permissions on POSIX to respect the
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading

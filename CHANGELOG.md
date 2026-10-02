@@ -1,14 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.1.7 — 2026-10-01
 
-Accepted audit fixes. This is a **local candidate branch**
-(`deepseek/fix-audit-20261001`) that has **not been merged anywhere** — not to
-`main`, not to any release branch, and not published. It is unreleased work, not
-a published release: it carries no release date, no tag, and no new version — the
-current version stays 0.1.6. Nothing here claims a public release, an
-installed-package receipt, a runtime-harness proof, or that any of it is
-available from an index.
+The 2026-10-01 audit repair release. Core version: 0.1.7; unchanged optional fonts: 0.1.6. Release artifacts and publication status are recorded on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7). Local source-candidate verification does not establish installed-package or individual harness compatibility.
 
 ### Engineering fixes
 
@@ -102,5 +96,5 @@ for the complete list and completion criteria. The current repair goal still
 covers decoder confinement, job lifecycle, publication/resume, translation and
 batch correctness, major terminal guidance/documentation, and its final gate.
 
-This changelog starts with unreleased work; published historical release notes
-remain on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases).
+This changelog starts with the v0.1.7 release notes; published historical
+release notes remain on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases).
