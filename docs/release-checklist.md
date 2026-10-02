@@ -75,7 +75,7 @@ receipt. It does not upload cookies, media, or transcripts to GitHub.
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.7` for a future release) on that verified
+version tag (for example `v0.1.8` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

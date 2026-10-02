@@ -71,16 +71,36 @@ def _sources(version: str = VERSION) -> dict[str, bytes]:
 
 
 def _wheel_bytes(sources: dict[str, bytes], version: str = VERSION) -> bytes:
+    """A real wheel, but a clock-free one: every member is stamped with a fixed
+    timestamp.
+
+    `writestr(name, data)` builds a `ZipInfo` that defaults its date_time to
+    `time.localtime()`, so the wheel changes bytes - and SHA-256 - with the
+    wall clock. `_routes` builds a wheel both to serve and to describe, and
+    `test_the_fetched_files_are_the_bytes_the_index_recorded` calls `_routes`
+    twice, so a clock-reading fixture agrees with itself only while both calls
+    land in the same DOS timestamp window. `ZipInfo` with an explicit
+    `date_time` (and `external_attr`) stamps the same bytes on every call;
+    `writestr(info, data)` is used because it needs no `open`/`close` and so
+    keeps the member payloads and the archive's digest checks untouched.
+    """
+    stamp = (1980, 1, 1, 0, 0, 0)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as wheel:
         prefix = f"textflowkit_fonts-{version}.dist-info/"
+        metadata = zipfile.ZipInfo(f"{prefix}METADATA", stamp)
+        metadata.compress_type = zipfile.ZIP_DEFLATED
+        metadata.external_attr = 0o644 << 16
         wheel.writestr(
-            f"{prefix}METADATA",
+            metadata,
             f"Metadata-Version: 2.1\nName: textflowkit-fonts\nVersion: {version}\n",
         )
         for relative, data in sorted(sources.items()):
             if relative.startswith("src/"):
-                wheel.writestr(relative[len("src/"):], data)
+                info = zipfile.ZipInfo(relative[len("src/"):], stamp)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                wheel.writestr(info, data)
     return buffer.getvalue()
 
 
@@ -264,6 +284,25 @@ def test_the_sdist_fixture_bytes_do_not_read_the_clock(monkeypatch) -> None:
 
     first = _sdist_bytes(_sources())
     second = _sdist_bytes(_sources())
+
+    assert first == second
+    assert hashlib.sha256(first).hexdigest() == hashlib.sha256(second).hexdigest()
+
+
+def test_the_wheel_fixture_bytes_do_not_read_the_clock(monkeypatch) -> None:
+    """One wheel fixture, one set of bytes - whatever the clock says.
+
+    A ZIP member carries a DOS timestamp, and `writestr(name, data)` fills it
+    from `time.localtime()`. The clock is stepped here rather than waited on:
+    the two instants are far enough apart to cross any timestamp granularity a
+    second-granularity clock could still collapse, so the fixture has to pin
+    the stamps itself for these to match.
+    """
+    clock = iter([1_700_000_000.0, 1_700_000_030.0])
+    monkeypatch.setattr(time, "time", lambda: next(clock))
+
+    first = _wheel_bytes(_sources())
+    second = _wheel_bytes(_sources())
 
     assert first == second
     assert hashlib.sha256(first).hexdigest() == hashlib.sha256(second).hexdigest()

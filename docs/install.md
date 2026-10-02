@@ -1,6 +1,6 @@
 # Install notes
 
-Current release: [v0.1.7](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7).
+Current release: [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8).
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 

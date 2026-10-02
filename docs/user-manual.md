@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.7
+# TextFlowKit user manual — v0.1.8
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -12,7 +12,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.7'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.8'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -104,6 +104,22 @@ textflowkit batch meeting-a.mp4 meeting-b.mp4 --output-dir transcripts --resume
 match. Without `TEXTFLOWKIT_DB`, jobs are in memory and cannot survive a
 process restart. The job executor bounds concurrent work; consult
 [adapter and production settings](adapters.md) before running a service.
+
+The durable store assumes **one owning process per database**. A CLI invocation
+owns its store for the length of the command, so before it selects work to
+resume it recovers rows left `pending` or `running` by a process that died:
+those orphans have no worker, and without recovery a `--resume` reads them as
+"already active" and refuses a job whose expensive work was saved. Run only one
+process against a given `TEXTFLOWKIT_DB`; a second one would recover the first
+one's live jobs. A recovery write that fails stops the command with an error
+rather than continuing.
+
+Resume preserves the completed transcript. Reusable work is validated and
+rehydrated **before** any working-directory setup, so a setup failure (an
+unusable work directory, a scratch directory that cannot be created) leaves the
+previous durable checkpoint — including its finished transcript — intact for a
+later retry instead of replacing it with an empty one. A changed local source is
+still refused, and a stage is only ever listed as finished when it really is.
 
 ## 4. Export or inspect a saved transcript
 
@@ -244,11 +260,11 @@ See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
 
 ## 7. Release and help
 
-- [v0.1.7 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7)
-- [Core package 0.1.7 on PyPI](https://pypi.org/project/textflowkit/0.1.7/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.8 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8)
+- [Core package 0.1.8 on PyPI](https://pypi.org/project/textflowkit/0.1.8/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-Local source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.7 installed-package or harness verification.
+The preceding v0.1.7 source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. The v0.1.8 runtime fixes were independently checked through fresh-process CLI restart probes, real SQLite setup-failure tests, and the full Windows test suite. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.8 installed-package or harness verification.
 
 The v0.1.6 release passed the Windows/Linux/macOS CI matrix on the tagged
 commit, and a fresh Windows Python 3.12 install of

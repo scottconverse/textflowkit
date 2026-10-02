@@ -252,6 +252,7 @@ def transcribe(
     media: Path | None = None
     audio: Path | None = None
     transcript: Transcript | None = None
+    scratch: Path | None = None
     local_identity: dict[str, Any] | None = resumed.local_identity if resumed else None
 
     def _checkpoint(stage: str | None = None) -> CheckpointRecord | None:
@@ -350,50 +351,66 @@ def transcribe(
     except (FileNotFoundError, ValueError) as exc:
         raise PipelineError(str(exc)) from exc
 
-    _checkpoint("source")
-
+    # Validate and hydrate reusable work *before* publishing anything. Every
+    # snapshot this run hands to `on_checkpoint` replaces the durable one, so a
+    # source checkpoint published before validation/hydration would overwrite a
+    # completed transcript with the local `transcript` - still ``None`` here -
+    # leaving a record that still lists ``transcribe`` as finished but holds
+    # nothing. Publishing the source checkpoint only after reuse is read from the
+    # previous snapshot is what keeps a changed local source refused (below) and
+    # a setup failure from destroying usable work: nothing is written until the
+    # prior coherent snapshot has been validated and its reusable parts adopted.
     if resumed is not None and ref.kind == "file":
         try:
             validate_local_resume(resumed, resolved_source, input_root=root)
         except ValueError as exc:
             raise PipelineError(str(exc)) from exc
 
+    # Resuming means "the transcript already exists, do not transcribe again".
+    # The media files are a separate question: they live in scratch and are
+    # deleted after every run, so requiring them would make resume impossible.
+    # If a later stage (diarization) genuinely needs the audio and it is gone,
+    # re-acquire it - that is far cheaper than re-running Whisper.
+    transcript = _resume_transcript(resumed, source=source, ref=ref)
+    can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
+    if not can_resume:
+        # Only adopt reusable paths when the transcript actually resumes; a
+        # half-usable snapshot must not carry stale media paths into a new one.
+        transcript = None
+        media = None
+        audio = None
+    else:
+        media = _existing_path(resumed.media_path)
+        audio = _existing_path(resumed.audio_path)
+
+    # Which optional stages still need to run is decided *before* any
+    # acquisition, because it is also the answer to "is the audio needed at
+    # all". A resume whose optional work is already durable must not fetch or
+    # decode media just to reach a provider it is not going to consult.
+    run_diarize, run_translate, needs_audio_for_resume = _optional_stage_plan(
+        resumed if can_resume else None,
+        diarize=diarize,
+        translate_to=translate_to,
+        diarizer_backend=diarizer_backend,
+        translator_backend=translator_backend,
+    )
+
+    # The source is now resolved, validated, and its reusable work hydrated, so
+    # the replacement snapshot is coherent: it carries the reused transcript and
+    # markers rather than an empty local value.
+    _checkpoint("source")
+
     if work_dir is not None:
         Path(work_dir).mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix="textflowkit-", dir=work_dir))
 
     try:
-        transcript = _resume_transcript(resumed, source=source, ref=ref)
         # The decoder boundary follows the *source*, not the branch that
         # acquired the media. A resumed run can carry a still-existing media path
         # from its checkpoint and skip re-staging entirely, so deriving this
         # inside that branch would leave that path decoded with no restriction -
         # under an input root, which is exactly when the boundary must hold.
         confined = ref.kind == "file" and root is not None
-        if resumed is not None:
-            media = _existing_path(resumed.media_path)
-            audio = _existing_path(resumed.audio_path)
-
-        # Resuming means "the transcript already exists, do not transcribe again".
-        # The media files are a separate question: they live in scratch and are
-        # deleted after every run, so requiring them would make resume impossible.
-        # If a later stage (diarization) genuinely needs the audio and it is gone,
-        # re-acquire it - that is far cheaper than re-running Whisper.
-        can_resume = transcript is not None and _checkpoint_paths_usable(resumed)
-        if not can_resume:
-            transcript = None
-
-        # Which optional stages still need to run is decided *before* any
-        # acquisition, because it is also the answer to "is the audio needed at
-        # all". A resume whose optional work is already durable must not fetch or
-        # decode media just to reach a provider it is not going to consult.
-        run_diarize, run_translate, needs_audio_for_resume = _optional_stage_plan(
-            resumed if can_resume else None,
-            diarize=diarize,
-            translate_to=translate_to,
-            diarizer_backend=diarizer_backend,
-            translator_backend=translator_backend,
-        )
 
         try:
             if not can_resume:
