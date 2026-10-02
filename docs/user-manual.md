@@ -264,7 +264,7 @@ See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
 - [Core package 0.1.8 on PyPI](https://pypi.org/project/textflowkit/0.1.8/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-Local source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.8 installed-package or harness verification.
+The preceding v0.1.7 source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. The v0.1.8 runtime fixes were independently checked through fresh-process CLI restart probes, real SQLite setup-failure tests, and the full Windows test suite. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.8 installed-package or harness verification.
 
 The v0.1.6 release passed the Windows/Linux/macOS CI matrix on the tagged
 commit, and a fresh Windows Python 3.12 install of

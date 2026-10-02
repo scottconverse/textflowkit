@@ -288,9 +288,7 @@ interrupted run's saved work can be resumed instead of being refused as
 "already active", preservation of the completed transcript across resume setup
 failures, a correction to the MCP batch cookie capability, and corrected roadmap
 evidence receipts. It builds on the v0.1.7 audit repair set and the v0.1.6
-review repairs that precede it. Implementation was verified on a native-Windows
-source candidate with real CLI, HTTP and MCP speech, seven-format exports and
-completed resume. Release publication uses the tag workflow, which requires successful exact-commit main CI before PyPI uploads and creates the public GitHub release only afterward. Check the linked release for artifacts and workflow status; local source verification is not a fresh PyPI-install or individual-harness receipt.
+review repairs that precede it. The preceding v0.1.7 source candidate was verified with real CLI, HTTP and MCP speech, seven-format exports and completed resume. The v0.1.8 runtime fixes were independently checked through fresh-process CLI restart probes, real SQLite setup-failure tests, and the full Windows test suite; those checks are not new individual-harness receipts. Release publication uses the tag workflow, which requires successful exact-commit main CI before PyPI uploads and creates the public GitHub release only afterward. Check the linked release for artifacts and workflow status; local source verification is not a fresh PyPI-install or individual-harness receipt.
 
 The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
