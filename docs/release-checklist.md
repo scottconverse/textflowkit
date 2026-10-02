@@ -147,9 +147,15 @@ the version declared in `packages/textflowkit-fonts/pyproject.toml` and asks
   and the resolution reported a reuse, and it refuses to continue for a failed
   or cancelled fonts upload, a failed build, a cancelled run, or a skipped
   fonts job that was not a reuse. So a core release can never be published
-  against a fonts version that is not on PyPI. The GitHub release job has no
-  condition of its own, so a core upload that failed or was skipped leaves the
-  release uncreated.
+  against a fonts version that is not on PyPI. The GitHub release job also
+  carries its own condition, for the same reason: the skip propagation from the
+  reused fonts job reaches it through `publish-main` and its skipped fonts
+  dependency, so an implicit `success()` would suppress the release on the reuse
+  path — v0.1.7 initially skipped the release even though core reached PyPI, and
+  the recovery published it. It runs only on a `success` core upload, using a
+  status check function so the reuse path is not suppressed, while a failed,
+  skipped or cancelled core upload or a cancelled run still leaves the release
+  uncreated.
 - **Anything else stops the release before it builds or uploads.** A transient
   or 5xx answer, a response that is not JSON or has no file list, a release whose
   files are not exactly one wheel and one sdist for that version (a partial

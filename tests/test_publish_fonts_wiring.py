@@ -118,6 +118,7 @@ def _python_condition(condition: str) -> str:
     body = body.replace("&&", " and ").replace("||", " or ")
     body = body.replace("!cancelled()", "not cancelled")
     body = body.replace("publish-fonts", "publish_fonts")
+    body = body.replace("publish-main", "publish_main")
     assert re.fullmatch(r"[A-Za-z0-9_ .()<>=!']+", body), body
     return body
 
@@ -134,6 +135,22 @@ def _runs(condition: str, *, build: str, fonts: str, mode: str, cancelled: bool)
         build=SimpleNamespace(result=build, outputs=SimpleNamespace(fonts_mode=mode)),
         publish_fonts=SimpleNamespace(result=fonts),
     )
+    return bool(
+        eval(_python_condition(condition), {"__builtins__": {}},
+             {"needs": needs, "cancelled": cancelled})
+    )
+
+
+def _release_runs(*, core: str, cancelled: bool) -> bool:
+    """Would the release job run, given the core upload's result?
+
+    `core` is the `needs.publish-main.result` value GitHub reports (`success`,
+    `failure`, `skipped`, `cancelled`). This evaluates the release job's own
+    condition only: the platform's skip propagation is the reason the condition
+    exists.
+    """
+    condition = _condition(_job(PUBLISH, "publish-github-release"))
+    needs = SimpleNamespace(publish_main=SimpleNamespace(result=core))
     return bool(
         eval(_python_condition(condition), {"__builtins__": {}},
              {"needs": needs, "cancelled": cancelled})
@@ -297,14 +314,47 @@ def test_the_core_upload_job_keeps_its_approval_and_trusted_publishing() -> None
     assert "packages-dir: dist/main/" in main
 
 
+def test_the_github_release_survives_a_skipped_fonts_job_with_a_status_check() -> None:
+    """The release must run on a *successful* core upload even when the fonts
+    job was skipped.
+
+    GitHub skips a job whose `needs:` job was skipped unless the job's `if` uses
+    a status check function. The release needs `publish-main` by name, but the
+    workflow-wide propagation from the skipped fonts job reaches it through
+    `publish-main` and its skipped fonts dependency, so a bare `if:` (implicitly
+    `success()`) still loses. v0.1.7 initially skipped the release on the reuse
+    path; the recovery published it, and `cancelled()` is the status check that
+    defeats that propagation while a cancelled run is still refused.
+    """
+    condition = _condition(_job(PUBLISH, "publish-github-release"))
+
+    assert "!cancelled()" in condition
+    assert "needs.publish-main.result" in condition
+
+
+def test_a_reused_fonts_release_still_publishes_the_github_release() -> None:
+    """The fonts reuse path: fonts skipped upstream, core succeeded, so the
+    release must run and carry the core version that is now on PyPI."""
+    assert _release_runs(core="success", cancelled=False)
+
+
 def test_the_github_release_cannot_bypass_a_failed_core_upload() -> None:
-    """No job-level `if` on purpose: the default gate propagates a failed or
-    skipped `publish-main`, so a core upload that did not succeed cannot end in
-    a public release."""
+    """A core upload that did not succeed cannot end in a public release."""
+    assert not _release_runs(core="failure", cancelled=False)
+    assert not _release_runs(core="skipped", cancelled=False)
+    assert not _release_runs(core="cancelled", cancelled=False)
+
+
+def test_a_cancelled_run_cannot_publish_the_github_release() -> None:
+    assert not _release_runs(core="success", cancelled=True)
+
+
+def test_the_github_release_job_keeps_its_private_gate_and_write_scope() -> None:
     release = _job(PUBLISH, "publish-github-release")
 
-    assert not re.search(r"^    if:", release, re.MULTILINE), "a job-level if could bypass the gate"
     assert "environment: pypi" not in release
+    assert "contents: write" in release
+    assert "actions: read" not in release
 
 
 def test_the_workflow_never_skips_an_existing_pypi_filename() -> None:
