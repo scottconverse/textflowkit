@@ -449,13 +449,54 @@ def get_job_status(job_id: str) -> dict[str, Any]:
         return {"error": err}
     assert job is not None
     payload = _job_payload(job)
-    if job.state is JobState.DONE:
-        payload["next"] = f"Read the transcript with get_transcript(job_id='{job.id}')."
-    elif job.state is JobState.ERROR:
-        payload["next"] = "The job failed; see the 'error' field."
-    else:
-        payload["next"] = "Still working. Poll again."
+    payload["next"] = _status_guidance(job)
     return payload
+
+
+def _status_guidance(job: Job) -> str:
+    """The action a client should take for a job in this state.
+
+    Terminal states must not tell a client to keep polling: CANCELLED and ERROR
+    can never reach DONE, so a "still working, poll again" line is a dead end a
+    trusting client will wait on forever. Active states keep the poll-again
+    instruction; CANCELLED additionally names its recovery (resume or resubmit),
+    and neither terminal branch promises an instant model interrupt, because
+    cancellation is cooperative at stage boundaries.
+    """
+    if job.state is JobState.DONE:
+        return f"Read the transcript with get_transcript(job_id='{job.id}')."
+    if job.state is JobState.ERROR:
+        return (
+            "The job failed. Stop polling and inspect the 'error' field. "
+            "This job will not reach 'done'."
+        )
+    if job.state is JobState.CANCELLED:
+        return (
+            "Job cancelled. Stop polling. Resume this job if supported, "
+            "or submit the media again."
+        )
+    return "Still working. Poll again."
+
+
+def _read_guidance(job: Job) -> str:
+    """What a read request should tell a client about a not-yet-done job.
+
+    Active work keeps the poll-again advice. The terminal states cannot reach
+    DONE by polling, so each says what actually helps instead: an ERROR points at
+    the failure, a CANCELLED names its recovery, and neither promises an
+    immediate interrupt.
+    """
+    if job.state is JobState.ERROR:
+        return (
+            "The job failed. Stop polling and inspect the 'error' field. "
+            "This job will not reach 'done'."
+        )
+    if job.state is JobState.CANCELLED:
+        return (
+            "Job cancelled. Stop polling. Resume this job if supported, "
+            "or submit the media again."
+        )
+    return "Poll get_job_status until state is 'done'."
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -493,7 +534,7 @@ def get_transcript(
         return {
             "error": f"job is not finished (state: {job.state.value})",
             "state": job.state.value,
-            "next": "Poll get_job_status until state is 'done'.",
+            "next": _read_guidance(job),
         }
     tr = transcript_for(job)
     if tr is None:
@@ -569,6 +610,7 @@ def search_transcript(
         return {
             "error": f"job is not finished (state: {job.state.value})",
             "state": job.state.value,
+            "next": _read_guidance(job),
         }
     tr = transcript_for(job)
     if tr is None:

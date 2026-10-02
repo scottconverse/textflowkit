@@ -64,6 +64,7 @@ def run_job(
     resume_checkpoint: dict[str, Any] | None = None,
     on_started: Callable[[int], None] | None = None,
     expected_attempt: int | None = None,
+    notify: Callable[[str], None] | None = None,
 ) -> None:
     """Execute a job, recording its terminal state. Callers decide the thread.
 
@@ -81,6 +82,16 @@ def run_job(
     (or a store outage that also breaks reads) does not force it to re-derive the
     identity from a possibly-broken store - the identity-loss failure. Optional:
     an inline caller with no recovery concern passes nothing.
+
+    ``notify`` is an optional, display-only stage observer. It is called with the
+    name of a stage the instant that stage *starts*, so a CLI can show in-flight
+    feedback; every other surface passes nothing and keeps its silence. It never
+    replaces the stored ``progress`` value `_progress` owns - the store write and
+    the notice are two sinks for one fact - and the call is made *after* the
+    guarded progress write, so a notice is only ever emitted for a stage this run
+    still owns. A run that has already been cancelled, or that a newer attempt has
+    taken over, writes nothing and therefore announces nothing: the display
+    cannot tell an operator about work that did not happen.
     """
     # Do not start work that has already been cancelled or otherwise finished.
     # `submit` only hands us fresh jobs; explicit resume prepares the row first.
@@ -121,7 +132,14 @@ def run_job(
         worker is about to start, and a write that tested the row first could
         still lose the acceptance that landed between the test and the write.
         """
-        store.update_owned(job.id, observed_attempt=owned, progress=stage)
+        if store.update_owned(job.id, observed_attempt=owned, progress=stage) is None:
+            # The guarded write refused: the row is terminal, carries an accepted
+            # cancellation, or a newer attempt took it over. The stage is not this
+            # run's to report, so no notice goes out either - a display must not
+            # announce work the store has already stopped owning.
+            return
+        if notify is not None:
+            notify(stage)
 
     try:
         result = transcribe(

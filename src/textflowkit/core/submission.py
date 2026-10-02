@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -300,8 +301,16 @@ def submit_request(
     background: bool = True,
     resume: bool = False,
     resume_job_id: str | None = None,
+    notify: Callable[[str], None] | None = None,
 ) -> Job:
-    """Submit or resume via the same durable job lifecycle on every surface."""
+    """Submit or resume via the same durable job lifecycle on every surface.
+
+    ``notify`` is an optional display-only stage observer threaded to the inline
+    runner so the CLI can show in-flight feedback. It is deliberately *not* part
+    of ``SubmissionRequest`` and is never added to ``run_kwargs``: a callback is
+    not request state, so it is not serialized into the request or the
+    checkpoint. Surfaces that do not display (MCP, HTTP) pass nothing.
+    """
     executor = get_default_executor() if background else None
     if executor is not None and executor.store is store:
         # Reap old PENDING/RUNNING records before selecting one to resume.
@@ -390,6 +399,10 @@ def submit_request(
             store.update(job.id, request=request.to_dict())
             if checkpoint_payload is not None:
                 kwargs["resume_checkpoint"] = checkpoint_payload
+            # The display sink is added beside the run kwargs, never inside the
+            # serialized request: it is process-local, not job state.
+            if notify is not None:
+                kwargs["notify"] = notify
             if executor is not None and executor.store is store:
                 try:
                     return executor.enqueue(job, **kwargs)
@@ -411,6 +424,10 @@ def submit_request(
 
     _require_engine_ready(request.engine)
     kwargs = request.run_kwargs()
+    # The display sink is added beside the run kwargs, never inside the
+    # serialized request: it is process-local, not job state.
+    if notify is not None:
+        kwargs["notify"] = notify
     if executor is not None and executor.store is store:
         return executor.submit(request=request.to_dict(), **kwargs)
     job = store.create(request.source, request=request.to_dict())

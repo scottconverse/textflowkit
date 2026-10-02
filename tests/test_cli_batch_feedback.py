@@ -171,19 +171,38 @@ def test_completed_first_item_is_reported_before_the_second_item_runs(
     assert holder.get("exc") is None, holder.get("exc")
 
 
-def test_batch_still_prints_the_final_summary_once(monkeypatch, capsys, tmp_path):
-    """The ``batch: N total, ...`` summary line survives incremental reporting."""
-    from textflowkit.core.batch import BatchItem, BatchReport
+def _fake_batch_run(monkeypatch, items):
+    """Stand in for the real ``run_batch`` *including its callback contract*.
+
+    ``run_batch`` signals each finished item through the ``on_item_complete``
+    keyword the CLI passes it, then returns the report. A stub that returned the
+    report and never invoked the callback would be testing a ``run_batch`` that
+    does not exist, so this fires the callback once per item before returning.
+    Quiet runs pass ``None``; those items must not produce a per-item line.
+    """
+    from textflowkit.core.batch import BatchReport
 
     monkeypatch.setattr(cli_mod, "get_default_store", lambda: MemoryJobStore())
 
-    def fake_run_batch(sources, *, store, **kwargs):
-        return BatchReport(items=[
-            BatchItem(source="one", status="succeeded", outputs=["one.json"]),
-            BatchItem(source="two", status="succeeded", outputs=["two.json"]),
-        ])
+    def fake_run_batch(sources, *, store, on_item_complete=None, **kwargs):
+        report = BatchReport()
+        for item in items:
+            report.items.append(item)
+            if on_item_complete is not None:
+                on_item_complete(item)
+        return report
 
     monkeypatch.setattr(cli_mod, "run_batch", fake_run_batch)
+
+
+def test_batch_still_prints_the_final_summary_once(monkeypatch, capsys, tmp_path):
+    """The ``batch: N total, ...`` summary line survives incremental reporting."""
+    from textflowkit.core.batch import BatchItem
+
+    _fake_batch_run(monkeypatch, [
+        BatchItem(source="one", status="succeeded", outputs=["one.json"]),
+        BatchItem(source="two", status="succeeded", outputs=["two.json"]),
+    ])
 
     rc = cli_mod.main(["batch", "one", "two", "--output-dir", str(tmp_path)])
 
@@ -201,16 +220,11 @@ def test_quiet_batch_suppresses_per_item_lines(monkeypatch, capsys, tmp_path):
     NOT asserted here; this test pins only the non-quiet success chatter as
     suppressed under ``--quiet``.
     """
-    from textflowkit.core.batch import BatchItem, BatchReport
+    from textflowkit.core.batch import BatchItem
 
-    monkeypatch.setattr(cli_mod, "get_default_store", lambda: MemoryJobStore())
-
-    def fake_run_batch(sources, *, store, **kwargs):
-        return BatchReport(items=[
-            BatchItem(source="one", status="succeeded", outputs=["one.json"]),
-        ])
-
-    monkeypatch.setattr(cli_mod, "run_batch", fake_run_batch)
+    _fake_batch_run(monkeypatch, [
+        BatchItem(source="one", status="succeeded", outputs=["one.json"]),
+    ])
 
     rc = cli_mod.main(["batch", "one", "--quiet", "--output-dir", str(tmp_path)])
 

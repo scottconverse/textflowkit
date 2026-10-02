@@ -243,7 +243,9 @@ def transcribe(
     completion, so they cannot answer "what is happening now": by the time one
     arrives, the next stage - usually the long one - has already started. The
     two callbacks are deliberately separate, and only `on_stage` is reported
-    while work is in flight.
+    while work is in flight. It is a fire-and-forget notice for a *display*: the
+    store's own `progress` value is written separately by the runner's sink, so a
+    resumed stage that is reused rather than run is never announced here.
     """
     resumed = parse_checkpoint(resume_checkpoint)
     finished_stages = list(resumed.finished_stages) if resumed else []

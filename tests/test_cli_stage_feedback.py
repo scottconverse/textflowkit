@@ -54,6 +54,7 @@ reads it and keeps the consumed text, and the tests join it with the final read.
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -162,7 +163,7 @@ class _Captured:
         self.out = ""
         self.err = ""
 
-    def read(self) -> "tuple[str, str]":
+    def read(self) -> tuple[str, str]:
         """Consume the not-yet-read output and return ``(out, err)`` so far.
 
         The cumulative totals are returned, so a mid-run assertion and the final
@@ -228,8 +229,25 @@ def test_nonquiet_transcribe_announces_a_useful_stage_before_completion(
     # The run finished cleanly: nothing after release may corrupt stdout. This
     # uses the accumulated totals, so the mid-run bytes are still accounted for.
     final_out, _final_err = captured.read()
-    assert "transcrib" not in final_out.lower(), (
-        f"transcript text leaked the stage line onto stdout: {final_out!r}"
+    # stdout's contract for this run is the written path and nothing else. A
+    # substring probe would only measure whether pytest's `tmp_path` — whose
+    # directory name embeds this test's name, and therefore the word
+    # "transcribe" — leaked into stdout; it cannot tell a stage line from a
+    # path. Assert the shape instead: exactly one non-empty stdout line, that
+    # line is an existing `.json` file, and no standalone stage line is present.
+    out_lines = [line for line in final_out.splitlines() if line.strip()]
+    assert len(out_lines) == 1, (
+        f"stdout carried more than the written path: {final_out!r}"
+    )
+    written = Path(out_lines[0].strip())
+    assert written.is_file(), (
+        f"stdout's line is not a written file: {out_lines[0]!r}"
+    )
+    assert written.suffix == ".json", (
+        f"stdout's line is not the json output path: {out_lines[0]!r}"
+    )
+    assert not any("..." in line for line in out_lines), (
+        f"a standalone stage line reached stdout: {final_out!r}"
     )
 
 
@@ -286,7 +304,12 @@ def test_quiet_transcribe_suppresses_stage_feedback(monkeypatch, capsys, tmp_pat
 
     assert rc == 0, captured.err
     assert captured.out.strip(), "quiet must still print the written paths"
-    assert "transcrib" not in captured.err.lower(), (
+    # Quiet emits no per-stage line, so stderr must carry exactly the ordinary
+    # end summary and nothing with a stage/ellipsis marker. `_stage_printer`
+    # renders `f"{stage}..."`, and the finish summary's fields ("platform :",
+    # "language :", "segments :", "engine   :") contain no "...", so the marker
+    # is what separates a stage line from the summary.
+    assert "..." not in captured.err, (
         f"quiet still emitted stage feedback: {captured.err!r}"
     )
 
@@ -342,6 +365,9 @@ def test_resumed_run_does_not_announce_a_reused_finished_stage(
     captured = capsys.readouterr()
 
     assert rc == 0, captured.err
-    assert "transcrib" not in captured.err.lower(), (
+    # A reused transcription must not be re-announced: no "transcribing..." line
+    # appears. The reused stage still legitimately announces "rendering..." (that
+    # work really does run), so this pins the absent stage, not all stage lines.
+    assert "transcribing" not in captured.err.lower(), (
         f"a resumed run announced a stage whose work was reused: {captured.err!r}"
     )
