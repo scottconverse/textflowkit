@@ -55,14 +55,22 @@ def test_cmd_batch_dispatches_report_and_returns_failure_on_failed_item(
     monkeypatch.setattr(cli_mod, "get_default_store", lambda: store)
     captured = {}
 
-    def fake_run_batch(sources, *, store, **kwargs):
+    def fake_run_batch(sources, *, store, on_item_complete=None, **kwargs):
         captured["sources"] = sources
         captured["store"] = store
         captured["kwargs"] = kwargs
-        return BatchReport(items=[
+        # Faithful stub: `run_batch` fires `on_item_complete` once per item the
+        # instant it finishes, so this stub must do the same before returning.
+        # A stub that skipped the callback would let a CLI that never wires it up
+        # pass while printing nothing per item.
+        report = BatchReport(items=[
             BatchItem(source="one", status="succeeded", outputs=["one.json"]),
             BatchItem(source="two", status="failed", error="bad source"),
         ])
+        if on_item_complete is not None:
+            for item in report.items:
+                on_item_complete(item)
+        return report
 
     monkeypatch.setattr(cli_mod, "run_batch", fake_run_batch)
 
@@ -76,6 +84,8 @@ def test_cmd_batch_dispatches_report_and_returns_failure_on_failed_item(
     assert captured["kwargs"]["resume"] is False
     assert "succeeded one" in out
     assert "failed    two - bad source" in out
+    assert out.count("succeeded one") == 1
+    assert out.count("failed    two - bad source") == 1
     assert "batch: 2 total, 1 succeeded, 1 failed, 0 skipped" in out
 
 

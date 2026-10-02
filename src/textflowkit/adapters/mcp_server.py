@@ -265,8 +265,11 @@ def transcribe_media(
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
-    The work runs in the background; poll get_job_status until state is 'done',
-    then read get_transcript. Do not expect a transcript in this response.
+    The work runs in the background; poll get_job_status until the job reaches a
+    terminal state - 'done', 'error', or 'cancelled' - rather than polling only
+    for 'done'. State 'done' then reads with get_transcript; 'error' and
+    'cancelled' are terminal and stop the poll, and each response's `next` field
+    says what to do. Do not expect a transcript in this response.
 
     Args:
         source: A media URL (YouTube, TikTok, Facebook, Instagram, Vimeo,
@@ -369,8 +372,10 @@ def submit_batch_media(
         resume: Reuse matching saved checkpoints and completed transcripts.
         engine: Speech engine, applied to every job. 'whisper' (the default:
             openai-whisper on the torch stack) or the opt-in 'faster-whisper'
-            (CPU/Mac; needs the faster-whisper extra). An unusable engine fails
-            each item that named it; other items are unaffected.
+            (CPU/Mac; needs the faster-whisper extra). This one engine is shared
+            in every item's request, so an unusable engine (e.g. the optional
+            extra is absent) fails every item at admission; the per-item errors
+            carry each item's index and source.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     # One slot per source, in submission order: a source that cannot be admitted

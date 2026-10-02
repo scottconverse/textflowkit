@@ -91,6 +91,9 @@ include = [
   "/pyproject.toml",
   "/README.md",
   "/LICENSE",
+  # The changelog is a tracked top-level project document: the source archive
+  # carries it so the deferred fixes and the new entries ship with the source.
+  "/CHANGELOG.md",
   "/CONTRIBUTING.md",
   "/LEGAL.md",
   "/SECURITY.md",
