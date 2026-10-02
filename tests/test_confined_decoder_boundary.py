@@ -170,8 +170,21 @@ def test_supported_formats_still_decode_under_the_restriction(tmp_path, suffix):
             "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
             "-c:a", "pcm_s16le" if suffix == ".wav" else "libmp3lame"
             if suffix == ".mp3" else "flac" if suffix == ".flac"
-            else "libvorbis" if suffix in (".ogg", ".webm", ".mkv")
+            else "vorbis" if suffix in (".ogg", ".webm", ".mkv")
             else "aac",
+            # ffmpeg's native `vorbis` encoder is flagged experimental, so it
+            # refuses to run unless strictness is lowered for this one output;
+            # `-strict -2` is the documented opt-in for that experimental
+            # encoder. `libvorbis` (the reference encoder this test used
+            # before) fails to generate the fixture on the platform used for
+            # the focused run, so the fixture uses the native encoder instead,
+            # which avoids the external libvorbis dependency; the platform gates
+            # still establish compatibility. The native vorbis encoder accepts
+            # only stereo (2-channel) input and exits with an error status on a
+            # mono input, so the mono `sine` source is forced to two channels
+            # here. The confined *decode* under test is unchanged.
+            "-strict", "-2",
+            "-ac", "2",
             str(source),
         ],
         check=True,
