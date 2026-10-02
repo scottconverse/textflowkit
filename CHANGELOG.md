@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+Fixes for the post-release audit-lite of 2026-10-01 (findings AL-001 – AL-004).
+No version bump, no publication; the v0.1.7 tag and its notes remain immutable.
+
+### Engineering fixes
+
+- **AL-001 — CLI owning-process startup recovery.** A CLI invocation that was
+  interrupted left its PENDING/RUNNING row active; because the CLI submits with
+  `background=False` it never started the recovering executor, so a later
+  `--resume` read the orphan as "already active" and refused a job whose expensive
+  work was saved. Recovery now runs once per owning process at the CLI's
+  process/store boundary (`cli.main`), before single or batch resume selection,
+  through the shared per-store owner. It is deliberately **not** an unconditional
+  reap in every `submit_request(background=False)`: an embedding process can hold
+  genuinely live work. A recovery write failure is reported as a clear error with
+  a nonzero exit, not a false success or a raw traceback. The documented
+  one-owning-process-per-database model is unchanged.
+- **AL-002 — preserve the completed transcript across resume setup failures.** The
+  source checkpoint serialized the local transcript (still `None`) before
+  hydrating the previous transcript, so a directory/`mkdtemp` failure replaced a
+  durable completed transcript with `null` while still listing `transcribe` as
+  finished. Reuse is now hydrated and validated **before** any directory setup,
+  and a replacement snapshot can no longer drop a still-finished transcript. A
+  changed local source is still refused, stages are never falsely marked complete,
+  and a healthy retry reuses the recognized work.
+
+### Documentation corrections
+
+- **AL-003 — MCP batch cookie capability.** The adapter guide said
+  `submit_batch_media` has no `cookies_from_browser` parameter. It does: the tool
+  accepts one shared value and forwards it to every request, and the production
+  refusal is enforced by the same shared guard as the other surfaces. The matrix
+  and paragraph (and the historical DOC-003 changelog text) were corrected, with a
+  schema-consistency regression test that reads the real SDK-generated tool schema.
+- **AL-004 — roadmap evidence.** The POSIX file-mode and fonts-reuse follow-ups
+  are marked done against their exact receipts: current-main CI run 36961982098
+  (12 OS/Python test jobs + three installed-wheel jobs + Ruff) verifies POSIX modes
+  on Linux/macOS, and release-workflow run 36961162844 built the reused 0.1.6
+  fonts, skipped the fonts upload, and published core to PyPI. The GitHub-release
+  job skip, its manual recovery, and the PR #23 condition repair are recorded
+  without claiming the original workflow was all green or the repaired automatic
+  path has been live-tested. The v0.1.7 history and version are preserved.
+
 ## v0.1.7 — 2026-10-01
 
 The 2026-10-01 audit repair release. Core version: 0.1.7; unchanged optional fonts: 0.1.6. Release artifacts and publication status are recorded on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7). Local source-candidate verification does not establish installed-package or individual harness compatibility.
@@ -63,12 +107,17 @@ The 2026-10-01 audit repair release. Core version: 0.1.7; unchanged optional fon
   overlapping rather than clipped.
 - **DOC-003** — "same options" is replaced with a per-surface parameter matrix
   (HTTP `formats` array vs MCP comma-separated string; HTTP batch options are
-  **per item**, MCP batch options are shared and expose **no**
-  `cookies_from_browser` parameter), and the batch contract now states that 202
-  means admission, not completion, with per-item indexed errors. MCP
+  **per item**, MCP batch options are shared), and the batch contract now states
+  that 202 means admission, not completion, with per-item indexed errors. MCP
   `sources` is documented as a list of **strings**: a non-string entry (including
   a nested object or a number) is that entry's own error, not a whole-call
   refusal, while a string remains valid.
+  *Correction (2026-10-01, audit-lite AL-003):* the v0.1.7 text of this entry
+  claimed the MCP batch tool exposes **no** `cookies_from_browser` parameter.
+  That was wrong. `submit_batch_media` accepts `cookies_from_browser` and
+  forwards the one shared value to every request it builds; the production
+  refusal is enforced by the same shared guard as the other surfaces. The
+  adapter guide was corrected to match the generated tool schema.
 - **DOC-004** — a full production settings reference (names, defaults, units,
   required fields) is added to the adapter guide, and the production refusal of
   browser-cookie submissions is stated across the adapter guide, the sources

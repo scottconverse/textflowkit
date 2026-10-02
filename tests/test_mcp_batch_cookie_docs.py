@@ -21,7 +21,7 @@ import pytest
 
 pytest.importorskip("mcp", reason="the mcp extra is required for the MCP adapter")
 
-from textflowkit.adapters.mcp_server import mcp  # noqa: E402
+from textflowkit.adapters.mcp_server import mcp
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

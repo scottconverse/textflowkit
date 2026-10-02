@@ -105,16 +105,17 @@ HTTP batch item by hand.
 | Input | `source: string`, required | `source: string`, required | `sources: list[string]`, required |
 | `formats` | **list** of strings (e.g. `["json","srt"]`); default `json`,`srt`,`txt` | **comma-separated string** `"json,srt,txt"` | **comma-separated string** |
 | `language`, `output_dir`, `model`, `device`, `engine`, `diarize`, `translate_to` | same fields on the single item; on HTTP batch each item carries its **own** copy, applied only to that item | same | shared across all sources |
-| `cookies_from_browser` | accepted on the HTTP single `POST /jobs` and on each HTTP batch item | accepted | **not a supported parameter** - callers must not supply it |
+| `cookies_from_browser` | accepted on the HTTP single `POST /jobs` and on each HTTP batch item | accepted | accepted (shared across all sources) |
 | Resume | batch wrapper `resume: bool`; single `POST /jobs/{id}/resume` | `resume_job` tool | `resume: bool` |
 
-The MCP batch tool's `cookies_from_browser` row is the one place the surfaces
-genuinely differ: `submit_batch_media`'s signature has no such parameter, so a
-caller cannot pass browser cookies through it — only through `transcribe_media`
-or an HTTP submission. On HTTP, batch options are **per item**: each entry of
-`jobs` is a full `TranscribeRequest`, so two items can name different models or
-languages. The MCP batch tool instead takes its options **once** and applies them
-to every source.
+The `cookies_from_browser` value is accepted on every surface. On `transcribe_media`
+and `submit_batch_media` it is one shared value applied to each request the call
+builds; on HTTP it is **per item**: each entry of `jobs` is a full
+`TranscribeRequest`, so two items can name different models or languages. The MCP
+batch tool instead takes its options **once** and applies them to every source.
+Whichever surface supplies it, a cookie request is refused by the shared
+production guard when `TEXTFLOWKIT_PROFILE=production` (see the production
+settings reference below); it is honoured only in the developer/owner profile.
 
 `output_dir` omitted writes no rendered files, but a durable transcript is still
 kept: with `TEXTFLOWKIT_DB` set the transcript survives the process, so "no

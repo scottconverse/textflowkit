@@ -105,27 +105,33 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   identity, per-request completed-stage reuse, an aggregate export preflight,
   translation completeness and per-item batch validation, live terminal
   feedback, and the DOC-001 – DOC-006 documentation corrections. Implementation verification is complete; publication and its exact-commit CI are tracked by the [v0.1.7 release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml). Fonts remain 0.1.6 and are reused without republishing. Historical release evidence above remains scoped to its stated version.
-- [ ] Follow-up: normalize exported file permissions on POSIX to respect the
-  process umask. Current atomic temporary files can leave outputs mode `0600`,
-  preventing another account (such as a separate web server user) from reading
-  exported subtitles or documents. Fix and regression-test separately.
-  The mode is now measured and applied before publication, with regression
-  tests for it, but the POSIX behaviour has not been verified on a live POSIX
-  host yet, so this stays open until CI or a POSIX machine confirms it.
-- [ ] Follow-up: decouple the fonts package's version from core releases so
-  unchanged font wheels are not rebuilt/uploaded every patch. The publish
-  workflow now resolves the fonts version against PyPI before it builds: an
-  unpublished version is built and uploaded, and a published one is fetched
-  from PyPI with its recorded SHA-256 and size verified and is never rebuilt,
-  re-uploaded, or hidden behind `skip-existing`. A changed fonts package must
-  carry a new version, and the fonts upload and the core upload are conditional
-  so the reuse path still publishes the core release. See the
+- [x] Normalize exported file permissions on POSIX to respect the process
+  umask. The mode is measured and applied before publication, with regression
+  tests for it. The POSIX behaviour is now verified on live POSIX hosts: the
+  Linux/macOS jobs of the current-main [CI run 36961982098](https://github.com/scottconverse/textflowkit/actions/runs/36961982098)
+  run the full suite (12 OS/Python test jobs plus three installed-wheel jobs
+  and Ruff) on the audited commit, and `tests/test_export_file_mode.py` carries
+  the six umask/publication cases (Windows-only excluded). This is no longer
+  unverified.
+- [x] Decouple the fonts package's version from core releases so unchanged font
+  wheels are not rebuilt/uploaded every patch. The publish workflow resolves the
+  fonts version against PyPI before it builds: an unpublished version is built
+  and uploaded, and a published one is fetched from PyPI with its recorded
+  SHA-256 and size verified and is never rebuilt, re-uploaded, or hidden behind
+  `skip-existing`. A changed fonts package must carry a new version, and the
+  fonts upload and the core upload are conditional so the reuse path still
+  publishes the core release. See the
   [release checklist](release-checklist.md#the-fonts-version-contract-issue-15).
-  This stays open until a release actually reuses a published fonts version on
-  PyPI. v0.1.6 exercised only the new-fonts path, where 0.1.6 was not yet
-  published and both packages were built and uploaded; the reuse path is still
-  covered by deterministic tests over injected index responses, not by a live
-  tag.
+  The reuse path is now exercised by a live release: the v0.1.7 build
+  ([release workflow run 36961162844](https://github.com/scottconverse/textflowkit/actions/runs/36961162844))
+  resolved the unchanged 0.1.6 fonts for reuse, **skipped** the fonts upload,
+  and published core to PyPI successfully. One nuance stays recorded rather than
+  papered over: that same run's GitHub-release job was skipped by a transitive
+  condition, and GitHub publication was recovered manually from the original
+  verified artifacts; PR #23 repaired the condition on main, so the repaired
+  future automatic GitHub-release path has deterministic tests, **not** a second
+  live tag run. This entry does not claim the original workflow was all green, nor
+  that the repaired publication path has been live-tested.
 
 The 13 listed media platforms are recognised through `yt-dlp`; **only YouTube**
 has an opt-in [live URL transcription release gate](release-checklist.md), not
