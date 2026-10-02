@@ -149,12 +149,24 @@ jobs:
           packages-dir: dist/main/
 
   publish-github-release:
-    # Deliberately no `if:` here. The implicit `success()` plus the default skip
-    # propagation is the gate that matters: a core upload that failed or was
-    # skipped for any reason skips this job too, so a failed release cannot end
-    # in a public GitHub release. Adding a status check function here would
-    # weaken that, not strengthen it.
+    # The release exists only to advertise a core version that is on PyPI, so it
+    # runs exactly on a successful core upload and nothing else. The condition is
+    # written out rather than left implicit for the same reason as the core
+    # upload above: a status check function must defeat skip propagation. An
+    # implicit `success()` here is still subject to it, and on a reused fonts
+    # release the workflow-wide propagation from the *skipped* fonts job reaches
+    # this job through `publish-main` and its skipped fonts dependency - v0.1.7
+    # initially skipped the release even though core reached PyPI, and the
+    # recovery published it.
+    #
+    # `always()` would also defeat the propagation, but it runs the job in a
+    # cancelled run too, so it is not used. Only a `success` core upload reaches
+    # the release: a failed, skipped or cancelled core upload, a cancelled run,
+    # and a build that did not succeed all leave no public release, so the
+    # release can never advertise a core version that is not on PyPI.
     needs: publish-main
+    if: >-
+      ${{ !cancelled() && needs.publish-main.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLISH = (ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
@@ -57,6 +58,60 @@ def _single_step(job_block: str, needle: str) -> str:
     steps = [step for step in _steps(job_block) if needle in step]
     assert len(steps) == 1, f"expected exactly one step mentioning {needle}"
     return steps[0]
+
+
+def _condition(job_block: str) -> str:
+    """The job's `if:` expression, with runs of whitespace collapsed.
+
+    The expression may be a one-line scalar or a folded (`>-`) block spanning
+    several lines; the continuation lines are joined before the `${{ ... }}`
+    body is taken, so both spellings are read the same way.
+    """
+    lines = job_block.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith("    if:")), None)
+    assert start is not None, "the job declares no if condition"
+    body = [lines[start].split("if:", 1)[1]]
+    for line in lines[start + 1:]:
+        if line.strip() and not line.startswith("      "):
+            break
+        body.append(line)
+    match = re.search(r"\$\{\{.*?\}\}", re.sub(r"\s+", " ", " ".join(body)))
+    assert match, f"the job's if is not an expression: {' '.join(body).strip()!r}"
+    return match.group(0)
+
+
+def _python_condition(condition: str) -> str:
+    """Translate a workflow `if` expression into an equivalent Python one.
+
+    GitHub's expression language is close enough to Python for the boolean
+    structure to be checked by translating the two operators and the one status
+    check function used here, then evaluating the result. Job ids may contain a
+    hyphen (`needs.publish-main.result`), which Python cannot dereference, so
+    they are underscored. The translated text is asserted to be nothing but
+    boolean expression syntax before it reaches `eval`.
+    """
+    body = condition.strip()
+    assert body.startswith("${{") and body.endswith("}}"), body
+    body = body[3:-2].strip()
+    body = body.replace("&&", " and ").replace("||", " or ")
+    body = body.replace("!cancelled()", "not cancelled")
+    body = body.replace("publish-main", "publish_main")
+    assert re.fullmatch(r"[A-Za-z0-9_ .()<>=!']+", body), body
+    return body
+
+
+def _release_runs(*, core: str, cancelled: bool) -> bool:
+    """Would the release job run, given the core upload's result?
+
+    `core` is the `needs.publish-main.result` value GitHub reports (`success`,
+    `failure`, `skipped`, `cancelled`). This evaluates the job's own condition
+    only: the platform's skip propagation is the reason the condition exists.
+    """
+    needs = SimpleNamespace(publish_main=SimpleNamespace(result=core))
+    return bool(
+        eval(_python_condition(_condition(_job(PUBLISH, RELEASE_JOB))),
+             {"__builtins__": {}}, {"needs": needs, "cancelled": cancelled})
+    )
 
 
 def test_the_release_job_checks_out_the_manifest_script_it_runs() -> None:
@@ -115,6 +170,46 @@ def test_the_manifest_step_pins_the_release_version_from_the_tag() -> None:
     step = _single_step(_job(PUBLISH, RELEASE_JOB), MANIFEST_SCRIPT)
     assert 'RELEASE_TAG: ${{ github.ref_name }}' in step
     assert '"$RELEASE_TAG"' in step
+
+
+# --- the release cannot be suppressed by a skipped fonts job ------------------
+
+
+def test_the_release_job_survives_a_skipped_fonts_job_with_a_status_check() -> None:
+    """The release needs `publish-main` by name, but the workflow-wide skip
+    propagation from a *reused* fonts release reaches it through `publish-main`
+    and its skipped fonts dependency, so its `if` must use a status check
+    function. An implicit `success()` loses to that propagation: v0.1.7
+    initially skipped the release even though core reached PyPI, and the
+    recovery published it.
+    """
+    condition = _condition(_job(PUBLISH, RELEASE_JOB))
+
+    assert "!cancelled()" in condition
+    assert "needs.publish-main.result" in condition
+
+
+def test_a_successful_core_upload_still_publishes_the_release_on_the_reuse_path() -> None:
+    """Fonts skipped upstream (reuse) -> core succeeded -> the release must run."""
+    assert _release_runs(core="success", cancelled=False)
+
+
+def test_a_core_upload_that_did_not_succeed_cannot_publish_the_release() -> None:
+    assert not _release_runs(core="failure", cancelled=False)
+    assert not _release_runs(core="skipped", cancelled=False)
+    assert not _release_runs(core="cancelled", cancelled=False)
+
+
+def test_a_cancelled_run_cannot_publish_the_release() -> None:
+    assert not _release_runs(core="success", cancelled=True)
+
+
+def test_the_release_job_keeps_its_write_scope_and_no_pypi_environment() -> None:
+    release = _job(PUBLISH, RELEASE_JOB)
+
+    assert "contents: write" in release
+    assert "environment: pypi" not in release
+    assert "actions: read" not in release
 
 
 def test_readme_describes_the_manifest_asset_rather_than_an_unspecified_hash_list() -> None:
