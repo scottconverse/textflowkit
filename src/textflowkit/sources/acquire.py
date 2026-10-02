@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from textflowkit.core.cancel import CancelledError
-from textflowkit.core.paths import UnsafeInputPathError, opened_file_path
+from textflowkit.core.paths import ENV_INPUT_ROOT, UnsafeInputPathError, opened_file_path
 from textflowkit.core.service import (
     DEFAULT_FFMPEG_TIMEOUT_SECONDS,
     ENV_EGRESS_PROXY,
@@ -32,6 +32,56 @@ class AcquisitionError(RuntimeError):
     """Raised when media cannot be obtained."""
 
 
+# --- indirect media (confined local inputs) --------------------------------
+#
+# A media file can be a *reference* to other files, not media itself: an HLS/M3U
+# playlist, a DASH manifest, an ffmpeg concat script. The demuxer opens every
+# path such a file names while it decodes. Path confinement is checked on the
+# staged copy, and the staged copy is what ffmpeg opens, so a manifest inside the
+# root can still name a file outside it: absolute references survive the copy
+# unchanged, and relative ones resolve against the scratch directory, where `..`
+# walks out. Verified against a real decode: a confined playlist naming a segment
+# outside the root decoded that segment's audio.
+#
+# The signatures are the leading bytes of the manifest formats ffmpeg's own
+# probes auto-detect with no forced demuxer. They are text markers that no
+# container format starts with, so ordinary media is unaffected, and detection
+# does not consult the extension or the source path - both are caller-supplied.
+#
+# Detection is anchored at the file's first non-whitespace byte, one step
+# broader than the probes (which reject a playlist whose signature is not at the
+# very start): a manifest this build would not follow is still refused rather
+# than trusted. A manifest form whose signature is not in this list is not
+# covered - see SECURITY.md, which states the guarantee as it is. SDP is one
+# such form left out deliberately: it names network endpoints rather than local
+# files, and the local-file demuxers that take a protocol whitelist reject those
+# protocols for a file input on the ffmpeg build measured here.
+_INDIRECT_MEDIA_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"#EXT", "HLS/M3U playlist"),
+    (b"ffconcat", "ffmpeg concat script"),
+    (b"<", "XML manifest (MPEG-DASH)"),
+)
+
+_INDIRECT_HEAD_BYTES = 4096  # signatures are a few bytes; whitespace may precede them
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def assert_direct_local_media(head: bytes, *, source: str | Path) -> None:
+    """Refuse a confined local input whose content makes ffmpeg open other files."""
+    lead = head.lstrip()
+    if lead.startswith(_UTF8_BOM):
+        lead = lead[len(_UTF8_BOM):].lstrip()
+    for signature, kind in _INDIRECT_MEDIA_SIGNATURES:
+        if lead.startswith(signature):
+            raise AcquisitionError(
+                f"confined input '{source}' is indirect media ({kind}): the file names "
+                "other files for ffmpeg to open, and a confined input is copied into "
+                "scratch, where those references cannot be checked against the "
+                "configured input root. Supply self-contained media, or decode it with "
+                f"{ENV_INPUT_ROOT} unset."
+            )
+
+
 def stage_confined_local_media(
     source: str | Path, *, work_dir: Path, input_root: str | Path
 ) -> Path:
@@ -46,14 +96,19 @@ def stage_confined_local_media(
             raise UnsafeInputPathError(
                 f"opened input file '{actual}' is outside the allowed root '{base}'"
             )
+        # The bytes decide, not the name: refuse before the copy exists, so a
+        # refused manifest leaves nothing behind for a later stage to open.
+        chunk = opened.read(1024 * 1024)
+        assert_direct_local_media(chunk[:_INDIRECT_HEAD_BYTES], source=path)
         written = 0
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("xb") as destination:
-            while chunk := opened.read(1024 * 1024):
+            while chunk:
                 written += len(chunk)
                 if maximum is not None and written > maximum:
                     raise AcquisitionError("media exceeds the configured size limit")
                 destination.write(chunk)
+                chunk = opened.read(1024 * 1024)
     return out
 
 
@@ -416,14 +471,50 @@ def fetch_media(
         check_cancel=check_cancel,
     )
 
+# The demuxers a decode may select. `-format_whitelist` is a property of the
+# ffmpeg invocation, so it bounds what a *confined* input can be regardless of
+# how the file was named or what its leading bytes happen to be - unlike the
+# signature refusal above, which only covers shapes in its list.
+#
+# The names are ffmpeg's own, as reported by `ffmpeg -demuxers`; several demuxers
+# own multiple extensions, so the list is not just the product's extension list.
+# Listed here: wav, mp3, mov/mp4/m4a, matroska/webm, ogg, flac, aac. These are
+# the product's documented starting formats, and each was measured to still
+# decode under the whitelist on the ffmpeg build in SECURITY.md.
+#
+# Left out deliberately, with the reference each one follows in brackets: the
+# HLS/M3U demuxer (`hls`, `.m3u8` playlists naming segments), the ffconcat
+# demuxer (`ffconcat`, naming files), and the DASH manifests (`dash`,
+# `webm_dash_manifest`). Any demuxer that opens paths or protocols other than
+# the input itself is out, so the list stays a list of self-contained formats.
+DECODER_FORMAT_WHITELIST: tuple[str, ...] = (
+    "wav", "mp3", "mov,mp4,m4a,3gp,3g2,mj2", "matroska,webm", "ogg", "flac", "aac",
+)
+
+
+def decoder_format_args() -> list[str]:
+    """Restrict a decode to self-contained formats.
+
+    Applied to confined (staged) inputs only: without an input root there is no
+    boundary to protect, and the product's documented workflow must keep
+    decoding whatever ffmpeg already decoded. See SECURITY.md.
+    """
+    return ["-format_whitelist", ",".join(DECODER_FORMAT_WHITELIST)]
+
+
 def extract_audio(
     media_path: str | Path,
     *,
     work_dir: str | Path,
     sample_rate: int = 16000,
     check_cancel: Callable[[], None] | None = None,
+    confined: bool = False,
 ) -> Path:
-    """Decode through a bounded pipe, never an unbounded ffmpeg output file."""
+    """Decode through a bounded pipe, never an unbounded ffmpeg output file.
+
+    ``confined`` says the input was staged from a configured input root, so the
+    decode is restricted to self-contained demuxers (`decoder_format_args`).
+    """
     ffmpeg = require_tool("ffmpeg")
     media = Path(media_path)
     if not media.exists():
@@ -444,10 +535,15 @@ def extract_audio(
     duration_pcm = max_duration * sample_rate * 2 if max_duration is not None else None
     cmd = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+    ]
+    if confined:
+        # Must precede -i: an input option applies to the input it opens.
+        cmd.extend(decoder_format_args())
+    cmd.extend([
         "-i", str(media),
         "-vn", "-ac", "1", "-ar", str(sample_rate),
         "-c:a", "pcm_s16le",
-    ]
+    ])
     if max_duration is not None:
         # The extra second lets the pipe reader distinguish an overlong input
         # from one that ends exactly at the allowed duration. It never lands on

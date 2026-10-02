@@ -163,7 +163,9 @@ def test_completed_local_resume_requires_existing_unchanged_file(cli_boundary, c
 
     media.unlink()
     assert cli.main([*args, "--resume"]) != 0
-    assert "missing" in capsys.readouterr().err.lower() or "no such file" in capsys.readouterr().err.lower()
+    # The submission contract's own source check refuses a deleted input before
+    # the resume layer sees it, so the message is "no such file". Same outcome.
+    assert "no such file" in capsys.readouterr().err.lower()
     assert engine.calls == 1
     assert len(store.list()) == 1
 
@@ -190,7 +192,14 @@ def test_local_resume_rejects_changed_or_deleted_media_independent_of_wav_fix(
                        check=True, capture_output=True, timeout=30)
     assert cli.main([*args, "--resume"]) == 1
     err = capsys.readouterr().err.lower()
-    assert ("missing" if change == "delete" else "changed") in err
+    # A deleted input is refused by the submission contract's own source check,
+    # which runs before any resume validation - hence "no such file" rather than
+    # the resume layer's "missing". Both are the same user-visible outcome: exit
+    # 1, nothing re-run.
+    if change == "delete":
+        assert "missing" in err or "no such file" in err
+    else:
+        assert "changed" in err
     assert engine.calls == 1
 
 
@@ -378,8 +387,8 @@ def test_unknown_duration_is_stopped_by_decode_byte_boundary(
     monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "production")
     monkeypatch.setenv("TEXTFLOWKIT_MAX_DURATION_SECONDS", "1")
     real_probe = service._probe_duration
-    monkeypatch.setattr(service, "_probe_duration", lambda path: None if path == media
-                        else real_probe(path))
+    monkeypatch.setattr(service, "_probe_duration", lambda path, **kwargs: None
+                        if path == media else real_probe(path, **kwargs))
     rc = cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
                    str(output), "--quiet"])
     assert rc == 1

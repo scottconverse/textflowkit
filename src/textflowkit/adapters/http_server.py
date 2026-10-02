@@ -19,6 +19,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from textflowkit import __version__
@@ -29,7 +30,11 @@ from textflowkit.core.bind import (
     developer_request_refusal,
     resolve_client_identity,
 )
-from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.executor import (
+    QueueFullError,
+    get_default_executor,
+    shutdown_default_executor,
+)
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -50,8 +55,10 @@ from textflowkit.core.service import (
     service_work_root,
     validate_production_config,
 )
+from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
+    item_source,
     submit_batch,
     submit_request,
 )
@@ -64,22 +71,45 @@ from textflowkit.render import (
     TEXT_FORMATS,
     atomic_write_bytes,
     render,
-    render_bytes,
+    render_requested,
 )
 
 try:  # optional extra
     from fastapi import FastAPI, HTTPException, Query, Request
     from fastapi.responses import JSONResponse, PlainTextResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, ValidationError
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "The HTTP adapter requires the 'http' extra. Install with: pip install 'textflowkit[http]'"
     ) from exc
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Run startup recovery before the app serves any request.
+
+    A durable store can hold jobs a previous process left PENDING/RUNNING. After
+    a restart there is no worker for them, so they must be failed *before* the
+    first read is served - otherwise ``/health`` and ``/jobs`` report a job that
+    will never finish (the audit's QA-001). Recovery is delegated to the shared
+    per-store owner, so it runs exactly once even if a worker's lazy start also
+    reaches it; a reap that cannot be persisted raises and the app fails to
+    start rather than serving a false ready.
+    """
+    recover_startup()
+    try:
+        yield
+    finally:
+        # Drain the workers this process owns. Never creates an executor: a
+        # server that ran no job has nothing to stop.
+        shutdown_default_executor(wait=True)
+
+
 app = FastAPI(
     title="textflowkit",
     version=__version__,
     description="Cross-platform media transcription API. Job-based: submit, poll, fetch.",
+    lifespan=_lifespan,
 )
 
 _RATE_LOCK = threading.Lock()
@@ -227,11 +257,34 @@ class TranscribeRequest(BaseModel):
 
 
 class BatchRequest(BaseModel):
-    jobs: list[TranscribeRequest]
+    # `jobs` is deliberately `list[Any]`, not `list[TranscribeRequest]`: the
+    # envelope contract is "a list" - a top-level `jobs` that is not a list at
+    # all is refused by this model as a whole-request 422 - while each *entry* is
+    # validated against `TranscribeRequest` inside the per-item boundary in
+    # `create_batch` (via `_submission_request`). So a non-object entry, or one
+    # with a malformed, missing, or wrongly-typed field, is that entry's item
+    # error rather than a whole-request 422; only the envelope shape is
+    # enforced here, before the handler runs.
+    jobs: list[Any]
     resume: bool = False
 
 
-def _submission_request(req: TranscribeRequest) -> SubmissionRequest:
+def _submission_request(item: Any) -> SubmissionRequest:
+    """Build one submission request from one decoded batch/job entry.
+
+    The entry is validated as a `TranscribeRequest` here, inside the caller's
+    per-item boundary, so a shape or value error on one batch entry surfaces as
+    that entry's item error rather than aborting the whole list. Pydantic's
+    `ValidationError` is normalised to `ValueError` so every door speaks the one
+    refusal type the submission contract and the HTTP handler already map.
+    """
+    if isinstance(item, TranscribeRequest):
+        req = item
+    else:
+        try:
+            req = TranscribeRequest.model_validate(item)
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
     return SubmissionRequest(
         **req.model_dump(), input_root=server_input_root(), work_dir=service_work_root()
     )
@@ -270,16 +323,46 @@ def create_job(req: TranscribeRequest) -> dict[str, Any]:
 
 @app.post("/jobs/batch", status_code=202)
 def create_batch(req: BatchRequest) -> dict[str, Any]:
-    """Queue multiple independent jobs through the same core contract."""
-    try:
-        requests = [_submission_request(item) for item in req.jobs]
-        # The engine preflight for a fresh batch runs before the loop, so an
-        # unusable engine refuses the whole request rather than queueing part of
-        # it and erroring the rest for the same reason.
-        results = submit_batch(get_default_store(), requests, resume=req.resume)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"count": len(results), "jobs": results}
+    """Queue multiple independent jobs through the same core contract.
+
+    Each entry of `jobs` is admitted independently: an entry the submission
+    contract refuses (an unsupported format, an empty source, a missing optional
+    engine extra) is reported as its own item error, identified by its zero-based
+    `index`, and the entries after it are still attempted. Only a malformed
+    *envelope* - a body whose `jobs` is not a list (non-objects inside the list
+    are per-entry errors, not envelope errors) - is a 422; the
+    envelope shape itself is enforced by `BatchRequest` before this handler runs.
+    """
+    store = get_default_store()
+    requests: list[SubmissionRequest] = []
+    # One slot per submitted entry, in submission order: a rejected entry holds
+    # its error outcome, an accepted entry a placeholder filled from the core
+    # batch result below, so `jobs` mirrors the request list positionally.
+    results: list[dict[str, Any] | None] = []
+    for index, item in enumerate(req.jobs):
+        try:
+            request = _submission_request(item)
+        except (TypeError, ValueError) as exc:
+            results.append({
+                "index": index,
+                "source": item_source(item),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        else:
+            requests.append(request)
+            results.append(None)  # placeholder, replaced below in order
+    accepted = submit_batch(store, requests, resume=req.resume)
+    # `submit_batch` enumerates only the *accepted* requests, so an accepted
+    # item's own `index` is its position in the compacted list, not the position
+    # it was submitted at. Re-stamp every recombined result with its original
+    # slot index so `index` always names the caller's input position, even when
+    # rejected items sit before it.
+    accepted_iter = iter(accepted)
+    jobs = []
+    for index, entry in enumerate(results):
+        outcome = next(accepted_iter) if entry is None else entry
+        jobs.append({**outcome, "index": index})
+    return {"count": len(jobs), "jobs": jobs}
 
 
 @app.post("/jobs/{job_id}/resume", status_code=202)
@@ -503,15 +586,16 @@ def export(
         raise HTTPException(status_code=500, detail="job contains no transcript")
 
     fmt_list = formats or ["srt", "vtt", "txt", "json"]
-    normalized = [f.lower().lstrip(".") for f in fmt_list]
-    bad = [f for f in normalized if f not in SUPPORTED_FORMATS]
-    if bad:
-        raise HTTPException(status_code=422, detail=f"unsupported format(s): {', '.join(bad)}")
-    if len(normalized) != len(set(normalized)):
-        raise HTTPException(status_code=422, detail="duplicate output format")
     try:
-        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in normalized]
-    except (ValueError, ImportError) as exc:
+        # `render_requested` is the shared preflight: it normalizes and
+        # validates the ENTIRE format list first (so a later unsupported or
+        # duplicate entry is refused before any renderer runs), then checks
+        # every requested binary dependency, then renders all formats and
+        # bounds the whole batch before anything is published. Only after it
+        # returns the full batch does the publication loop below run, so a
+        # refusal leaves no file created and no existing file replaced.
+        rendered = render_requested(tr, fmt_list, title=job.id)
+    except (ValueError, ImportError, ServiceConfigurationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         out = ensure_output_dir(output_dir)

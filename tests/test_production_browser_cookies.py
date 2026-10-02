@@ -105,8 +105,28 @@ def test_production_http_single_job_refuses_browser_cookies(production, monkeypa
     assert get_default_store().list() == []
 
 
-def test_production_http_batch_refuses_before_any_item(production, monkeypatch):
+def test_production_http_batch_refuses_the_cookie_item_per_item(production, monkeypatch):
+    """The production cookie refusal is enforced per item, not as a whole-batch 422.
+
+    A valid envelope is a 202 with one outcome per item: the gated item that
+    carries browser cookies is refused as its own error (the production refusal
+    still holds), and the clean item is admitted. The clean item is the valid
+    control that the item boundary must not weaken.
+    """
     calls = _no_transcription(monkeypatch)
+    # The admitted clean item is a real local-source submission, so the worker is
+    # stubbed to finish it inline: nothing is fetched and no model runs, and the
+    # `_no_transcription` net still fails loudly if the pipeline is ever reached.
+    from textflowkit.core.model import Transcript
+
+    def record(job, store, **kwargs):
+        store.update(
+            job.id, state=JobState.DONE, progress="complete",
+            transcript=Transcript(source=job.source, segments=[]).to_dict(),
+        )
+
+    monkeypatch.setattr(submission, "run_job", record)
+    monkeypatch.setattr(submission, "get_default_executor", lambda: None)
     client = TestClient(http_server.app)
     response = client.post(
         "/jobs/batch",
@@ -117,11 +137,20 @@ def test_production_http_batch_refuses_before_any_item(production, monkeypatch):
         ]},
         headers=HEADERS,
     )
-    assert response.status_code == 422
-    assert "cookies_from_browser" in response.json()["detail"]
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["count"] == 2, body
+    items = body["jobs"]
+    assert items[0].get("job_id"), items[0]
+    assert "cookies_from_browser" in items[1]["error"], items[1]
+    assert "production" in items[1]["error"], items[1]
+    # Only the clean item was admitted; nothing bearing cookies was submitted.
+    # Compare the stored set and count, not an order: `store.list` is newest-first,
+    # so it must never be read as creation order.
+    stored = [job.source for job in get_default_store().list()]
+    assert set(stored) == {"https://example.com/clean"}, stored
+    assert len(stored) == 1, stored
     assert calls == []
-    # The clean item listed first must not have been submitted either.
-    assert get_default_store().list() == []
 
 
 def test_production_mcp_tool_refuses_browser_cookies_before_queue(production, monkeypatch):

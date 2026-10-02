@@ -26,6 +26,7 @@ long video returns a job id immediately rather than blocking the call.
 from __future__ import annotations
 
 import sys
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any
 
@@ -36,7 +37,11 @@ from textflowkit.core.bind import (
     check_bind_safety,
     developer_request_refusal,
 )
-from textflowkit.core.executor import QueueFullError, get_default_executor
+from textflowkit.core.executor import (
+    QueueFullError,
+    get_default_executor,
+    shutdown_default_executor,
+)
 from textflowkit.core.jobs import Job, JobState, get_default_store, validate_list_limit
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
@@ -46,9 +51,12 @@ from textflowkit.core.paths import (
 )
 from textflowkit.core.retrieval import page_segments, search_segments
 from textflowkit.core.runner import transcript_for
-from textflowkit.core.service import service_work_root
+from textflowkit.core.service import ServiceConfigurationError, service_work_root
+from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import (
     SubmissionRequest,
+    build_item,
+    item_source,
     submit_batch,
     submit_request,
 )
@@ -60,7 +68,7 @@ from textflowkit.render import (
     TEXT_FORMATS,
     atomic_write_bytes,
     render,
-    render_bytes,
+    render_requested,
 )
 from textflowkit.sources.detect import PLATFORMS
 
@@ -188,7 +196,33 @@ class GuardedMCPServer(MCPServer):
         return app
 
 
-mcp = GuardedMCPServer("textflowkit", instructions=INSTRUCTIONS, version=__version__)
+@asynccontextmanager
+async def _lifespan(server: Any):
+    """Run startup recovery before the server serves any request.
+
+    Both transports enter this lifespan: ``run_stdio_async`` drives the lowlevel
+    server's own lifespan, and the Streamable-HTTP manager owns its lifespan
+    inside ``streamable_http_app``. So a durable store's orphaned jobs are failed
+    exactly once, before the first ``get_job_status``/``list_jobs`` is answered -
+    otherwise a crash/restart followed by status polling leaves a job reading
+    ``running`` forever (the audit's QA-001). Recovery is delegated to the shared
+    per-store owner, so a worker's lazy start that reaches it first is a no-op
+    here, and a reap that cannot be persisted raises so the server fails to start
+    rather than serving a false ready.
+    """
+    recover_startup()
+    try:
+        yield {}
+    finally:
+        # Drain the workers this process owns, if any were ever started. Never
+        # creates an executor: a server that ran no job has nothing to stop.
+        shutdown_default_executor(wait=True)
+
+
+mcp = GuardedMCPServer(
+    "textflowkit", instructions=INSTRUCTIONS, version=__version__, lifespan=_lifespan
+)
+
 
 def _job_payload(job: Job) -> dict[str, Any]:
     return job.to_dict()
@@ -231,8 +265,11 @@ def transcribe_media(
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
-    The work runs in the background; poll get_job_status until state is 'done',
-    then read get_transcript. Do not expect a transcript in this response.
+    The work runs in the background; poll get_job_status until the job reaches a
+    terminal state - 'done', 'error', or 'cancelled' - rather than polling only
+    for 'done'. State 'done' then reads with get_transcript; 'error' and
+    'cancelled' are terminal and stop the poll, and each response's `next` field
+    says what to do. Do not expect a transcript in this response.
 
     Args:
         source: A media URL (YouTube, TikTok, Facebook, Instagram, Vimeo,
@@ -298,12 +335,13 @@ def transcribe_media(
 
 @mcp.tool(annotations=OPEN_WORLD)
 def submit_batch_media(
-    sources: list[str],
+    sources: list[Any],
     language: str | None = None,
     formats: str = "json,srt,txt",
     output_dir: str | None = None,
     model: str = "small",
     device: str | None = None,
+    cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
     resume: bool = False,
@@ -311,8 +349,12 @@ def submit_batch_media(
 ) -> dict[str, Any]:
     """Queue multiple independent media jobs and return each job handle.
 
-    Each source gets its own job, so one bad source cannot hide the others. Poll
-    each returned job_id with get_job_status.
+    `sources` is a list; a top-level value that is not a list at all is refused
+    by the tool schema before this function runs. Each *entry* gets its own job,
+    so one bad source cannot hide the others: a source that cannot be admitted (a
+    non-object entry, or a non-string/empty source) is reported as its own item
+    error, identified by its zero-based `index`, and the remaining sources are
+    still queued. Poll each returned job_id with get_job_status.
 
     Args:
         sources: Media URLs or local file paths; one job per source.
@@ -323,29 +365,57 @@ def submit_batch_media(
         output_dir: Directory to write rendered files into.
         model: Whisper model size - tiny, base, small, medium, or large.
         device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+        cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
+            'firefox'. Only for media you are authorised to access.
         diarize: Label speakers (needs the diarize extra and a gated model).
         translate_to: Target language code; fails loudly if unreachable.
         resume: Reuse matching saved checkpoints and completed transcripts.
         engine: Speech engine, applied to every job. 'whisper' (the default:
             openai-whisper on the torch stack) or the opt-in 'faster-whisper'
-            (CPU/Mac; needs the faster-whisper extra). An unusable engine
-            refuses the whole batch before anything is queued.
+            (CPU/Mac; needs the faster-whisper extra). This one engine is shared
+            in every item's request, so an unusable engine (e.g. the optional
+            extra is absent) fails every item at admission; the per-item errors
+            carry each item's index and source.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
-    try:
-        requests = [SubmissionRequest(
-            source=source, language=language, formats=fmt_list,
-            output_dir=output_dir, model=model, device=device,
-            diarize=diarize, translate_to=translate_to,
-            input_root=server_input_root(), work_dir=service_work_root(),
-            engine=engine,
-        ) for source in sources]
-        # Fresh batches preflight the engine once, inside submit_batch, before
-        # queueing anything; a resume batch decides reuse per item instead.
-        results = submit_batch(get_default_store(), requests, resume=resume)
-    except ValueError as exc:
-        return {"error": str(exc)}
-    return {"count": len(results), "jobs": results}
+    # One slot per source, in submission order: a source that cannot be admitted
+    # holds its error outcome, an admitted one a placeholder filled from the core
+    # batch result below, so `jobs` mirrors the source list positionally.
+    results: list[dict[str, Any] | None] = []
+    requests: list[SubmissionRequest] = []
+    for index, source in enumerate(sources):
+        try:
+            request = build_item(
+                {
+                    "source": source, "language": language, "formats": fmt_list,
+                    "output_dir": output_dir, "model": model, "device": device,
+                    "cookies_from_browser": cookies_from_browser,
+                    "diarize": diarize, "translate_to": translate_to,
+                    "engine": engine,
+                },
+                input_root=server_input_root(), work_dir=service_work_root(),
+            )
+        except (TypeError, ValueError) as exc:
+            results.append({
+                "index": index,
+                "source": item_source({"source": source}),
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        else:
+            requests.append(request)
+            results.append(None)
+    accepted = submit_batch(get_default_store(), requests, resume=resume)
+    # `submit_batch` enumerates only the *accepted* requests, so an accepted
+    # item's own `index` is its position in the compacted list, not the position
+    # it was submitted at. Re-stamp every recombined result with its original
+    # slot index so `index` always names the caller's input position, even when
+    # rejected sources sit before it.
+    accepted_iter = iter(accepted)
+    jobs = []
+    for index, entry in enumerate(results):
+        outcome = next(accepted_iter) if entry is None else entry
+        jobs.append({**outcome, "index": index})
+    return {"count": len(jobs), "jobs": jobs}
 
 
 @mcp.tool(annotations=MUTATING)
@@ -384,13 +454,54 @@ def get_job_status(job_id: str) -> dict[str, Any]:
         return {"error": err}
     assert job is not None
     payload = _job_payload(job)
-    if job.state is JobState.DONE:
-        payload["next"] = f"Read the transcript with get_transcript(job_id='{job.id}')."
-    elif job.state is JobState.ERROR:
-        payload["next"] = "The job failed; see the 'error' field."
-    else:
-        payload["next"] = "Still working. Poll again."
+    payload["next"] = _status_guidance(job)
     return payload
+
+
+def _status_guidance(job: Job) -> str:
+    """The action a client should take for a job in this state.
+
+    Terminal states must not tell a client to keep polling: CANCELLED and ERROR
+    can never reach DONE, so a "still working, poll again" line is a dead end a
+    trusting client will wait on forever. Active states keep the poll-again
+    instruction; CANCELLED additionally names its recovery (resume or resubmit),
+    and neither terminal branch promises an instant model interrupt, because
+    cancellation is cooperative at stage boundaries.
+    """
+    if job.state is JobState.DONE:
+        return f"Read the transcript with get_transcript(job_id='{job.id}')."
+    if job.state is JobState.ERROR:
+        return (
+            "The job failed. Stop polling and inspect the 'error' field. "
+            "This job will not reach 'done'."
+        )
+    if job.state is JobState.CANCELLED:
+        return (
+            "Job cancelled. Stop polling. Resume this job if supported, "
+            "or submit the media again."
+        )
+    return "Still working. Poll again."
+
+
+def _read_guidance(job: Job) -> str:
+    """What a read request should tell a client about a not-yet-done job.
+
+    Active work keeps the poll-again advice. The terminal states cannot reach
+    DONE by polling, so each says what actually helps instead: an ERROR points at
+    the failure, a CANCELLED names its recovery, and neither promises an
+    immediate interrupt.
+    """
+    if job.state is JobState.ERROR:
+        return (
+            "The job failed. Stop polling and inspect the 'error' field. "
+            "This job will not reach 'done'."
+        )
+    if job.state is JobState.CANCELLED:
+        return (
+            "Job cancelled. Stop polling. Resume this job if supported, "
+            "or submit the media again."
+        )
+    return "Poll get_job_status until state is 'done'."
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -428,7 +539,7 @@ def get_transcript(
         return {
             "error": f"job is not finished (state: {job.state.value})",
             "state": job.state.value,
-            "next": "Poll get_job_status until state is 'done'.",
+            "next": _read_guidance(job),
         }
     tr = transcript_for(job)
     if tr is None:
@@ -504,6 +615,7 @@ def search_transcript(
         return {
             "error": f"job is not finished (state: {job.state.value})",
             "state": job.state.value,
+            "next": _read_guidance(job),
         }
     tr = transcript_for(job)
     if tr is None:
@@ -559,15 +671,17 @@ def export_transcript(
     if tr is None:
         return {"error": "job contains no transcript"}
 
-    fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
-    bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
-    if bad:
-        return {"error": f"unsupported format(s): {', '.join(bad)}"}
-    if len(fmt_list) != len(set(fmt_list)):
-        return {"error": "duplicate output format"}
+    fmt_list = [f.strip() for f in formats.split(",") if f.strip()]
     try:
-        rendered = [(f, render_bytes(tr, f, title=job.id)) for f in fmt_list]
-    except (ValueError, ImportError) as exc:
+        # `render_requested` is the shared preflight: it normalizes and
+        # validates the ENTIRE format list first (so a later unsupported or
+        # duplicate entry is refused before any renderer runs), then checks
+        # every requested binary dependency, then renders all formats and
+        # bounds the whole batch before anything is published - so a refusal is
+        # a structured error with no file created and no existing file
+        # replaced. Publication runs only on the returned batch.
+        rendered = render_requested(tr, fmt_list, title=job.id)
+    except (ValueError, ImportError, ServiceConfigurationError) as exc:
         return {"error": str(exc)}
 
     try:

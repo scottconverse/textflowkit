@@ -29,6 +29,18 @@ def _transcript(source: str = "media.wav") -> Transcript:
     )
 
 
+@pytest.fixture(autouse=True)
+def media_wav(monkeypatch, tmp_path):
+    """Make the relative ``media.wav`` these CLI calls name an existing file.
+
+    The shared submission contract now refuses a local source that is not
+    present before a job is created. The runs here are about stdout *formatting*,
+    and submission is stubbed, so the file is never opened; it only has to exist.
+    """
+    (tmp_path / "media.wav").write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+
 def _stub_submission(monkeypatch):
     """Record whether submission was reached, and return a finished job.
 

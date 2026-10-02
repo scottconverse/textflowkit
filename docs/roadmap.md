@@ -99,6 +99,12 @@ matched, and a fresh install passed self-test, transcription, and PDF export.
   and sdist digests match the GitHub release assets, the landing page serves
   v0.1.6, and a fresh install passed `doctor`, `selftest`, and a CPU
   transcription to JSON and PDF.
+- [x] Ship v0.1.7 review follow-ups: the 2026-10-01 audit repair set — a confined
+  decoder boundary for rooted local inputs, atomic job-attempt ownership and
+  cancellation finalization, atomic worker startup, DOCX completed-output
+  identity, per-request completed-stage reuse, an aggregate export preflight,
+  translation completeness and per-item batch validation, live terminal
+  feedback, and the DOC-001 – DOC-006 documentation corrections. Implementation verification is complete; publication and its exact-commit CI are tracked by the [v0.1.7 release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml). Fonts remain 0.1.6 and are reused without republishing. Historical release evidence above remains scoped to its stated version.
 - [ ] Follow-up: normalize exported file permissions on POSIX to respect the
   process umask. Current atomic temporary files can leave outputs mode `0600`,
   preventing another account (such as a separate web server user) from reading
@@ -135,3 +141,28 @@ verification/deployment boundaries, not claims of complete platform coverage.
 - Adapters stay thin. No pipeline logic outside `core/`.
 - The canonical transcript JSON is the contract between every stage and every
   consumer.
+
+## Later fixes — 2026-10-01 audit
+
+**Status: deferred and still open.** The owner deferred these items on
+2026-10-01. They are outside the current core-bug repair goal, are not claimed
+fixed in any release, and have no committed delivery date. Finding IDs refer to
+the full five-role audit of v0.1.6 main commit
+`c2553a0929d8b061cc7f55bfbb736161827d25fc`.
+
+| Finding | Later fix | Completion criterion |
+|---|---|---|
+| TEST-001 | Recurring installed-package transcription/adapter validation | An isolated installed distribution completes real default-engine speech through the adapters in a recurring validation lane, with version/commit receipts; source-checkout tests alone do not close it. |
+| TEST-002 | Real optional-backend compatibility validation | Isolated runs establish supported optional-engine/provider versions without altering the working ROCm stack; unavailable models, credentials or platforms remain explicitly unverified. |
+| TEST-003 | Missing-pyannote test oracle | Force the missing dependency deterministically and require the intended missing-extra error; unrelated provider failures must not pass the test. |
+| TEST-004 | Translation test oracle | A bounded known-language check establishes meaningful translation, rather than accepting any nonempty or different string. |
+| TEST-005 | Current coverage provenance | Produce fresh commit-stamped branch-coverage evidence and a recurring artifact; identify untested branches without treating a coverage percentage as runtime proof. |
+| UX-004 | Mobile command-panel scrolling cue | Make horizontally scrolling command examples discoverable at narrow widths and verify the rendered page. |
+| UX-005 | Mobile secondary-link ergonomics | Improve small link hit areas and verify narrow-screen layout/interaction; do not claim accessibility conformance from size alone. |
+| DOC-008 | Immutable PyPI description erratum | Document the v0.1.6 description's stale evidence wording and correct the next distribution description without claiming historical PyPI metadata was rewritten. |
+| UX-003 | Quiet-batch failure diagnostics | Keep failed source/item identity and actionable failure reasons on stderr in quiet mode, while preserving machine-readable stdout. |
+| DOC-007 | Diagnostic and developer wording | Align module-versus-executable acquisition, availability-versus-version wording, unrestricted root labels, and durable-storage descriptions with actual behavior. |
+
+Deferral does not remove these findings or waive their acceptance criteria.
+Core engineering/runtime bugs and the major documentation corrections remain
+in the active repair goal. See the [unreleased changelog](../CHANGELOG.md).

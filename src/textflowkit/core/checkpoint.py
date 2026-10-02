@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from textflowkit.core.jobs import Job, JobState, JobStore
+from textflowkit.core.jobs import RESUMABLE_CLAIM_STATES, Job, JobState, JobStore
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import opened_file_path, resolve_input_path
 from textflowkit.render import ensure_outputs
@@ -351,8 +351,10 @@ def prepare_resume(
     store: JobStore,
     job: Job,
     checkpoint: CheckpointRecord | dict[str, Any],
+    *,
+    observed_attempt: int | None = None,
 ) -> tuple[Job, dict[str, Any]] | None:
-    """Reopen a resumed job for another run, or return None if it is DONE.
+    """Reopen a resumed job for another run, or return None if it is not claimable.
 
     A checkpoint from an ERROR/CANCELLED job is durable work, but the job row is
     terminal, so `run_job` would refuse to start. Explicit resume is the one
@@ -361,15 +363,20 @@ def prepare_resume(
     intact. A DONE job is a different case: the transcript and outputs are the
     real deliverable, so resuming it is a no-op and callers should render from
     the stored transcript instead.
+
+    The reopen is a *claim*: it happens only from an allowed terminal state, in
+    one atomic store operation. Two callers racing the same job id therefore
+    cannot both reopen it - one transitions the row and runs, the other gets
+    None. That is why the check is the store's conditional transition rather than
+    a get-then-update here: the read and the write must be one step for the
+    ownership decision to mean anything to a concurrent caller.
     """
-    current = store.get(job.id)
-    if current is None:
-        return None
-    if current.state is JobState.DONE:
-        return None
     payload = checkpoint.to_dict() if isinstance(checkpoint, CheckpointRecord) else dict(checkpoint)
-    updated = store.update(
+    updated = store.claim(
         job.id,
+        allowed_states=RESUMABLE_CLAIM_STATES,
+        observed_attempt=observed_attempt,
+        advance_attempt=True,
         state=JobState.PENDING,
         progress="resuming",
         error=None,
@@ -385,10 +392,33 @@ def write_checkpoint(
     store: JobStore,
     job_id: str,
     checkpoint: CheckpointRecord | dict[str, Any],
+    *,
+    observed_attempt: int | None = None,
 ) -> Job | None:
-    """Persist a checkpoint through the existing store update path."""
+    """Persist a checkpoint through the existing store update path.
+
+    ``observed_attempt`` is the generation a *run* owns. When given, the write
+    goes through the store's guarded run-owned path, so a checkpoint produced by
+    an old attempt cannot overwrite the checkpoint of a newer generation that has
+    taken the row over, nor contaminate a row that has since reached a terminal
+    state. It deliberately does *not* refuse an accepted cancellation: a run that
+    has been asked to stop still publishes the work it has completed, because
+    that checkpoint is the resume material a later attempt reads - discarding it
+    would throw away the reason the cancellation is cooperative at all.
+
+    Omitting ``observed_attempt`` keeps the original three-argument contract for
+    callers that are not a run owning a generation (tests, adapters, embedding):
+    those write unconditionally, exactly as before.
+    """
     payload = checkpoint.to_dict() if isinstance(checkpoint, CheckpointRecord) else dict(checkpoint)
-    return store.update(job_id, checkpoint=payload)
+    if observed_attempt is None:
+        return store.update(job_id, checkpoint=payload)
+    return store.update_owned(
+        job_id,
+        observed_attempt=observed_attempt,
+        refuse_if_cancelled=False,
+        checkpoint=payload,
+    )
 
 
 def transcript_for_job(job: Job | None) -> Transcript | None:

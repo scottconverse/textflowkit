@@ -25,7 +25,7 @@ def _fake_pipeline(monkeypatch, *, fail_engine: bool = False):
         media.write_bytes(Path(ref.location).read_bytes())
         return media
 
-    def extract(media, *, work_dir, check_cancel=None):
+    def extract(media, *, work_dir, check_cancel=None, confined=False):
         audio = Path(work_dir) / "audio.wav"
         audio.write_bytes(media.read_bytes())
         return audio

@@ -242,18 +242,22 @@ def test_inline_read_tool_names_only_the_text_formats():
     assert named.isdisjoint(BINARY_FORMATS)
 
 
-def test_transcribe_media_accepts_the_binary_formats_its_prose_omits(monkeypatch):
+def test_transcribe_media_accepts_the_binary_formats_its_prose_omits(monkeypatch, tmp_path):
     """Proves the omission is a description defect, not a hidden restriction."""
     from textflowkit.adapters import mcp_server
 
     captured: dict[str, list[str]] = {}
+    # A real file: the shared contract refuses a local source that is not there
+    # before the adapter's (stubbed) submit binding is reached.
+    media = str(tmp_path / "local.wav")
+    (tmp_path / "local.wav").write_bytes(b"")
 
     def fake_submit(store, request, **kwargs):
         captured["formats"] = list(request.formats)
         return SimpleNamespace(id="job-1", state=JobState.PENDING, source=request.source)
 
     monkeypatch.setattr(mcp_server, "submit_request", fake_submit)
-    out = mcp_server.transcribe_media("local.wav", formats="docx")
+    out = mcp_server.transcribe_media(media, formats="docx")
 
     assert "error" not in out
     assert captured["formats"] == ["docx"]

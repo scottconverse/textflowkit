@@ -55,6 +55,13 @@ build of torch; see [docs/install.md](docs/install.md) for the torch-pinning tra
 Most tests do **not** need a GPU or a model download. If you add one that does,
 mark it so it can be skipped in CI.
 
+## How the pieces fit together
+
+[docs/architecture.md](docs/architecture.md) maps the core, CLI, MCP, and HTTP
+doors, the single-owning-process job lifecycle (including startup recovery),
+checkpoint reuse, and output publication. Read it before changing submission,
+executor, runner, or checkpoint behaviour.
+
 ## Pull requests
 
 - Keep the change scoped; state what it fixes.

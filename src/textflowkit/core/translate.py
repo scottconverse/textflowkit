@@ -192,6 +192,15 @@ class OllamaTranslator:
         expected = list(range(1, len(texts) + 1))
         if rows != len(expected) or set(parsed) != set(expected):
             raise TranslationError("batch response did not match the requested items")
+
+        # A line can be numbered correctly and still carry no answer. For a
+        # source that has text, an empty row is missing content, not a blank to
+        # pass through: accepting it would return a complete-looking batch with
+        # an item silently untranslated. Refuse so the caller's per-item
+        # fallback recovers it. A blank source item keeps its blank row.
+        if any(text.strip() and not parsed[i].strip()
+               for i, text in enumerate(texts, start=1)):
+            raise TranslationError("batch response left a requested item blank")
         return [parsed[i] for i in expected]
 
     def translate(self, texts: Sequence[str], target: str) -> list[str]:
@@ -245,6 +254,18 @@ def translate_segments(
         raise TranslationError(
             f"translator returned {len(translated)} results for {len(texts)} segments"
         )
+
+    # Validate the whole result *before* touching any segment. A blank answer
+    # for a nonblank source is a missing translation: raising now leaves every
+    # segment exactly as it was, instead of half-writing a set that only starts
+    # failing partway through. A blank source may legitimately be blank, and a
+    # translation equal to its source (proper nouns, same-language spans) is
+    # not an error.
+    for segment, text in zip(segments, translated, strict=True):
+        if segment.text.strip() and not text.strip():
+            raise TranslationError(
+                "translator returned a blank result for a non-blank segment"
+            )
 
     count = 0
     for segment, text in zip(segments, translated, strict=True):

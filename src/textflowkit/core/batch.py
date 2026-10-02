@@ -17,6 +17,7 @@ adds is isolation - a rejected item is reported and the loop continues.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -92,6 +93,7 @@ def run_batch(
     *,
     store: JobStore,
     resume: bool = False,
+    on_item_complete: Callable[[BatchItem], None] | None = None,
     **kwargs: Any,
 ) -> BatchReport:
     """Run every source through the shared submission path and return a report.
@@ -100,15 +102,31 @@ def run_batch(
     output rendering, and it records terminal state on the store. This layer adds
     no second pipeline path; it catches per-item failures so one bad source does
     not stop the rest.
+
+    `on_item_complete` is an optional display-only notification: it is called
+    with each item's final outcome *the instant that item finishes*, so a caller
+    that displays (the CLI) can report a completed item while later items are
+    still running instead of replaying the whole report at the end. Every item
+    path fires it exactly once - a construction refusal, a cancellation, a
+    failure, and a success alike - and the returned report still carries every
+    item, so the summary a caller prints afterwards is unchanged. The callback is
+    process-local and never reaches `submit_request` or the job record.
     """
     report = BatchReport()
+
+    def _record(item: BatchItem) -> None:
+        """Append one finished item to the report and notify the caller once."""
+        report.items.append(item)
+        if on_item_complete is not None:
+            on_item_complete(item)
+
     for source in sources:
         item = BatchItem(source=source, status="failed")
         try:
             request = SubmissionRequest(source=source, **kwargs)
         except (TypeError, ValueError) as exc:
             item.error = str(exc)
-            report.items.append(item)
+            _record(item)
             continue
         try:
             known = _known_job_ids(store)
@@ -116,12 +134,12 @@ def run_batch(
         except JobCancelled:
             item.status = "skipped"
             item.error = "cancelled"
-            report.items.append(item)
+            _record(item)
             continue
         except Exception as exc:  # noqa: BLE001 - isolate one item from the rest
             item.status = "failed"
             item.error = f"{type(exc).__name__}: {exc}"
-            report.items.append(item)
+            _record(item)
             continue
         item.job_id = job.id
         # `submit_request` resumes or reuses an existing job when it can, and
@@ -139,7 +157,7 @@ def run_batch(
         else:
             item.status = "failed"
             item.error = job.error or f"job ended in state {job.state.value}"
-        report.items.append(item)
+        _record(item)
     return report
 
 

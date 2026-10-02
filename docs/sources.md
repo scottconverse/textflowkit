@@ -105,4 +105,12 @@ public hostnames there, so blocking it would reject legitimate sites.
 Some sources require authentication. Use `--cookies-from-browser <browser>` to pass
 cookies through to `yt-dlp`.
 
+Browser cookies are for the **developer/owner profile** only. With
+`TEXTFLOWKIT_PROFILE=production`, any submission carrying
+`cookies_from_browser` is refused before a job is written - on the CLI, MCP, and
+HTTP surfaces alike, including resume of a request saved with the option -
+because the server cannot tell an owner-run session from a remote caller. Keep
+cookie-assisted jobs in the deliberate owner profile. See [adapter and production
+settings](adapters.md#production-settings-reference).
+
 Only use this for media **you are authorised to access**. See [LEGAL.md](../LEGAL.md).

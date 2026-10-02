@@ -186,6 +186,18 @@ def _preflight_engine(name: str) -> str | None:
     return None
 
 
+def _stage_printer(stage: str) -> None:
+    """Report an in-flight pipeline stage to stderr, flushed.
+
+    Progress belongs on stderr so the machine-readable stdout stays clean, and
+    it is flushed because the point is prompt feedback: a line that sits in a
+    block buffer until the (long) run ends tells an operator nothing while the
+    stage is still in flight. The callback is only ever passed for a non-quiet
+    run; quiet mode passes none.
+    """
+    print(f"{stage}...", file=sys.stderr, flush=True)
+
+
 def _cmd_transcribe(args: argparse.Namespace) -> int:
     formats = _formats(args.formats)
     error = _preflight_engine(args.engine)
@@ -209,6 +221,11 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # In-flight feedback is stderr-only and progress chatter, so quiet mode
+    # passes no observer and the transcript/path contract on stdout is untouched.
+    # The observer is a process-local display sink: it is threaded to the runner
+    # but never stored in the request or the checkpoint.
+    notify = None if args.quiet else _stage_printer
     try:
         request = SubmissionRequest(
             source=args.source, language=args.language, formats=formats,
@@ -218,7 +235,9 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
             diarize=args.diarize, translate_to=args.translate_to,
         )
         store = get_default_store()
-        job = submit_request(store, request, background=False, resume=args.resume)
+        job = submit_request(
+            store, request, background=False, resume=args.resume, notify=notify,
+        )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -284,6 +303,19 @@ def _finish_transcribe(
     return 0
 
 
+def _print_item(item) -> None:
+    """Emit one batch item's outcome, flushed so it lands as the item finishes.
+
+    The flush is the point of the feedback: an item that completed must be
+    visible while a later, slow item still runs, so the line cannot wait in a
+    block buffer. Shared with the final summary loop so the per-item rendering
+    lives in exactly one place.
+    """
+    detail = item.error or ", ".join(item.outputs)
+    suffix = f" - {detail}" if detail else ""
+    print(f"{item.status:<9} {item.source}{suffix}", flush=True)
+
+
 def _cmd_batch(args: argparse.Namespace) -> int:
     # One engine for the whole batch, so a bad name fails before the first item
     # is submitted rather than once per source.
@@ -298,6 +330,11 @@ def _cmd_batch(args: argparse.Namespace) -> int:
             "Set TEXTFLOWKIT_DB for durable resume.",
             file=sys.stderr,
         )
+    # Non-quiet runs report each item the moment it finishes, so a slow later
+    # item does not conceal the earlier ones. Quiet mode passes no callback and
+    # the finished report is not replayed, so per-item lines stay suppressed; the
+    # final summary prints either way. The callback is process-local and is not
+    # part of the report, so the summary figures are unchanged.
     report = run_batch(
         list(args.sources),
         store=get_default_store(),
@@ -311,12 +348,8 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         cookies_from_browser=args.cookies_from_browser,
         diarize=args.diarize,
         translate_to=args.translate_to,
+        on_item_complete=None if args.quiet else _print_item,
     )
-    if not args.quiet:
-        for item in report.items:
-            detail = item.error or ", ".join(item.outputs)
-            suffix = f" - {detail}" if detail else ""
-            print(f"{item.status:<9} {item.source}{suffix}")
     print(
         f"batch: {report.total} total, {report.succeeded} succeeded, "
         f"{report.failed} failed, {report.skipped} skipped"

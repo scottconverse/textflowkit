@@ -42,6 +42,20 @@ def clean_store():
     get_default_store().clear()
 
 
+@pytest.fixture(autouse=True)
+def local_media(monkeypatch, tmp_path):
+    """Give the relative source names these tests use real files to name.
+
+    The shared submission contract now refuses a local source that does not
+    exist before a job row is created, so ``media.wav`` has to be a file rather
+    than a string. The tests are still about engine *selection*, not media: the
+    file is empty, and ``run_job`` is stubbed, so nothing reads it.
+    """
+    for name in ("media.wav", "one.wav", "two.wav"):
+        (tmp_path / name).write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def fake_faster_whisper(monkeypatch):
     """The optional package appears importable without being installed."""
@@ -177,27 +191,40 @@ def test_mcp_rejects_a_missing_extra_before_creating_a_job(
     assert get_default_store().list() == []
 
 
-def test_mcp_batch_rejects_an_unknown_engine_without_queuing_anything(inline_submission):
+def test_mcp_batch_reports_an_unknown_engine_per_item(inline_submission):
+    """An unknown engine fails every item that named it, per item, in order."""
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import submit_batch_media
 
     out = submit_batch_media(["one.wav", "two.wav"], engine="gpt-9-whisper")
 
-    assert "unknown engine" in out["error"], out
+    assert out["count"] == 2, out
+    items = out["jobs"]
+    assert all("unknown engine" in item["error"] for item in items), items
+    assert [item["index"] for item in items] == [0, 1], items
     assert get_default_store().list() == []
     assert inline_submission == []
 
 
-def test_mcp_batch_rejects_a_missing_extra_without_queuing_anything(
+def test_mcp_batch_reports_a_missing_extra_per_item(
     missing_faster_whisper, inline_submission
 ):
-    """A missing extra is a whole-request condition: no half-queued batch."""
+    """A missing extra is refused per item, not as one whole-batch error.
+
+    The tool applies one engine to every source, so every item fails - but the
+    independent semantics are that each source is its own outcome in the
+    original order, not a single top-level `{"error": ...}`: one bad source must
+    never hide the others.
+    """
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import submit_batch_media
 
     out = submit_batch_media(["one.wav", "two.wav"], engine="faster-whisper")
 
-    assert MISSING_HINT in out["error"], out
+    assert out["count"] == 2, out
+    items = out["jobs"]
+    assert all(MISSING_HINT in item["error"] for item in items), items
+    assert [item["index"] for item in items] == [0, 1], items
     assert get_default_store().list() == []
     assert inline_submission == []
 
@@ -269,33 +296,49 @@ def test_http_batch_defaults_to_whisper(inline_submission, http_client):
     assert [job["engine"] for job in inline_submission] == ["whisper"]
 
 
-def test_http_batch_unknown_engine_is_422_with_no_partial_queue(
+def test_http_batch_unknown_engine_fails_only_its_own_item(
     inline_submission, http_client
 ):
-    """One unusable engine name rejects the request, not half of it."""
+    """An unknown engine name is that item's error; valid items are unaffected."""
     response = http_client.post("/jobs/batch", json={"jobs": [
         {"source": "one.wav", "engine": "gpt-9-whisper"},
         {"source": "two.wav"},
     ]})
 
-    assert response.status_code == 422, response.text
-    assert "unknown engine" in response.json()["detail"]
-    assert get_default_store().list() == []
-    assert inline_submission == []
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["count"] == 2, body
+    items = body["jobs"]
+    assert "unknown engine" in items[0]["error"], items[0]
+    assert "job_id" not in items[0], items[0]
+    assert items[1].get("job_id"), items[1]
+    assert [job.source for job in get_default_store().list()] == ["two.wav"]
+    assert [job["engine"] for job in inline_submission] == ["whisper"]
 
 
-def test_http_batch_missing_extra_is_422_with_no_partial_queue(
+def test_http_batch_missing_extra_fails_only_the_item_that_named_it(
     missing_faster_whisper, inline_submission, http_client
 ):
+    """One item's missing extra must not refuse a valid default-engine item.
+
+    The batch is a valid envelope, so it is a 202 with one outcome per item: the
+    item naming the absent extra is that item's error, and the default-engine
+    item after it is still admitted and queued exactly once.
+    """
     response = http_client.post("/jobs/batch", json={"jobs": [
         {"source": "one.wav", "engine": "faster-whisper"},
         {"source": "two.wav"},
     ]})
 
-    assert response.status_code == 422, response.text
-    assert MISSING_HINT in response.json()["detail"]
-    assert get_default_store().list() == []
-    assert inline_submission == []
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["count"] == 2, body
+    items = body["jobs"]
+    assert MISSING_HINT in items[0]["error"], items[0]
+    assert "job_id" not in items[0], items[0]
+    assert items[1].get("job_id"), items[1]
+    assert [job.source for job in get_default_store().list()] == ["two.wav"]
+    assert [job["engine"] for job in inline_submission] == ["whisper"]
 
 
 # --------------------------------------------------------------------------

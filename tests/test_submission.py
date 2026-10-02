@@ -28,9 +28,11 @@ def _result(source: str) -> TranscribeResult:
     )
 
 
-def test_submission_saves_the_same_request_it_runs(monkeypatch):
+def test_submission_saves_the_same_request_it_runs(monkeypatch, tmp_path):
     from textflowkit.core import runner
 
+    media = tmp_path / "media.wav"
+    media.write_bytes(b"synthetic media")
     seen = {}
 
     def fake_transcribe(source, **kwargs):
@@ -39,7 +41,7 @@ def test_submission_saves_the_same_request_it_runs(monkeypatch):
 
     monkeypatch.setattr(runner, "transcribe", fake_transcribe)
     store = MemoryJobStore()
-    request = SubmissionRequest(source="media.wav", model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
     job = submit_request(store, request, background=False)
     assert job.state is JobState.DONE
     assert job.request == request.to_dict()
@@ -56,19 +58,23 @@ def test_missing_export_extra_is_rejected_before_job_creation(monkeypatch, fmt, 
         raise ValueError(f"missing {formats[0]} dependency")
 
     monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
+    media = tmp_path / "media.wav"
+    media.write_bytes(b"synthetic media")
     store = MemoryJobStore()
     with pytest.raises(ValueError, match="missing"):
-        request = SubmissionRequest(source="media.wav", formats=[fmt], output_dir=str(tmp_path))
+        request = SubmissionRequest(source=str(media), formats=[fmt], output_dir=str(tmp_path))
         submit_request(store, request, background=False)
     assert store.list() == []
 
 
-def test_export_preflight_does_not_block_transcript_only_request(monkeypatch):
+def test_export_preflight_does_not_block_transcript_only_request(monkeypatch, tmp_path):
     from textflowkit.core import submission
 
     monkeypatch.setattr(submission, "validate_export_requirements", lambda formats: (_ for _ in ()).throw(
         AssertionError("no file export requested")))
-    request = SubmissionRequest(source="media.wav", formats=["pdf"], output_dir=None)
+    media = tmp_path / "media.wav"
+    media.write_bytes(b"synthetic media")
+    request = SubmissionRequest(source=str(media), formats=["pdf"], output_dir=None)
     assert request.formats == ["pdf"]
 
 
@@ -117,7 +123,9 @@ def test_resume_without_checkpoint_restarts_same_job(monkeypatch, tmp_path):
     from textflowkit.core import runner
 
     store = SqliteJobStore(tmp_path / "jobs.db")
-    request = SubmissionRequest(source="media.wav", formats=["json"])
+    media = tmp_path / "media.wav"
+    media.write_bytes(b"synthetic media")
+    request = SubmissionRequest(source=str(media), formats=["json"])
     job = store.create(request.source, request=request.to_dict())
     store.update(job.id, state=JobState.ERROR, error="interrupted")
     seen = {}
@@ -134,12 +142,16 @@ def test_resume_without_checkpoint_restarts_same_job(monkeypatch, tmp_path):
     store.close()
 
 
-def test_cli_mcp_http_submit_the_same_core_request(monkeypatch, capsys):
+def test_cli_mcp_http_submit_the_same_core_request(monkeypatch, capsys, tmp_path):
     from fastapi.testclient import TestClient
 
     from textflowkit import cli
     from textflowkit.adapters import http_server, mcp_server
 
+    # A real local file: the shared contract now refuses a source that is not
+    # present before any surface can queue it.
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
     store = MemoryJobStore()
     captured: list[dict] = []
 
@@ -154,12 +166,12 @@ def test_cli_mcp_http_submit_the_same_core_request(monkeypatch, capsys):
         monkeypatch.setattr(adapter, "get_default_store", lambda: store)
         monkeypatch.setattr(adapter, "submit_request", fake_submit)
 
-    assert cli.main(["transcribe", "media.wav", "--formats", "json",
+    assert cli.main(["transcribe", media, "--formats", "json",
                      "--stdout", "--quiet"]) == 0
     capsys.readouterr()
-    assert "job_id" in mcp_server.transcribe_media("media.wav", formats="json")
+    assert "job_id" in mcp_server.transcribe_media(media, formats="json")
     response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
-        "/jobs", json={"source": "media.wav", "formats": ["json"]},
+        "/jobs", json={"source": media, "formats": ["json"]},
     )
     assert response.status_code == 202
     assert len(captured) == 3
@@ -178,11 +190,17 @@ def test_mcp_and_http_expose_batch_and_resume_routes():
     assert "/jobs/{job_id}/resume" in routes
 
 
-def test_mcp_http_batch_forward_identical_requests(monkeypatch):
+def test_mcp_http_batch_forward_identical_requests(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
 
     from textflowkit.adapters import http_server, mcp_server
 
+    # Real local files: the shared contract refuses a source that is not there
+    # before either surface gets as far as the (stubbed) batch submit.
+    one = str(tmp_path / "one.wav")
+    two = str(tmp_path / "two.wav")
+    (tmp_path / "one.wav").write_bytes(b"synthetic media")
+    (tmp_path / "two.wav").write_bytes(b"synthetic media")
     seen: list[list[dict]] = []
 
     def fake_batch(store, requests, *, resume=False):
@@ -192,11 +210,11 @@ def test_mcp_http_batch_forward_identical_requests(monkeypatch):
 
     monkeypatch.setattr(mcp_server, "submit_batch", fake_batch)
     monkeypatch.setattr(http_server, "submit_batch", fake_batch)
-    mcp_result = mcp_server.submit_batch_media(["one", "two"], formats="json", resume=True)
+    mcp_result = mcp_server.submit_batch_media([one, two], formats="json", resume=True)
     http_response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post(
         "/jobs/batch", json={"jobs": [
-            {"source": "one", "formats": ["json"]},
-            {"source": "two", "formats": ["json"]},
+            {"source": one, "formats": ["json"]},
+            {"source": two, "formats": ["json"]},
         ], "resume": True},
     )
     assert mcp_result["count"] == 2

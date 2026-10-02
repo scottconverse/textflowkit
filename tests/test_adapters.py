@@ -154,7 +154,7 @@ def test_mcp_transcribe_rejects_bad_format():
     assert "xyzzy" in out["error"]
 
 
-def test_mcp_queue_full_is_explicit_and_retryable(monkeypatch):
+def test_mcp_queue_full_is_explicit_and_retryable(monkeypatch, tmp_path):
     pytest.importorskip("mcp")
     from textflowkit.adapters import mcp_server
     from textflowkit.core.executor import QueueFullError
@@ -163,7 +163,9 @@ def test_mcp_queue_full_is_explicit_and_retryable(monkeypatch):
         raise QueueFullError("job queue is full")
 
     monkeypatch.setattr(mcp_server, "submit_request", full)
-    out = mcp_server.transcribe_media("x")
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
+    out = mcp_server.transcribe_media(media)
     assert out == {"error": "job queue is full", "retryable": True}
 
 
@@ -188,11 +190,15 @@ def test_mcp_status_exposes_the_stage_in_flight():
     assert payload["progress"] == "transcribing"
 
 
-def test_mcp_transcript_requires_finished_job():
+def test_mcp_transcript_requires_finished_job(tmp_path):
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import get_transcript, transcribe_media
 
-    started = transcribe_media("C:/nope.mp4", model="tiny")
+    # The source has to be present for the job to be queued at all; the point of
+    # the test is the transcript read, not the acquisition of `C:/nope.mp4`.
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
+    started = transcribe_media(media, model="tiny")
     out = get_transcript(started["job_id"])
     # Either it is still running, or it already failed - never a transcript.
     assert "error" in out
@@ -300,17 +306,19 @@ def test_list_zero_limit_is_empty_on_both_adapters():
     assert list_jobs(limit=0)["jobs"] == []
 
 
-def test_http_422_for_bad_format():
+def test_http_422_for_bad_format(tmp_path):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
     from textflowkit.adapters.http_server import app
 
-    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x", "formats": ["xyzzy"]})
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
+    r = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": media, "formats": ["xyzzy"]})
     assert r.status_code == 422
 
 
-def test_http_queue_full_returns_429(monkeypatch):
+def test_http_queue_full_returns_429(monkeypatch, tmp_path):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
@@ -321,7 +329,9 @@ def test_http_queue_full_returns_429(monkeypatch):
         raise QueueFullError("job queue is full")
 
     monkeypatch.setattr(http_server, "submit_request", full)
-    response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": "x"})
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
+    response = TestClient(http_server.app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={"source": media})
     assert response.status_code == 429
     assert "queue is full" in response.json()["detail"]
 
@@ -546,10 +556,12 @@ def test_http_and_mcp_reject_unavailable_pdf_before_creating_job(monkeypatch, tm
 
     monkeypatch.setattr(submission, "validate_export_requirements", unavailable)
     store = get_default_store()
+    media = str(tmp_path / "media.wav")
+    (tmp_path / "media.wav").write_bytes(b"synthetic media")
     http = TestClient(app, base_url="http://127.0.0.1", client=LOCAL_PEER).post("/jobs", json={
-        "source": "media.wav", "formats": ["pdf"], "output_dir": str(tmp_path),
+        "source": media, "formats": ["pdf"], "output_dir": str(tmp_path),
     })
-    mcp = transcribe_media("media.wav", formats="pdf", output_dir=str(tmp_path))
+    mcp = transcribe_media(media, formats="pdf", output_dir=str(tmp_path))
     assert http.status_code == 422
     assert "export" in http.json()["detail"]
     assert "export" in mcp["error"]

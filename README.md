@@ -7,7 +7,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases) ·
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
 
-**Current release: [v0.1.6](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6).**
+**Current release: [v0.1.7](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.7).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -82,6 +82,9 @@ the core; the interfaces are thin.
 
 Because the core owns the pipeline, adding a door is cheap — and adding a platform
 means writing one source adapter, not another tool.
+
+For the job lifecycle, process ownership, checkpoints, and output publication,
+see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/main/docs/architecture.md).
 
 ## Recognized sources
 
@@ -278,8 +281,16 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.6 release.** Core, CLI, MCP, and HTTP have automated
-coverage. This release is the post-v0.1.5 review repair set: security hardening
+**v0.1.7 release.** Core, CLI, MCP, and HTTP have automated
+coverage. This release is the 2026-10-01 audit repair set — the post-v0.1.6
+review follow-ups the owner accepted on 2026-10-01: a confined decoder boundary
+for rooted local inputs, atomic job-attempt ownership with atomic worker startup
+and cancellation finalization, DOCX completed-output identity, per-request
+completed-stage reuse, an aggregate export preflight, translation completeness
+and per-item batch validation, live terminal feedback, and major documentation
+corrections. Implementation was verified on a native-Windows source candidate with real CLI, HTTP and MCP speech, seven-format exports and completed resume. Release publication uses the tag workflow, which requires successful exact-commit main CI before PyPI uploads and creates the public GitHub release only afterward. Check the linked release for artifacts and workflow status; local source verification is not a fresh PyPI-install or individual-harness receipt.
+
+The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
 output-file publication, job and checkpoint storage corrections, an opt-in
 faster-whisper engine, a container example, and fail-closed release guards for
@@ -294,7 +305,10 @@ The v0.1.6 release is public: the
 [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
 and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
-live. Merged-main CI passed 16/16 on the tagged commit; the published wheel and
+live — that is the previous release's evidence, not a receipt for v0.1.7.
+Everything from here to the end of this section is the v0.1.6 release's
+historical record as published: it is not re-verified for v0.1.7, whose separate release evidence is not supplied by these historical paragraphs.
+Merged-main CI passed 16/16 on the tagged commit; the published wheel and
 sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
 Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI
 passed `doctor`, `selftest`, and a tiny CPU transcription to JSON and PDF. A

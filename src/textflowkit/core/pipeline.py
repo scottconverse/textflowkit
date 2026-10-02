@@ -113,6 +113,98 @@ def _checkpoint_paths_usable(resumed: CheckpointRecord | None) -> bool:
     return "transcribe" in resumed.finished_stages
 
 
+# The per-stage completion markers a run leaves after each *optional*
+# postprocessor succeeds, and the coarse marker older records carry instead.
+#
+# A resume must reuse the optional work a checkpoint already holds, but it must
+# only do so when the record actually *says* the stage finished. Presence of
+# speaker labels or translated text is not a completion signal: a half-finished
+# snapshot can carry either without the stage having been marked done, and
+# serving it as complete would skip work that never happened. So the decision is
+# keyed on the marker, never on the metadata.
+DIARIZE_STAGE = "diarize"
+TRANSLATE_STAGE = "translate"
+LEGACY_POSTPROCESS_STAGE = "postprocess"
+
+
+def _stage_completed(
+    resumed: CheckpointRecord | None,
+    stage: str,
+    *,
+    translate_to: str | None = None,
+    diarizer_backend: str | None = None,
+    translator_backend: str | None = None,
+) -> bool:
+    """Whether a checkpoint records ``stage`` finished for *this* configuration.
+
+    ``postprocess`` is the only postprocess checkpoint records written before
+    per-stage markers existed, and it was fired after *every* optional stage
+    that record's options requested had completed. It therefore stands in for
+    "the optional stages this record's options requested are all finished". It
+    is a completion signal precisely because it was only ever written on
+    success; a record that lacks any postprocess marker has not finished the
+    optional stage, whatever its transcript metadata holds.
+
+    But "finished" is only reusable when it is finished *for the stage being
+    asked for now*. A legacy record that ran with ``diarize=True`` and no
+    translation must not satisfy a resume that now asks for German: the coarse
+    mark covers the stages that record requested, not a stage it never ran. The
+    same holds for per-stage markers, which describe one provider configuration.
+    So the marker and the option match must both hold.
+    """
+    if resumed is None:
+        return False
+    stages = resumed.finished_stages
+    if stage not in stages and LEGACY_POSTPROCESS_STAGE not in stages:
+        # A per-stage marker for the *other* optional stage must not stand in for
+        # this one: only the coarse legacy mark covers both.
+        return False
+    if stage == DIARIZE_STAGE:
+        prior = resumed.options.get("diarizer_backend")
+        return bool(resumed.options.get("diarize")) and (
+            diarizer_backend is None or prior == diarizer_backend
+        )
+    if stage == TRANSLATE_STAGE:
+        prior_target = resumed.options.get("translate_to")
+        prior_backend = resumed.options.get("translator_backend")
+        if not prior_target:
+            return False
+        if translate_to is not None and prior_target != translate_to:
+            return False
+        return translator_backend is None or prior_backend == translator_backend
+    return False
+
+
+def _optional_stage_plan(
+    resumed: CheckpointRecord | None,
+    *,
+    diarize: bool,
+    translate_to: str | None,
+    diarizer_backend: str,
+    translator_backend: str,
+) -> tuple[bool, bool, bool]:
+    """Decide which optional stages still need to run, and whether audio is needed.
+
+    Returns ``(run_diarize, run_translate, need_audio)``. A stage runs only when
+    the caller requested it *and* the checkpoint does not already record it
+    finished *for the requested configuration* - a finished stage under a
+    different backend or translation target is not this stage's work and must be
+    redone rather than served. ``need_audio`` is the reason to re-acquire:
+    diarization is the one optional stage that consumes the audio, so if it is
+    already done the media must not be fetched and decoded again merely to reach
+    a provider that will not be consulted.
+    """
+    run_diarize = bool(diarize) and not _stage_completed(
+        resumed, DIARIZE_STAGE, diarizer_backend=diarizer_backend
+    )
+    run_translate = bool(translate_to) and not _stage_completed(
+        resumed, TRANSLATE_STAGE,
+        translate_to=translate_to,
+        translator_backend=translator_backend,
+    )
+    return run_diarize, run_translate, run_diarize
+
+
 def transcribe(
     source: str,
     *,
@@ -151,7 +243,9 @@ def transcribe(
     completion, so they cannot answer "what is happening now": by the time one
     arrives, the next stage - usually the long one - has already started. The
     two callbacks are deliberately separate, and only `on_stage` is reported
-    while work is in flight.
+    while work is in flight. It is a fire-and-forget notice for a *display*: the
+    store's own `progress` value is written separately by the runner's sink, so a
+    resumed stage that is reused rather than run is never announced here.
     """
     resumed = parse_checkpoint(resume_checkpoint)
     finished_stages = list(resumed.finished_stages) if resumed else []
@@ -270,6 +364,12 @@ def transcribe(
 
     try:
         transcript = _resume_transcript(resumed, source=source, ref=ref)
+        # The decoder boundary follows the *source*, not the branch that
+        # acquired the media. A resumed run can carry a still-existing media path
+        # from its checkpoint and skip re-staging entirely, so deriving this
+        # inside that branch would leave that path decoded with no restriction -
+        # under an input root, which is exactly when the boundary must hold.
+        confined = ref.kind == "file" and root is not None
         if resumed is not None:
             media = _existing_path(resumed.media_path)
             audio = _existing_path(resumed.audio_path)
@@ -283,11 +383,23 @@ def transcribe(
         if not can_resume:
             transcript = None
 
+        # Which optional stages still need to run is decided *before* any
+        # acquisition, because it is also the answer to "is the audio needed at
+        # all". A resume whose optional work is already durable must not fetch or
+        # decode media just to reach a provider it is not going to consult.
+        run_diarize, run_translate, needs_audio_for_resume = _optional_stage_plan(
+            resumed if can_resume else None,
+            diarize=diarize,
+            translate_to=translate_to,
+            diarizer_backend=diarizer_backend,
+            translator_backend=translator_backend,
+        )
+
         try:
             if not can_resume:
                 require_tool("ffmpeg")
                 _stage("fetching")
-                if ref.kind == "file" and root is not None:
+                if confined:
                     media = stage_confined_local_media(
                         ref.location, work_dir=scratch, input_root=root
                     )
@@ -303,9 +415,11 @@ def transcribe(
                         resolved_source, input_root=root, content_path=media,
                     )
                 _checkpoint("fetch")
-                enforce_predecode_limits(media)
+                enforce_predecode_limits(media, confined=confined)
                 _stage("extracting")
-                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
+                audio = extract_audio(
+                    media, work_dir=scratch, check_cancel=check_cancel, confined=confined
+                )
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
 
@@ -332,9 +446,13 @@ def transcribe(
                     if current != local_identity:
                         raise PipelineError("local source changed during transcription")
                 _checkpoint("transcribe")
-            elif diarize and audio is None:
-                # A finished transcript is the expensive checkpoint. Reacquire
-                # only the audio required by pyannote; never rerun Whisper.
+            elif needs_audio_for_resume and audio is None:
+                # A finished transcript is the expensive checkpoint, and the
+                # diarization it may still need is the only remaining consumer of
+                # the audio. Reacquire only what pyannote needs; never rerun
+                # Whisper. When diarization is already recorded complete this
+                # branch is not taken at all, so the media is neither fetched nor
+                # decoded - the durable labels are reused as they stand.
                 require_tool("ffmpeg")
                 if media is None:
                     _stage("fetching")
@@ -349,21 +467,24 @@ def transcribe(
                             check_cancel=check_cancel,
                         )
                     _checkpoint("fetch")
-                enforce_predecode_limits(media)
+                enforce_predecode_limits(media, confined=confined)
                 _stage("extracting")
-                audio = extract_audio(media, work_dir=scratch, check_cancel=check_cancel)
+                audio = extract_audio(
+                    media, work_dir=scratch, check_cancel=check_cancel, confined=confined
+                )
                 enforce_media_limits(media, audio)
                 _checkpoint("extract")
         except (AcquisitionError, UnsafeInputPathError) as exc:
             raise PipelineError(str(exc)) from exc
 
-        if diarize or translate_to:
+        if run_diarize or run_translate:
             # Announced once, before the first of the optional postprocessors.
             # Neither running means no postprocess stage happens at all, and
-            # saying otherwise would report work that does not exist.
+            # saying otherwise would report work that does not exist. A stage the
+            # checkpoint already finished is not running, so it is not announced.
             _stage("postprocessing")
 
-        if diarize:
+        if run_diarize:
             # Refuse loudly rather than returning a transcript with empty speakers.
             # A silent no-op here is exactly the defect that was removed from
             # --speaker-labels, and it must not come back through this door.
@@ -383,8 +504,12 @@ def transcribe(
                 "turns": len(turns),
                 "segments_labelled": labelled,
             }
+            # Durable the instant the labels exist, so a failure in *translation*
+            # resumes with the diarization already done instead of re-running the
+            # diarizer (and, before this, re-acquiring the audio to do it).
+            _checkpoint(DIARIZE_STAGE)
 
-        if translate_to:
+        if run_translate:
             # Refuse loudly: never present source text as though it were translated.
             try:
                 translator = get_translator(translator_backend)
@@ -401,8 +526,15 @@ def transcribe(
                 "target": translate_to,
                 "segments_translated": translated,
             }
+            _checkpoint(TRANSLATE_STAGE)
 
-        _checkpoint("postprocess")
+        # The coarse mark is still written, and only once every requested optional
+        # stage has run or been reused, so a record read by an older build (and by
+        # the legacy rule this fix keeps) still says "postprocess finished". It is
+        # deliberately last: a partial attempt that finished diarization but not
+        # translation never reaches it, which is what keeps a half-done snapshot
+        # from being mistaken for a complete one.
+        _checkpoint(LEGACY_POSTPROCESS_STAGE)
 
         transcript.source = source
         transcript.platform = ref.platform
