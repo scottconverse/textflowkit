@@ -27,7 +27,7 @@ word; it may need to download Whisper weights on first use.
 **Existing Windows AMD ROCm installation:** do not use the generic install
 command above if you already have a working ROCm PyTorch build. Normal pip
 resolution can replace that build with CPU torch. Follow the
-[native-Windows ROCm instructions](install.md#amd-gpu-support-rocm--no-wsl)
+[native-Windows ROCm instructions](install.md#amd-gpu-support-rocm--no-wsl-required)
 instead. The general [install notes](install.md) also cover JavaScript runtime
 selection for yt-dlp, GPU checks, and optional diarization dependencies.
 
@@ -156,10 +156,31 @@ estimated from the segment's interval otherwise.
 
 Every `Segment` also carries a `hidden` flag, `False` by default. It is the
 caller's annotation, not engine output: `transcribe()` never sets it. A hidden
-segment stays in `Transcript.segments` and in saved JSON, but is omitted from
-`Transcript.text`, from every rendered format, and from retrieval pages and
-searches — so a span can be suppressed (an off-topic aside, a section under
+segment stays in `Transcript.segments`, in `to_dict()`/`to_json()`, in canonical
+saved JSON, and in a JSON export; it is omitted from `Transcript.text`, from the
+TXT, SRT, VTT, Markdown, DOCX, and PDF exports, and from retrieval pages and
+searches. So a span can be suppressed (an off-topic aside, a section under
 review) without editing or dropping the underlying data.
+
+**JSON is an archive, not a redaction.** Because the canonical JSON keeps every
+segment, a saved or exported `.json` transcript still contains hidden text, and
+`include_words=false` removes only word arrays - it is not a privacy filter. To
+produce a shareable copy that omits hidden segments, build one from the visible
+segments and serialize that copy; do not mutate the stored transcript:
+
+```python
+from dataclasses import replace
+from textflowkit import Transcript
+
+original = Transcript.load_json("transcript.json")   # canonical, unchanged
+publication = replace(
+    original, segments=[s for s in original.segments if not s.hidden]
+)
+publication.save_json("publication.json")            # hidden segments removed here
+```
+
+Review `source` and `metadata` on that copy separately before sharing: they may
+name a path, URL, or other detail you do not intend to publish.
 
 ## 6. MCP and HTTP integrations
 
@@ -187,10 +208,23 @@ Invoke-RestMethod "$base/jobs/$($job.id)/transcript?include_words=true"
 HTTP and MCP **JSON reads omit word timings by default** to keep responses
 small. Set `include_words=true` to receive them. This changes only the read
 response: saved JSON, SQLite job records, and resume checkpoints still hold
-the words. For long transcripts, use `offset`/`limit`, `start`/`end`, or search
-rather than returning everything at once. See the complete
-[adapter guide](adapters.md) for MCP harness configuration, all routes/tools,
-batching, cancellation, paging, and production settings.
+the words. When the transcript has been translated, the words still refer to
+the original spoken language, not to individual translated words.
+
+The two adapters return JSON differently, and the difference matters to a
+client that pages. **HTTP** returns an object with a `transcript` field holding
+the canonical object for the selected page; **MCP** returns the transcript as a
+JSON **string** in its `content` field, which the caller parses. Both report the
+same page counts (`total_segments`, `offset`, `returned`, `has_more`), but only
+MCP adds a human-readable `next` instruction; an HTTP JSON client computes the
+next offset as `offset + returned` and keeps the same time range. HTTP **text**
+responses (txt, srt, vtt, md) contain only the rendered text and no paging
+metadata at all, so page a long transcript with `format=json` first.
+
+For long transcripts, use `offset`/`limit`, `start`/`end`, or search rather than
+returning everything at once. See the complete [adapter guide](adapters.md) for
+MCP harness configuration, all routes/tools, batching, cancellation, paging, and
+production settings.
 
 The HTTP server is local-only by default. Do not expose it on a network
 without the documented authentication/TLS gateway, input/output boundaries,

@@ -95,12 +95,52 @@ Tools: `list_sources`, `transcribe_media`, `submit_batch_media`, `resume_job`,
 Read-only tools carry `readOnlyHint: true`. Submission and export tools carry
 `openWorldHint: true`; resume and cancellation are marked as mutating.
 
-`transcribe_media` and `submit_batch_media` take the same options as the HTTP
-bodies above, `engine` included. On `transcribe_media` an unknown engine name or
-a missing optional package comes back as `{"error": ...}` before any job is
-queued. On `submit_batch_media` each source is admitted independently, so such a
-refusal is that source's error in the returned `jobs` list - carrying its
-zero-based `index` - and the other sources are still queued.
+The MCP tools share the **core** options with the HTTP bodies above, but the
+request *shapes* differ between surfaces - they are not interchangeable
+payloads. The table below is the contract; a caller must not build one from an
+HTTP batch item by hand.
+
+| Option | HTTP single (`POST /jobs`) / batch item | MCP `transcribe_media` | MCP `submit_batch_media` |
+|---|---|---|---|
+| Input | `source: string`, required | `source: string`, required | `sources: list[string]`, required |
+| `formats` | **list** of strings (e.g. `["json","srt"]`); default `json`,`srt`,`txt` | **comma-separated string** `"json,srt,txt"` | **comma-separated string** |
+| `language`, `output_dir`, `model`, `device`, `engine`, `diarize`, `translate_to` | same fields on the single item; on HTTP batch each item carries its **own** copy, applied only to that item | same | shared across all sources |
+| `cookies_from_browser` | accepted on the HTTP single `POST /jobs` and on each HTTP batch item | accepted | **not a supported parameter** - callers must not supply it |
+| Resume | batch wrapper `resume: bool`; single `POST /jobs/{id}/resume` | `resume_job` tool | `resume: bool` |
+
+The MCP batch tool's `cookies_from_browser` row is the one place the surfaces
+genuinely differ: `submit_batch_media`'s signature has no such parameter, so a
+caller cannot pass browser cookies through it — only through `transcribe_media`
+or an HTTP submission. On HTTP, batch options are **per item**: each entry of
+`jobs` is a full `TranscribeRequest`, so two items can name different models or
+languages. The MCP batch tool instead takes its options **once** and applies them
+to every source.
+
+`output_dir` omitted writes no rendered files, but a durable transcript is still
+kept: with `TEXTFLOWKIT_DB` set the transcript survives the process, so "no
+output files" is not "memory only."
+
+On `transcribe_media` an unknown engine name or a missing optional package comes
+back as `{"error": ...}` before any job is queued. On `submit_batch_media` each
+source is admitted independently, so such a refusal is that source's error in
+the returned `jobs` list - carrying its zero-based `index` and best-effort
+`source` - and the other sources are still queued, reported in submitted order.
+The MCP batch tool takes engine (and every other option) **once** for the whole
+call, so an unusable engine is not a per-source refusal: it means every item
+carries an admission error. The response `count` and each item's
+`state`/`error` describe **admission**, not completion: a queued item still has
+to be polled to a terminal state.
+
+**`sources` entries are expected to be strings.** The tool's schema types the
+argument as `list[Any]`, not `list[str]`, precisely so that a *bad entry* is that
+entry's own item error rather than a whole-call schema rejection: an entry that
+is not a string - a nested object, a number, or any other non-string value - is
+raised as a `TypeError` inside the per-item boundary and reported at its `index`
+while the remaining entries are still queued. A string is valid whether or not
+it is empty-but-shaped like a source; the error is *non-string*, not
+*non-object*. So the parameter is typed permissively but the contract is "one
+string per source" - pass `["https://...", "C:\\media\\clip.mp4"]`, not nested
+objects or numbers. A malformed entry is not a reason the whole batch fails.
 
 ### Harness configuration
 
@@ -155,7 +195,10 @@ textflowkit-http --host 127.0.0.1 --port 8767
 
 Both submission bodies (`POST /jobs` and each item of `POST /jobs/batch`) accept
 the same options: `source`, `language`, `formats`, `output_dir`, `model`,
-`device`, `engine`, `cookies_from_browser`, `diarize`, and `translate_to`.
+`device`, `engine`, `cookies_from_browser`, `diarize`, and `translate_to`. On
+`/jobs/batch` these are **per item**: each entry is its own full request, so an
+item's model/language/device apply only to that item (unlike the MCP batch tool,
+which takes one shared set for every source).
 `engine` defaults to `whisper` — openai-whisper on the torch stack: ROCm on AMD,
 CUDA on NVIDIA, CPU otherwise — and may be set to `faster-whisper`, the opt-in
 CTranslate2 engine for CPU and Apple Silicon that needs
@@ -166,8 +209,11 @@ with **422 before a job record is written**. On `/jobs/batch` each item is
 admitted independently: an unusable engine (or any other per-item refusal - an
 unsupported format, an empty source) is reported as that item's error, in place,
 carrying its zero-based `index` and best-effort `source`, and the other items are
-still queued and reported in the submitted order. Only the envelope shape is a
-whole-request error: a batch body whose `jobs` is not a list at all is a 422. An
+still queued and reported in the submitted order. The envelope shape is the
+whole-request case: a batch body that fails `BatchRequest` — most obviously a
+`jobs` value that is not a list at all, but also a request body that does not
+decode to that model (a missing or non-object top-level body, or an invalid
+`resume`) — is a whole-request 422. An
 individual entry that is not an object (or carries a malformed field) is that
 entry's item error, never a whole-request refusal. The choice is stored on the
 durable request and checked again when the job is resumed - except for a job that
@@ -175,6 +221,17 @@ already finished, which is answered from its stored transcript and needs no
 engine. A resume refused for an unusable engine leaves the job's terminal state,
 error, and cancellation flag untouched, so nothing is left queued-less in
 `pending`.
+
+**202 means admitted, not completed.** Both `POST /jobs` and `POST /jobs/batch`
+return a job handle as soon as work is queued; the response does not mean the
+transcription succeeded. `/jobs/batch` returns `{count, jobs}` where each entry
+carries its `index`, `source`, and either a `job_id`/`state` or an `error`, and
+the entry count always matches the number of submitted items. Poll each returned
+job to a terminal state (`done`, `error`, or `cancelled`) before treating it as
+finished. A missing or unusable **engine** is a per-item error on the batch route
+(HTTP 422 on the single route); a batch body that fails the envelope model — a
+`jobs` value that is not a list, or a body missing its required shape — is the
+whole-request 422 case.
 
 ### Developer mode and production profile
 
@@ -258,6 +315,48 @@ MCP is a separate surface: it enforces the loopback peer/`Host`/`Origin`
 boundary described above and stands it down on `--allow-remote` /
 `TEXTFLOWKIT_ALLOW_REMOTE=1`, and should remain on loopback or behind a gateway;
 the JSON HTTP production token does not automatically secure it.
+
+**Browser cookies are refused in the production profile.** `core.service`
+rejects any submission carrying `cookies_from_browser` while
+`TEXTFLOWKIT_PROFILE=production`, before a job record is written. This applies to
+**every** surface that reaches the shared submission contract - a single or
+batch HTTP submission, an MCP submission, a CLI run, and the **resume** of a
+request saved earlier with the option - because the server cannot tell an
+owner-run CLI from a remote caller. Keep cookie-assisted jobs in the deliberate
+owner developer profile.
+
+#### Production settings reference
+
+Every numeric limit below is read by `core.service` at request time and must be a
+positive integer; a bad value fails the request closed rather than being ignored.
+The **five** "required" settings - `TEXTFLOWKIT_API_TOKEN`, `TEXTFLOWKIT_INPUT_ROOT`,
+`TEXTFLOWKIT_OUTPUT_ROOT`, `TEXTFLOWKIT_WORK_ROOT`, and `TEXTFLOWKIT_DB` - must be
+present (see the checks in `validate_production_config`) or the profile refuses to
+serve at all.
+
+| Environment variable | Default / requirement | Applies to |
+|---|---|---|
+| `TEXTFLOWKIT_PROFILE` | `developer`; set to `production` explicitly | Shared profile checks; JSON HTTP auth middleware |
+| `TEXTFLOWKIT_API_TOKEN` | **required**, ≥ 16 characters | JSON HTTP, every request including `/health` |
+| `TEXTFLOWKIT_INPUT_ROOT` | **required**, must be an existing directory | Local-input boundary |
+| `TEXTFLOWKIT_OUTPUT_ROOT` | **required**, created if absent | Rendered-output boundary |
+| `TEXTFLOWKIT_WORK_ROOT` | **required**, created if absent | Per-job scratch directory |
+| `TEXTFLOWKIT_DB` | **required**, on-disk SQLite (not `:memory:`) | Durable jobs; one owning process |
+| `TEXTFLOWKIT_MAX_REQUEST_BYTES` | 65,536 bytes (64 KiB) | Request body cap |
+| `TEXTFLOWKIT_RATE_PER_MINUTE` | 60 per client per process | Per-process rate limit, not a distributed quota |
+| `TEXTFLOWKIT_MAX_DURATION_SECONDS` | 14,400 s (4 hours) | Source and decoded duration |
+| `TEXTFLOWKIT_MAX_OUTPUT_BYTES` | 52,428,800 bytes (50 MiB) | Rendered output and read response |
+| `TEXTFLOWKIT_MAX_MEDIA_BYTES` | 1,073,741,824 bytes (1 GiB) | Download, media, and decoded-audio size |
+| `TEXTFLOWKIT_MAX_PENDING_JOBS` | 100 | Executor pending queue capacity |
+| `TEXTFLOWKIT_MAX_CONCURRENCY` | 1 | Executor worker count |
+| `TEXTFLOWKIT_EGRESS_PROXY` | **required for URL input**; absent means URL jobs fail closed | Operator SSRF-filtering egress |
+| `TEXTFLOWKIT_TRUSTED_PROXY_IPS` | unset = the TCP peer is the identity | Comma-separated IPs/CIDRs; a malformed value fails closed (503) |
+| `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` | 600 s | Decode wall-clock; **all profiles**, not production-only |
+
+Two production read caps are numeric but are not environment variables: HTTP
+transcript paging defaults to `limit=100` and rejects `limit > 500` (HTTP 422),
+and HTTP search caps `limit` at 500 and `context` at 20. These are HTTP checks;
+MCP is a separate surface and does not share this token or these caps.
 
 ### Container example (Dockerfile and Compose)
 
@@ -410,10 +509,16 @@ TEXTFLOWKIT_DB=/var/lib/textflowkit/jobs.db textflowkit-mcp --transport http
 
 Backed by SQLite (WAL). Transcripts, outputs, and job states survive a restart.
 
-**Orphaned work is reaped at startup.** A job left in `pending` or `running` by a
-previous process has no worker, so it is failed with a reason rather than reported
-as a job that will never finish. This assumes **one owning process per store** -
-two processes sharing one `TEXTFLOWKIT_DB` would reap each other's live jobs.
+**Orphaned work is reaped before reads are served.** A job left in `pending` or
+`running` by a previous process has no worker, so it is failed with a reason
+rather than reported as a job that will never finish. The reap runs once per
+store from each server's startup lifespan (HTTP and Streamable-HTTP MCP both
+enter it) and, on the lazy path, the first time the executor starts from
+submission/enqueue - so a restarted server that only answers status/`/health`
+requests after the reap still reports the orphaned rows correctly. This assumes
+**one owning process per store** - two processes sharing one `TEXTFLOWKIT_DB`
+would reap each other's live jobs. See the [architecture guide](architecture.md)
+for the full lifecycle, ownership, and checkpoint map.
 
 ## Concurrency
 
@@ -588,10 +693,26 @@ If the transcript was translated, the optional word timings still refer to the
 also retains the original word timings.
 
 Filtering is time first, then offset/limit inside that window - `offset` counts
-from the start of the requested range, not the start of the transcript. The
-response reports `total_segments`, `returned`, and `has_more`, and when more
-remain it includes a `next` hint naming the offset to continue from. Truncation
-is never silent.
+from the start of the requested range, not the start of the transcript. Time
+selection keeps whole segments whose intervals **overlap** the inclusive window;
+it never trims a segment or a subtitle cue to the exact `start`/`end` seconds.
+`offset` counts **visible** segments inside the window, after hidden filtering.
+
+A slice reports `total_segments` (visible segments in the window), `returned`,
+and `has_more`. **What carries the "keep going" information differs by surface:**
+
+- **MCP** (`get_transcript`) adds a human-readable `next` string when more
+  segments remain.
+- **HTTP JSON** (`format=json`) returns `{job_id, total_segments, offset,
+  returned, has_more, start, end, transcript}` but **no `next` field**; a client
+  continues by requesting `offset + returned` within the same `start`/`end`.
+- **HTTP text** (`format=txt|srt|vtt|md`) returns the rendered text as the
+  response body with **no paging metadata at all**. Discover page boundaries with
+  `format=json` first, then fetch the text-format slice.
+
+So counts are never silent, but only MCP supplies a `next` instruction: an HTTP
+client that waits for one will stall, and one that ignores `has_more` will drop
+the remainder.
 
 ```jsonc
 // MCP
@@ -602,6 +723,7 @@ is never silent.
 ```bash
 # HTTP
 curl "http://127.0.0.1:8767/jobs/$ID/transcript?format=srt&start=300&end=320"
+curl "http://127.0.0.1:8767/jobs/$ID/transcript?format=json&offset=20&limit=20"
 curl "http://127.0.0.1:8767/jobs/$ID/search?q=neural%20network&context=1"
 ```
 
@@ -635,9 +757,23 @@ account:
   is refused by FFmpeg, even when it is inside the root: it names other files
   that the decoder would open, and those references cannot be checked against
   the root once the input has been copied into scratch. Detection is not by
-  extension — renaming the file does not change it. The `ffprobe` duration check
-  is restricted the same way. Without an input root there is no boundary, and
-  such files are decoded as before.
+  extension — renaming the file does not change it. **Both** decode tools are
+  restricted this way: FFmpeg's decode and the `ffprobe` duration check carry the
+  same self-contained demuxer whitelist. The restriction holds on a **resume**
+  whose reacquired audio is decoded again, because the resume path stages the
+  confined input and applies the same whitelist; a stage whose output is already
+  recorded durable is reused and never re-decoded at all.
+
+  **What this is not.** The whitelist bounds what a confined input's *decode* can
+  open; it is not an OS sandbox, and it does not make an untrusted root safe to
+  point at. The root's own directories must still be kept from untrusted local
+  mutation, and the process keeps the full access of the account that started it
+  outside the decode. With no input root set there is no boundary at all: the
+  owner's own runs (CLI, MCP, HTTP under the developer profile) are deliberately
+  unconfined and decode playlists, manifests, and anything else FFmpeg already
+  decoded, exactly as before. Nothing here is a claim of complete URL-egress
+  protection; that belongs to the production egress-proxy requirement below, and
+  a local-file job needs no egress.
 
 ```bash
 TEXTFLOWKIT_INPUT_ROOT=/srv/media textflowkit-mcp --transport http

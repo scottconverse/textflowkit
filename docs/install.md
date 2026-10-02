@@ -149,43 +149,63 @@ platform.
 ## Diarization
 
 Diarization is opt-in and needs three separate things, all verified on this
-machine (Windows, ROCm torch 2.11.0+rocm7.13.0, `pyannote.audio` 4.0.7).
+machine (Windows, ROCm torch 2.11.0+rocm7.13.0, `pyannote.audio` 4.0.7). That
+stack is historical compatibility evidence, not an instruction to replace a
+working torch install.
 
-### 1. Pick the version that matches your torchaudio
+### 1. Choose the install path **before** running pip
 
-`pyannote.audio` 3.4.x calls `torchaudio.AudioMetaData`, which no longer exists
-in torchaudio 2.11 - importing 3.4.0 raises `AttributeError: module 'torchaudio'
-has no attribute 'AudioMetaData'`. **4.x removed that dependency** and loads
-cleanly. Install 4.x:
+`pyannote.audio` requires `torch>=2.0.0` (open-ended, not pinned), and installing
+the `textflowkit[diarize]` extra resolves the **whole project** - base
+`openai-whisper` included. Either can therefore resolve a stock CPU wheel over a
+ROCm build, silently losing the GPU. Decide which case you are in first:
 
-```bash
-pip install "pyannote.audio==4.0.7"
+**If a native Windows AMD ROCm stack already works, do not run a plain pyannote
+or extra install first.** Inspect the installed stack, then let pip resolve only
+the pyannote version while preserving the torch, torchaudio, and torchvision
+builds you already have:
+
+```powershell
+python -c "import torch, torchaudio, torchvision; print(torch.__version__); print(torchaudio.__version__); print(torchvision.__version__); print(torch.version.hip, torch.cuda.is_available())"
+python -m pip check
 ```
 
-### 2. Hold torch back, or you lose the GPU
+Use the reported versions in a constraints file and your existing verified AMD
+package source. The one-line example below corresponds to the historical
+reference versions; use it only if those builds are already installed or
+available from your chosen source:
 
-`pyannote.audio` requires `torch>=2.0.0` (open-ended, not pinned). A plain
-install can therefore resolve a stock CPU wheel over the ROCm build. Pin the
-whole torch stack on the command line:
-
-```bash
-pip install "pyannote.audio==4.0.7" \
-  "torch==2.11.0+rocm7.13.0" \
-  "torchaudio==2.11.0+rocm7.13.0" \
-  "torchvision==0.26.0+rocm7.13.0" \
-  --extra-index-url https://download.pytorch.org/whl/rocm7.13
+```powershell
+python -m pip install "pyannote.audio==4.0.7" "torch==2.11.0+rocm7.13.0" "torchaudio==2.11.0+rocm7.13.0" "torchvision==0.26.0+rocm7.13.0"
 ```
 
-Then confirm the build survived:
+**If you have no ROCm stack to preserve** (a fresh CPU environment), the plain
+extra install is the safe path:
+
+```powershell
+python -m pip install "textflowkit[diarize]"
+```
+
+The project declares `pyannote.audio>=4.0`, so this resolves a current compatible
+version rather than promising the historical 4.0.7. The reason pyannote must be
+4.x: 3.4.x calls `torchaudio.AudioMetaData`, which no longer exists in
+torchaudio 2.11 (importing 3.4.0 raises `AttributeError: module 'torchaudio' has
+no attribute 'AudioMetaData'`); 4.x removed that dependency.
+
+After either install, confirm the build survived and repeat the inspection and
+`python -m pip check`:
 
 ```bash
 textflowkit selftest
 ```
 
 A ROCm install reports `torch <ver>+rocm*`; a stock CPU wheel reports plain
-`torch <ver>`.
+`torch <ver>`. An unchanged version string alone is not proof that inference
+works. If pip cannot satisfy the pinned stack, stop and reconcile that
+environment's package sources and requirements rather than adding an unverified
+index or substituting stock torch.
 
-### 3. `torchcodec` cannot load on this torch - the code works around it
+### 2. `torchcodec` cannot load on this torch - the code works around it
 
 `pyannote.audio` 4.x decodes audio through `torchcodec`, whose bundled native
 DLLs are built against specific torch releases and fail against ROCm torch:

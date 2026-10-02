@@ -83,6 +83,9 @@ the core; the interfaces are thin.
 Because the core owns the pipeline, adding a door is cheap — and adding a platform
 means writing one source adapter, not another tool.
 
+For the job lifecycle, process ownership, checkpoints, and output publication,
+see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/main/docs/architecture.md).
+
 ## Recognized sources
 
 YouTube · TikTok · Facebook · Instagram · Vimeo · Twitch · Bilibili · Rumble ·

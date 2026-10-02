@@ -114,6 +114,12 @@ user accounts or multi-tenancy.
 - **Cookies are passed through, not stored.** `--cookies-from-browser` hands
   browser cookies to `yt-dlp` for content you are authorised to access. Using it
   to reach content you are not authorised to access is outside the intended use.
+  Browser-cookie input is a **developer/owner-profile** feature: while
+  `TEXTFLOWKIT_PROFILE=production`, every submission carrying the option is
+  refused before a job is written — on the CLI, MCP, and HTTP surfaces, and when
+  a saved request is resumed — because the server cannot distinguish an
+  owner-run session from a remote caller. See the [production settings
+  reference](docs/adapters.md#production-settings-reference).
 - **Transcript accuracy is not a security property.** Speech-to-text output
   contains errors and must not be relied on for legal, medical, safety-critical,
   or evidentiary purposes without human review.
