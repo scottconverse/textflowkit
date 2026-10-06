@@ -112,16 +112,16 @@ def test_mcp_tool_schemas_publish_an_engine_parameter():
     for name in ("transcribe_media", "submit_batch_media"):
         properties = tools[name].parameters["properties"]
         assert "engine" in properties, f"{name} schema omits engine"
-        assert properties["engine"]["default"] == "whisper", name
+        assert properties["engine"]["default"] == "whistle", name
 
 
-def test_http_request_schema_publishes_engine_with_a_whisper_default():
+def test_http_request_schema_publishes_engine_with_a_whistle_default():
     pytest.importorskip("fastapi")
     from textflowkit.adapters.http_server import TranscribeRequest, app
 
-    assert TranscribeRequest.model_fields["engine"].default == "whisper"
+    assert TranscribeRequest.model_fields["engine"].default == "whistle"
     schema = app.openapi()["components"]["schemas"]["TranscribeRequest"]["properties"]
-    assert schema["engine"]["default"] == "whisper"
+    assert schema["engine"]["default"] == "whistle"
 
 
 # --------------------------------------------------------------------------
@@ -139,14 +139,14 @@ def test_mcp_transcribe_media_selects_faster_whisper(fake_faster_whisper, inline
     assert get_default_store().get(out["job_id"]).request["engine"] == "faster-whisper"
 
 
-def test_mcp_transcribe_media_defaults_to_whisper(inline_submission):
+def test_mcp_transcribe_media_defaults_to_whistle(inline_submission):
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import transcribe_media
 
     out = transcribe_media("media.wav")
 
     assert "error" not in out, out
-    assert get_default_store().get(out["job_id"]).request["engine"] == "whisper"
+    assert get_default_store().get(out["job_id"]).request["engine"] == "whistle"
 
 
 def test_mcp_submit_batch_media_selects_faster_whisper(fake_faster_whisper, inline_submission):
@@ -159,12 +159,12 @@ def test_mcp_submit_batch_media_selects_faster_whisper(fake_faster_whisper, inli
     assert [job["engine"] for job in inline_submission] == ["faster-whisper"] * 2
 
 
-def test_mcp_submit_batch_media_defaults_to_whisper(inline_submission):
+def test_mcp_submit_batch_media_defaults_to_whistle(inline_submission):
     pytest.importorskip("mcp")
     from textflowkit.adapters.mcp_server import submit_batch_media
 
     assert submit_batch_media(["one.wav"])["count"] == 1
-    assert [job["engine"] for job in inline_submission] == ["whisper"]
+    assert [job["engine"] for job in inline_submission] == ["whistle"]
 
 
 def test_mcp_rejects_an_unknown_engine_before_creating_a_job(inline_submission):
@@ -243,11 +243,11 @@ def test_http_single_selects_faster_whisper(fake_faster_whisper, inline_submissi
     assert get_default_store().get(response.json()["id"]).request["engine"] == "faster-whisper"
 
 
-def test_http_single_defaults_to_whisper(inline_submission, http_client):
+def test_http_single_defaults_to_whistle(inline_submission, http_client):
     response = http_client.post("/jobs", json={"source": "media.wav"})
 
     assert response.status_code == 202, response.text
-    assert get_default_store().get(response.json()["id"]).request["engine"] == "whisper"
+    assert get_default_store().get(response.json()["id"]).request["engine"] == "whistle"
 
 
 def test_http_single_unknown_engine_is_422_before_a_job_row(inline_submission, http_client):
@@ -289,11 +289,11 @@ def test_http_batch_selects_faster_whisper(fake_faster_whisper, inline_submissio
     assert [job["engine"] for job in inline_submission] == ["faster-whisper"] * 2
 
 
-def test_http_batch_defaults_to_whisper(inline_submission, http_client):
+def test_http_batch_defaults_to_whistle(inline_submission, http_client):
     response = http_client.post("/jobs/batch", json={"jobs": [{"source": "one.wav"}]})
 
     assert response.status_code == 202, response.text
-    assert [job["engine"] for job in inline_submission] == ["whisper"]
+    assert [job["engine"] for job in inline_submission] == ["whistle"]
 
 
 def test_http_batch_unknown_engine_fails_only_its_own_item(
@@ -313,7 +313,7 @@ def test_http_batch_unknown_engine_fails_only_its_own_item(
     assert "job_id" not in items[0], items[0]
     assert items[1].get("job_id"), items[1]
     assert [job.source for job in get_default_store().list()] == ["two.wav"]
-    assert [job["engine"] for job in inline_submission] == ["whisper"]
+    assert [job["engine"] for job in inline_submission] == ["whistle"]
 
 
 def test_http_batch_missing_extra_fails_only_the_item_that_named_it(
@@ -338,7 +338,7 @@ def test_http_batch_missing_extra_fails_only_the_item_that_named_it(
     assert "job_id" not in items[0], items[0]
     assert items[1].get("job_id"), items[1]
     assert [job.source for job in get_default_store().list()] == ["two.wav"]
-    assert [job["engine"] for job in inline_submission] == ["whisper"]
+    assert [job["engine"] for job in inline_submission] == ["whistle"]
 
 
 # --------------------------------------------------------------------------

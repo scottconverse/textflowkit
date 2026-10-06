@@ -135,10 +135,15 @@ def test_faster_whisper_is_an_optional_extra_never_a_base_dependency():
 
     extra = project["optional-dependencies"]["faster-whisper"]
     assert any(requirement.startswith("faster-whisper") for requirement in extra)
-    # The ROCm/openai-whisper path must not change: no faster-whisper anywhere
-    # in the base install, and the base engine dependency is still there.
+    # No faster-whisper anywhere in the base install. openai-whisper is also no
+    # longer a base dependency: it moved to the `whisper` extra when the default
+    # engine became Whistle, so a fresh install does not pull the torch stack.
     assert not any("faster-whisper" in requirement for requirement in project["dependencies"])
-    assert any("openai-whisper" in requirement for requirement in project["dependencies"])
+    assert not any("openai-whisper" in requirement for requirement in project["dependencies"])
+    assert any(
+        requirement.startswith("openai-whisper")
+        for requirement in project["optional-dependencies"]["whisper"]
+    )
 
 
 # --------------------------------------------------------------------------
@@ -157,14 +162,19 @@ def test_unknown_engine_is_still_rejected():
         get_engine("no-such-engine")
 
 
-def test_default_engine_is_unchanged(monkeypatch):
-    """`whisper`/`openai-whisper`/`default` keep resolving to openai-whisper."""
+def test_default_engine_is_whistle_and_whisper_aliases_resolve(monkeypatch):
+    """The default is Whistle; `whisper`/`openai-whisper` still resolve to Whisper.
+
+    `openai-whisper` and `whisper` name the openai-whisper engine, but the bare
+    default (and the `default` alias) is now the Whistle engine.
+    """
     module = SimpleNamespace(load_model=lambda *a, **k: SimpleNamespace(transcribe=lambda *a, **k: {}))
     monkeypatch.setitem(sys.modules, "whisper", module)
-    assert get_engine().name == "openai-whisper"
+    assert get_engine().name == "whistle"
+    assert get_engine("default").name == "whistle"
     assert get_engine("whisper").name == "openai-whisper"
-    assert get_engine("default").name == "openai-whisper"
-    assert get_engine("openai-whisper") is get_engine("default")
+    assert get_engine("openai-whisper").name == "openai-whisper"
+    assert get_engine("openai-whisper") is get_engine("whisper")
 
 
 # --------------------------------------------------------------------------
@@ -385,11 +395,11 @@ def test_cli_transcribe_passes_the_engine_into_the_request(monkeypatch, capsys, 
     assert jobs[0].request["engine"] == "faster-whisper"
 
 
-def test_cli_transcribe_defaults_to_the_unchanged_engine(monkeypatch, capsys, tmp_path):
+def test_cli_transcribe_defaults_to_whistle(monkeypatch, capsys, tmp_path):
     rc, store = _run_transcribe_capturing_request(monkeypatch, capsys, tmp_path, [])
     assert rc == 0
     jobs = store.list()
-    assert jobs[0].request["engine"] == "whisper"
+    assert jobs[0].request["engine"] == "whistle"
 
 
 def test_cli_batch_passes_the_engine_into_the_request(monkeypatch, capsys, tmp_path):

@@ -39,7 +39,9 @@ def clean_store():
 
 def test_submit_sync_records_error_for_missing_file():
     store = get_default_store()
-    job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
+    job = submit(
+        store, source=MISSING_SOURCE, background=False, engine="whisper", model="tiny"
+    )
     assert job.state is JobState.ERROR
     assert "no such file" in (job.error or "")
 
@@ -55,7 +57,9 @@ def test_inline_submit_returns_the_persisted_terminal_job(kind, tmp_path):
     """
     store = MemoryJobStore() if kind == "memory" else SqliteJobStore(tmp_path / "jobs.db")
     try:
-        job = submit(store, source=MISSING_SOURCE, background=False, model="tiny")
+        job = submit(
+            store, source=MISSING_SOURCE, background=False, engine="whisper", model="tiny"
+        )
         persisted = store.get(job.id)
         assert persisted.state is JobState.ERROR
         assert "no such file" in (persisted.error or "")
@@ -79,7 +83,7 @@ def test_inline_store_mismatch_returns_the_persisted_terminal_job(tmp_path, monk
     elsewhere = MemoryJobStore()
     monkeypatch.setattr(runner, "get_default_executor", lambda: JobExecutor(elsewhere))
     try:
-        job = submit(store, source=MISSING_SOURCE, model="tiny")
+        job = submit(store, source=MISSING_SOURCE, engine="whisper", model="tiny")
         assert elsewhere.get(job.id) is None, "job was queued, not run inline"
         persisted = store.get(job.id)
         assert persisted.state is JobState.ERROR
@@ -91,7 +95,7 @@ def test_inline_store_mismatch_returns_the_persisted_terminal_job(tmp_path, monk
 
 def test_submit_background_returns_pending_job():
     store = get_default_store()
-    job = submit(store, source="C:/definitely/missing.mp4", model="tiny")
+    job = submit(store, source="C:/definitely/missing.mp4", engine="whisper", model="tiny")
     assert job.id
     assert job.state in (JobState.PENDING, JobState.RUNNING, JobState.ERROR)
 
@@ -198,7 +202,7 @@ def test_mcp_transcript_requires_finished_job(tmp_path):
     # the test is the transcript read, not the acquisition of `C:/nope.mp4`.
     media = str(tmp_path / "media.wav")
     (tmp_path / "media.wav").write_bytes(b"synthetic media")
-    started = transcribe_media(media, model="tiny")
+    started = transcribe_media(media, engine="whisper", model="tiny")
     out = get_transcript(started["job_id"])
     # Either it is still running, or it already failed - never a transcript.
     assert "error" in out

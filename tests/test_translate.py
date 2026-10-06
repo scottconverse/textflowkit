@@ -316,7 +316,7 @@ def test_pipeline_translate_failure_is_loud(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "get_translator", lambda *a, **k: Boom())
 
     with pytest.raises(PipelineError) as exc:
-        transcribe(str(media), input_root=tmp_path, translate_to="es")
+        transcribe(str(media), input_root=tmp_path, translate_to="es", engine="whisper")
     assert "translation" in str(exc.value).lower()
     assert "no backend" in str(exc.value)
 
@@ -343,7 +343,7 @@ def test_pipeline_records_translation_metadata(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(pipeline, "get_translator", lambda *a, **k: FakeTranslator())
 
-    result = transcribe(str(media), input_root=tmp_path, translate_to="es")
+    result = transcribe(str(media), input_root=tmp_path, translate_to="es", engine="whisper")
     meta = result.transcript.metadata["translation"]
     assert meta["target"] == "es"
     assert meta["segments_translated"] == 2
@@ -442,7 +442,7 @@ def test_pipeline_translates_end_to_end_over_http(monkeypatch, tmp_path):
 
     with OllamaStub() as stub:
         monkeypatch.setenv(ENV_OLLAMA_HOST, stub.host)
-        result = transcribe(str(media), input_root=tmp_path, translate_to="Spanish")
+        result = transcribe(str(media), input_root=tmp_path, translate_to="Spanish", engine="whisper")
 
     assert [s.translated_text for s in result.transcript.segments] == ["x-hello", "x-world"]
     assert result.transcript.metadata["translation"]["segments_translated"] == 2

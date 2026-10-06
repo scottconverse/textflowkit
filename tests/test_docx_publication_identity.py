@@ -524,6 +524,7 @@ def _partially_published_docx_job(tmp_path, fake_pipeline, monkeypatch):
         source=str(source),
         formats=["docx", "txt"],
         output_dir=str(out_dir),
+        engine="whisper",
         model="tiny",
         device="cpu",
     )
@@ -615,7 +616,7 @@ def test_done_resume_adopts_its_own_docx_without_a_render_or_a_refetch(
     store = MemoryJobStore()
     request = SubmissionRequest(
         source=str(source), formats=["docx"], output_dir=str(out_dir),
-        model="tiny", device="cpu",
+        engine="whisper", model="tiny", device="cpu",
     )
     job = submit_request(store, request, background=False)
     assert store.get(job.id).state is JobState.DONE, store.get(job.id).error

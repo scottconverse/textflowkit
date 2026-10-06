@@ -129,6 +129,10 @@
     .note { margin-top: 1.15rem; padding-left: 1rem; border-left: 2px solid var(--amber); color: var(--muted); font-size: .9rem; }
     .note a { color: var(--amber); }
 
+    .figure { overflow-x: auto; margin: 2.4rem 0 0; padding: 0; }
+    .figure img { display: block; width: 100%; height: auto; min-width: 720px; }
+    .figure figcaption { margin-top: .85rem; color: var(--muted); font-size: .85rem; }
+
     .truth { padding-block: 3.1rem; border-top: 1px solid #ffffff22; }
     .truth-inner { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; }
     .truth h2 { margin: 0; font-size: 1.65rem; letter-spacing: -.03em; }
@@ -180,6 +184,7 @@
         <a href="#interfaces">Interfaces</a>
         <a href="#install">Get started</a>
         <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual ↗</a>
+        <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">Developer manual ↗</a>
         <a class="nav-github" href="https://github.com/scottconverse/textflowkit">GitHub ↗</a>
       </nav>
     </div>
@@ -188,7 +193,7 @@
   <main id="main">
     <div class="wrap hero">
       <div>
-        <span class="eyebrow">Open source · Apache 2.0 · v0.1.8</span>
+        <span class="eyebrow">Open source · Apache 2.0 · v0.1.9</span>
         <h1>Media in.<br><em>Useful text</em> out.</h1>
         <p class="lead">Transcribe video and audio into timestamped, searchable text. One shared core for your command line, AI harness, and application.</p>
         <div class="actions">
@@ -196,7 +201,7 @@
           <a class="button secondary" href="https://pypi.org/project/textflowkit/">Install from PyPI <span aria-hidden="true">&nbsp;↗</span></a>
         </div>
         <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
-        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8">v0.1.8</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
+        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9">v0.1.9</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
       </div>
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
@@ -259,9 +264,13 @@
         <div class="flow-grid">
           <div class="flow-step"><b>01</b><h3>Point it at media</h3><p>Use a local file, a direct media URL, or a recognized platform link.</p></div>
           <div class="flow-step"><b>02</b><h3>Extract audio</h3><p>yt-dlp acquires supported URLs; ffmpeg prepares audio for transcription.</p></div>
-          <div class="flow-step"><b>03</b><h3>Transcribe</h3><p>Whisper produces timed segments. Translation and speaker labels are optional.</p></div>
+          <div class="flow-step"><b>03</b><h3>Transcribe</h3><p>The default speech engine, Whistle, produces timed segments on CPU with no PyTorch; openai-whisper is opt-in. Translation and speaker labels are optional.</p></div>
           <div class="flow-step"><b>04</b><h3>Use the result</h3><p>Read, search, page, or export JSON, TXT, Markdown, SRT, or VTT. DOCX and PDF use an optional extra.</p></div>
         </div>
+        <figure class="figure">
+          <img src="assets/architecture-overview.svg" alt="TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports." loading="lazy" width="1180" height="700">
+          <figcaption>One shared core, four thin doors. Whistle is the default engine; openai-whisper is opt-in.</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -273,10 +282,10 @@
         <ul>
           <li>Run locally on Windows without WSL, or on macOS and Linux.</li>
           <li>Use durable SQLite jobs and bounded concurrency when you need them.</li>
-          <li>Find the right setup for AMD ROCm in the install guide before installing dependencies.</li>
+          <li>Find the right setup for AMD ROCm in the install guide before installing dependencies — this applies to the optional <code>openai-whisper</code> engine and to diarization.</li>
         </ul>
         <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">Read install guide ↗</a>
-        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.8 user manual</a> for CLI, MCP, HTTP, export, and troubleshooting examples.</p>
+        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.9 user manual</a> for CLI, MCP, HTTP, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
       </div>
       <div>
         <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[mcp,http]"
@@ -300,6 +309,7 @@
         <a href="https://github.com/scottconverse/textflowkit">Repository</a>
         <a href="https://github.com/scottconverse/textflowkit/releases/latest">Releases</a>
         <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a>
+        <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">Developer manual</a>
         <a href="https://pypi.org/project/textflowkit/">PyPI</a>
         <a href="https://github.com/scottconverse/textflowkit/issues">Issues</a>
         <a href="https://github.com/scottconverse/textflowkit/blob/main/LICENSE">License</a>

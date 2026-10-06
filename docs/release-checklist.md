@@ -7,11 +7,14 @@ failed when YouTube required bot confirmation. A local Windows run passed, but
 neither result verifies the other 12 recognized sites.
 
 1. Start from a **committed, clean candidate checkout** on Windows. Use a Python
-   environment with textflowkit, `yt-dlp`, Whisper, and ffmpeg/ffprobe installed;
-   see [install notes](install.md). The script refuses uncommitted changes so
-   its receipt identifies the code that ran. It uses Whisper `tiny` on CPU; no
-   ROCm GPU setup is required. The script does not supply browser cookies;
-   YouTube may still challenge any particular network or run.
+   environment with textflowkit, `yt-dlp`, the `whisper` extra (`pip install
+   "textflowkit[whisper]"`), and ffmpeg/ffprobe installed; see
+   [install notes](install.md). The script refuses uncommitted changes so
+   its receipt identifies the code that ran. It pins `--engine whisper` and uses
+   Whisper `tiny` on CPU — not the product default engine, which is Whistle —
+   because the default clip's measured word was observed with
+   openai-whisper; no ROCm GPU setup is required. The script does not supply
+   browser cookies; YouTube may still challenge any particular network or run.
 2. Run `ruff check .` and `python -m pytest` on the candidate commit. Confirm
    the Windows/Linux/macOS Python matrix and installed-wheel smoke pass in the
    deterministic [CI workflow](../.github/workflows/ci.yml).
@@ -30,7 +33,8 @@ neither result verifies the other 12 recognized sites.
    `platform=youtube`, at least one nonempty
    timestamped segment, **and recognizable spoken content**. By default it
    requires the whole word `elephants`, which the documented default clip is
-   observed to say in its first segment with `--model tiny`. Pointing `--url`
+   observed to say in its first segment with `--engine whisper --model tiny`.
+   Pointing `--url`
    at any other clip requires
    `--expect-text "<a word or short phrase you expect to hear>"`: the run is
    refused, before it touches Git, the network, or a model, because a word from
@@ -45,7 +49,7 @@ neither result verifies the other 12 recognized sites.
    expected text and whether it came from the default clip or the caller, the
    assertion's scope and result, segment count, and transcript SHA-256. It does
    **not** record the transcript. Its default timeout is 300 seconds; `--url`,
-   `--model`, `--device`, `--expect-text`, and `--timeout` may be overridden
+   `--engine`, `--model`, `--device`, `--expect-text`, and `--timeout` may be overridden
    deliberately and are reflected in the receipt. No success receipt is written
    on failure, including a content mismatch.
 4. Keep the receipt with the release evidence, not in the public repository.
@@ -75,7 +79,7 @@ receipt. It does not upload cookies, media, or transcripts to GitHub.
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.8` for a future release) on that verified
+version tag (for example `v0.1.9` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

@@ -18,8 +18,11 @@ from textflowkit.core.checkpoint import (
     validate_local_resume,
 )
 from textflowkit.core.engine import (
+    DEFAULT_ENGINE,
+    engine_default_model,
     require_engine,
     validate_engine,
+    validate_engine_options,
     validate_model,
 )
 from textflowkit.core.executor import QueueFullError, get_default_executor
@@ -46,8 +49,10 @@ class SubmissionRequest:
     language: str | None = None
     formats: list[str] = field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = None
-    model: str = "small"
-    engine: str = "whisper"
+    #: ``None`` means "the selected engine's own default model"; it is resolved,
+    #: once, in ``__post_init__`` and the resolved name is what gets persisted.
+    model: str | None = None
+    engine: str = DEFAULT_ENGINE
     device: str | None = None
     cookies_from_browser: str | None = None
     input_root: str | None = None
@@ -66,16 +71,36 @@ class SubmissionRequest:
         reject_browser_cookie_requests(self.cookies_from_browser)
         # The engine *name* is settled here, where it is still free: it is a
         # pure lookup with no import, so a typo is rejected on all four adapters
-        # before a job record exists rather than after acquisition. Whether an
-        # optional engine's package is actually installed is a separate question
-        # and deliberately not asked here - see `_require_engine_ready`.
-        validate_engine(self.engine)
+        # before a job record exists rather than after acquisition. The return is
+        # the *canonical* name, and it is assigned back: `default` and
+        # `openai-whisper` are accepted aliases, so what a fresh request persists
+        # is the concrete engine (`whistle` / `whisper`) rather than the alias it
+        # was named with. A durable request that stored `default` would name no
+        # canonical engine, and the v3 partial checkpoint gate reads that name
+        # back - so persisting the alias would make a Whistle run unresumable.
+        # Whether an optional engine's package is actually installed is a separate
+        # question and deliberately not asked here - see `_require_engine_ready`.
+        self.engine = validate_engine(self.engine)
+        # A model the caller did not name resolves to the selected engine's own
+        # default - `whistle` for the Whistle engine, `small` for the
+        # Whisper-family engines. Resolving it here, once, means the durable
+        # request carries the concrete model name a checkpoint is matched
+        # against, rather than a `None` two runs could each resolve differently.
+        if self.model is None:
+            self.model = engine_default_model(self.engine)
         # The model *name* is settled next to the engine name, for the same
         # reason and with the same limits: it is a lookup against a name list the
         # engine publishes, not a load. See `validate_model` for why the engine's
         # own name list is asked rather than a copy kept here, and why a path is
         # refused rather than stat-ed.
         validate_model(self.model, self.engine)
+        # Options the selected engine cannot honour are refused here too, before
+        # any job row or acquisition: Whistle is CPU-only and advertises a fixed
+        # language set, so a non-CPU device or an unknown language is a request
+        # error naming the Whisper alternative rather than a silent fallback or a
+        # late failure. The Whisper-family engines take the full space, so this
+        # refuses nothing for them.
+        validate_engine_options(self.engine, language=self.language, device=self.device)
         # Adapter path helpers return Path objects, but a durable request must
         # be JSON-serializable before it is inserted into SQLite.
         if isinstance(self.input_root, Path):
@@ -120,6 +145,48 @@ class SubmissionRequest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SubmissionRequest:
+        """Rebuild a *persisted* request, decoding omitted fields as legacy.
+
+        This is durable decoding, not fresh-request construction, so an omitted
+        ``engine`` must stay the engine the request was written with. Requests
+        saved before Whistle became the default carry no ``engine`` key, and
+        their work was run by openai-whisper; migrating them to Whistle on
+        decode would silently change the engine a resume asks for and break the
+        checkpoint match that keeps their completed work reusable. So an omitted
+        ``engine`` (and the ``model`` that went with it) decodes to the legacy
+        ``whisper``/``small`` pair.
+
+        The named aliases are decoded the same way, by what they *meant when
+        they were written*. Before Whistle existed, ``default`` resolved to
+        openai-whisper, so a saved record whose engine is ``default`` was run by
+        Whisper and must decode to ``whisper`` - never to the *new* default,
+        which would silently change the engine a resume asks for. ``openai-whisper``
+        is the same engine under its other name and canonicalises to ``whisper``.
+        A record that already names a canonical engine is honoured as it stands.
+        Both of those legacy aliases are recognised here and rewritten before the
+        constructor canonicalises, so a real Whisper job - even one saved with a
+        ``small`` model under ``default`` - decodes to a valid ``whisper``/``small``
+        request rather than being refused against Whistle's model list.
+
+        A fresh request built directly - through the constructor, never through
+        here - gets the new Whistle default, and ``default`` named *there* means
+        the current default (Whistle).
+        """
+        engine = data.get("engine")
+        if engine is None:
+            data = {**data, "engine": "whisper"}
+            # Only default the model when the record did not carry one either:
+            # a legacy record with an explicit engine-less model keeps that model
+            # validated against the engine it is now paired with.
+            data.setdefault("model", "small")
+        elif isinstance(engine, str) and engine in ("default", "openai-whisper"):
+            # Both are the pre-Whistle Whisper engine under the names a saved
+            # record could carry. Rewrite to the canonical legacy engine so the
+            # constructor does not resolve `default` to today's Whistle default.
+            data = {**data, "engine": "whisper"}
+            # Only fill the model when the record did not carry one: a legacy
+            # `default`/`small` record keeps `small` rather than being re-defaulted.
+            data.setdefault("model", "small")
         return cls(**data)
 
     def options(self) -> dict[str, Any]:

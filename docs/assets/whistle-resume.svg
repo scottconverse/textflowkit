@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 760" width="1120" height="760"
+     role="img" aria-labelledby="wfTitle wfDesc" font-family="Inter, ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
+  <title id="wfTitle">Whistle bounded block run and durable resume</title>
+  <desc id="wfDesc">A long recording is decoded to one PCM WAV whose SHA-256 is recorded. The
+  window planner splits it into 26-second cores with up to two seconds of context per side, so
+  every clip stays at or under the native CLI's 30-second limit. Each clip runs as one owned
+  child process with a per-clip timeout, a bounded output cap, and forced telemetry-off
+  environment flags. A word is assigned to the clip whose core contains its midpoint, so
+  overlap words are emitted once and repeated phrases are kept. After each finished core a
+  partial checkpoint (no transcript yet) is written to the durable SQLite store. An unfinished
+  core is fed back into inference when a run resumes. A resume validates the source and
+  decoded-WAV hashes, the window policy, and the model identity, then re-runs only the
+  unfinished cores and adopts the saved finished blocks' words verbatim.</desc>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b556e"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f9e7a"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b07d1a"/>
+    </marker>
+    <linearGradient id="p" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7fafc"/><stop offset="1" stop-color="#eef4f8"/>
+    </linearGradient>
+    <linearGradient id="cp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eafaf3"/><stop offset="1" stop-color="#dff3ea"/>
+    </linearGradient>
+    <linearGradient id="op" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff8ea"/><stop offset="1" stop-color="#fdf0d8"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .box  { fill: url(#p); stroke: #c3d2df; stroke-width: 1.5; rx: 10; }
+    .core { fill: url(#cp); stroke: #7fceb1; stroke-width: 1.8; rx: 12; }
+    .opt  { fill: url(#op); stroke: #e6c47a; stroke-width: 1.5; rx: 10; }
+    .io   { fill: #ffffff; stroke: #9db4c6; stroke-width: 1.5; rx: 10; }
+    .h    { fill: #14303f; font-size: 17px; font-weight: 700; }
+    .hs   { fill: #1c3b4a; font-size: 14.5px; font-weight: 700; }
+    .t    { fill: #2a4356; font-size: 12.5px; }
+    .ts   { fill: #4a6478; font-size: 11.5px; }
+    .tag  { fill: #0f7a56; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .tag2 { fill: #9a6a12; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .edge { stroke: #3b556e; stroke-width: 2; fill: none; marker-end: url(#a); }
+    .edgeM{ stroke: #2f9e7a; stroke-width: 2.2; fill: none; marker-end: url(#am); }
+    .edgeO{ stroke: #b07d1a; stroke-width: 2; fill: none; stroke-dasharray: 6 5;
+            marker-end: url(#ao); }
+    .edgeR{ stroke: #3b556e; stroke-width: 2; fill: none; marker-end: url(#a);
+            stroke-dasharray: 4 4; }
+    .el   { fill: #3b556e; font-size: 11.5px; }
+    .elR  { fill: #1c3b4a; font-size: 11.5px; font-weight: 700; }
+    .cap  { fill: #5b7186; font-size: 12px; }
+  </style>
+
+  <rect x="0" y="0" width="1120" height="760" fill="#ffffff"/>
+  <text x="40" y="46" class="h">Whistle — bounded block run and durable resume</text>
+  <text x="40" y="70" class="cap">Long audio is split into ≤ 30 s clips; each runs as one owned child; a resume re-runs only the unfinished blocks.</text>
+
+  <!-- Row 1: decode + plan + per-clip inference -->
+  <rect class="io" x="40" y="100" width="220" height="86"/>
+  <text x="60" y="128" class="hs">Decode to PCM WAV</text>
+  <text x="60" y="150" class="ts">ffmpeg, wall-clock bounded</text>
+  <text x="60" y="168" class="ts">record full-content SHA-256</text>
+
+  <rect class="core" x="300" y="100" width="250" height="86"/>
+  <text x="320" y="126" class="tag">WINDOW PLANNER</text>
+  <text x="320" y="148" class="hs">26 s core + ≤ 2 s context</text>
+  <text x="320" y="168" class="ts">each native clip ≤ 30 s (its limit)</text>
+
+  <path class="edge" d="M 260 143 L 300 143"/>
+
+  <rect class="box" x="590" y="100" width="240" height="86"/>
+  <text x="610" y="126" class="tag">PER CLIP — OWNED CHILD</text>
+  <text x="610" y="148" class="hs">transcribe one block</text>
+  <text x="610" y="168" class="ts">timeout · output cap · telemetry off</text>
+
+  <path class="edge" d="M 550 143 L 590 143"/>
+
+  <rect class="io" x="870" y="100" width="210" height="86"/>
+  <text x="890" y="126" class="hs">Merge to absolute time</text>
+  <text x="890" y="148" class="ts">word owned by its core midpoint</text>
+  <text x="890" y="168" class="ts">repeated phrases kept</text>
+
+  <path class="edge" d="M 830 143 L 870 143"/>
+
+  <!-- telemetry callout (widened so the flag line fits inside the box) -->
+  <rect class="opt" x="576" y="212" width="286" height="70"/>
+  <text x="596" y="238" class="tag2">TELEMETRY OFF, ALWAYS</text>
+  <text x="596" y="258" class="ts">NEEDLE_TELEMETRY=0 · DO_NOT_TRACK=1</text>
+  <text x="596" y="274" class="ts">child env overrides a parent opt-in</text>
+  <path class="edgeO" d="M 700 186 L 700 212"/>
+
+  <!-- Row 2: finished cores -> checkpoint block -->
+  <rect class="box" x="40" y="336" width="220" height="96"/>
+  <text x="60" y="362" class="hs">Durable store</text>
+  <text x="60" y="384" class="ts">SQLite (WAL)</text>
+  <text x="60" y="402" class="ts">one owning process</text>
+  <text x="60" y="420" class="ts">TEXTFLOWKIT_DB</text>
+
+  <rect class="core" x="300" y="336" width="250" height="96"/>
+  <text x="320" y="362" class="tag">AFTER EACH FINISHED CORE</text>
+  <text x="320" y="384" class="hs">partial checkpoint</text>
+  <text x="320" y="404" class="ts">progress snapshot, no transcript yet</text>
+  <text x="320" y="422" class="ts">schema · policy · duration · hashes</text>
+
+  <!-- finished blocks (merge result) -> checkpoint -->
+  <rect class="io" x="590" y="336" width="240" height="96"/>
+  <text x="610" y="362" class="hs">Finished blocks</text>
+  <text x="610" y="384" class="ts">per-core words already merged</text>
+  <text x="610" y="402" class="ts">keyed by core index</text>
+  <text x="610" y="420" class="ts">adopted verbatim on resume</text>
+
+  <!-- finished blocks -> checkpoint (correct direction: leftward into checkpoint) -->
+  <path class="edge" d="M 590 384 L 550 384"/>
+  <!-- checkpoint block -> durable store -->
+  <path class="edge" d="M 300 384 L 260 384"/>
+
+  <!-- Row 3: resume -->
+  <rect class="core" x="300" y="500" width="250" height="118"/>
+  <text x="320" y="526" class="tag">RESUME</text>
+  <text x="320" y="548" class="hs">validate, then adopt</text>
+  <text x="320" y="568" class="ts">source · decoded-WAV SHA-256</text>
+  <text x="320" y="586" class="ts">window policy · binary/model</text>
+  <text x="320" y="604" class="ts">re-run only unfinished cores</text>
+
+  <rect class="box" x="590" y="500" width="240" height="118"/>
+  <text x="610" y="526" class="hs">Finished blocks adopted</text>
+  <text x="610" y="548" class="ts">saved words taken verbatim</text>
+  <text x="610" y="566" class="ts">no duplicate words</text>
+  <text x="610" y="590" class="ts">partial body is Whistle-only:</text>
+  <text x="610" y="606" class="ts">another engine fails closed</text>
+
+  <!-- store -> resume; resume -> adopt; adopt -> checkpoint -->
+  <path class="edge" d="M 150 432 C 150 500, 210 559, 300 559"/>
+  <path class="edgeM" d="M 550 559 L 590 559"/>
+  <path class="edge" d="M 710 500 C 710 470, 470 480, 470 432"/>
+  <text x="496" y="470" class="el">load saved blocks</text>
+
+  <!-- failure path -->
+  <rect class="opt" x="870" y="500" width="210" height="118"/>
+  <text x="890" y="526" class="tag2">REFUSED, NOT GUESSED</text>
+  <text x="890" y="548" class="ts">changed source or config</text>
+  <text x="890" y="566" class="ts">corrupt/reversed block order</text>
+  <text x="890" y="584" class="ts">unsupported language/platform</text>
+  <text x="890" y="602" class="ts">no silent engine switch</text>
+
+  <!-- resume validation failure -> refused (routed below both boxes, clear of text) -->
+  <path class="edgeO" d="M 425 618 C 425 656, 640 664, 760 660 C 820 658, 850 640, 890 618"/>
+
+  <!-- Resume incomplete cores BACK into inference (row 1 per-clip block) -->
+  <path class="edgeR" d="M 425 500 C 425 300, 640 250, 700 186"/>
+  <text x="446" y="314" class="elR">unfinished cores → inference</text>
+
+  <!-- footer (wrapped to 3 lines, inside 1120 width; clear of the failure arc above) -->
+  <text x="40" y="700" class="cap">First local evidence: a 4-hour (14,407 s) CPU run gave 555 clips / 34,596 words in 731 s;</text>
+  <text x="40" y="718" class="cap">a separate two-process run proved durable resume. These are first local numbers,</text>
+  <text x="40" y="736" class="cap">not a universal performance or transcription-accuracy claim.</text>
+</svg>

@@ -602,8 +602,8 @@ def test_core_submit_batch_reuses_a_done_job_without_a_new_row(monkeypatch):
 
     report = submit_batch(
         store,
-        [SubmissionRequest(source=media, formats=["json"], model="small",
-                           language="en")],
+        [SubmissionRequest(source=media, formats=["json"], engine="whisper",
+                           model="small", language="en")],
         resume=True,
     )
 

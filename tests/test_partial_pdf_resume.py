@@ -101,6 +101,7 @@ def _partially_published_pdf_job(tmp_path, fake_pipeline, monkeypatch):
         source=str(source),
         formats=["pdf", "txt"],
         output_dir=str(out_dir),
+        engine="whisper",
         model="tiny",
         device="cpu",
     )

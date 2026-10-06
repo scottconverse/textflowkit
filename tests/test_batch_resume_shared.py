@@ -73,6 +73,7 @@ def _batch_args(sources, output_dir, *, resume: bool = False) -> list[str]:
         "batch", *[str(source) for source in sources],
         "--formats", "json",
         "--output-dir", str(output_dir),
+        "--engine", "whisper",
         "--model", "tiny",
         "--device", "cpu",
     ]
@@ -195,14 +196,14 @@ def test_batch_report_marks_reused_items_as_resumed(batch_cli):
     _wav(media)
 
     first = run_batch([str(media)], store=store, formats=["json"],
-                      output_dir=str(output), model="tiny", device="cpu")
+                      output_dir=str(output), engine="whisper", model="tiny", device="cpu")
     assert first.items[0].resumed is False
     assert first.items[0].status == "succeeded"
     assert first.items[0].outputs
     assert engine.calls == 1
 
     second = run_batch([str(media)], store=store, resume=True, formats=["json"],
-                       output_dir=str(output), model="tiny", device="cpu")
+                       output_dir=str(output), engine="whisper", model="tiny", device="cpu")
     item = second.items[0]
 
     assert item.status == "succeeded"

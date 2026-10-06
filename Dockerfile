@@ -77,11 +77,13 @@ RUN set -eux; \
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-# The base dependencies are yt-dlp and openai-whisper, so this image is large:
-# openai-whisper pulls a torch build. That is the product's own requirement, not
-# something this file adds.
+# The base dependencies are yt-dlp alone: the default engine (Whistle) is a
+# native CPU binary fetched on first use, so this image does not pull a torch
+# build. Selecting the openai-whisper engine needs the `whisper` extra named
+# here; the image installs it because the container is meant to serve the
+# Whisper stack too, and openai-whisper is what pulls the torch build.
 RUN python -m pip install --no-cache-dir --upgrade pip \
- && python -m pip install --no-cache-dir ".[http]"
+ && python -m pip install --no-cache-dir ".[http,whisper]"
 
 # Non-secret defaults only. The roots are the directories created above; Compose
 # repeats them so the volumes it mounts land on the paths the service reads.

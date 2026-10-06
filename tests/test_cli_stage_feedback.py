@@ -359,8 +359,8 @@ def test_resumed_run_does_not_announce_a_reused_finished_stage(
     monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
 
     rc = cli_mod.main([
-        "transcribe", SOURCE, "--resume", "--formats", "json",
-        "--output-dir", str(tmp_path),
+        "transcribe", SOURCE, "--resume", "--engine", "whisper", "--model", "small",
+        "--formats", "json", "--output-dir", str(tmp_path),
     ])
     captured = capsys.readouterr()
 

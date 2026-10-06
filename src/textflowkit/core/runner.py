@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from textflowkit.core.checkpoint import metadata_only_checkpoint, write_checkpoint
+from textflowkit.core.engine import DEFAULT_ENGINE
 from textflowkit.core.executor import JobCancelled, get_default_executor
 from textflowkit.core.jobs import Job, JobState, JobStore
 from textflowkit.core.model import Transcript
@@ -49,8 +50,8 @@ def run_job(
     language: str | None = None,
     formats: list[str] | None = None,
     output_dir: str | Path | None = None,
-    model: str = "small",
-    engine: str = "whisper",
+    model: str | None = None,
+    engine: str = DEFAULT_ENGINE,
     device: str | None = None,
     cookies_from_browser: str | None = None,
     keep_media: bool = False,

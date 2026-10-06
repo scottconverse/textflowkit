@@ -92,10 +92,15 @@ def fake_pipeline(tmp_path, monkeypatch):
 
 
 def _request(source: Path, output_dir: Path | None) -> SubmissionRequest:
+    # This module pins storage shape, not the default engine. The engine is a
+    # test double injected below, so name the Whisper family explicitly: these
+    # fixtures were written when `tiny` implicitly meant the Whisper engine and
+    # `whistle` (the product default now) publishes no `tiny` model.
     return SubmissionRequest(
         source=str(source),
         formats=["json", "srt"],
         output_dir=str(output_dir) if output_dir is not None else None,
+        engine="whisper",
         model="tiny",
         device="cpu",
     )
@@ -392,7 +397,7 @@ def test_done_checkpoint_with_a_corrupt_transcript_fails_closed(tmp_path):
     # A local DONE job with no usable checkpoint refuses to resume rather than
     # silently re-transcribing over a row it cannot read.
     request = SubmissionRequest(
-        source=str(source), formats=["json"], model="tiny", device="cpu"
+        source=str(source), formats=["json"], engine="whisper", model="tiny", device="cpu"
     )
     with pytest.raises(ValueError, match="no reusable checkpoint"):
         submit_request(
@@ -417,7 +422,7 @@ def test_error_checkpoint_still_refuses_a_tightened_input_root(tmp_path):
 
     store = MemoryJobStore()
     request = SubmissionRequest(
-        source=str(media), formats=["json"], model="tiny", device="cpu",
+        source=str(media), formats=["json"], engine="whisper", model="tiny", device="cpu",
         input_root=str(wide),
     )
     job = store.create(str(media), request=request.to_dict())
@@ -471,7 +476,7 @@ def test_cli_completion_leaves_one_copy_on_a_pre_change_row(tmp_path, monkeypatc
     transcript = Transcript(
         source=str(media), language="en", segments=[Segment(0.0, 1.0, MARKER)]
     )
-    request = SubmissionRequest(source=str(media), formats=["json"], model="tiny")
+    request = SubmissionRequest(source=str(media), formats=["json"], engine="whisper", model="tiny")
     prior = store.create(str(media), request=request.to_dict())
     store.update(
         prior.id,
@@ -501,6 +506,7 @@ def test_cli_completion_leaves_one_copy_on_a_pre_change_row(tmp_path, monkeypatc
 
     rc = cli_mod.main([
         "transcribe", str(media),
+        "--engine", "whisper",
         "--model", "tiny",
         "--formats", "json",
         "--output-dir", str(tmp_path),

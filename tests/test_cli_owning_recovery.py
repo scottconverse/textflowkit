@@ -104,7 +104,7 @@ def test_resume_recovers_orphan_and_reuses_same_job_in_fresh_process(
 
     store = SqliteJobStore(db)
     request = SubmissionRequest(
-        source=str(source), model="tiny", device="cpu", formats=["json"],
+        source=str(source), engine="whisper", model="tiny", device="cpu", formats=["json"],
     )
     job = store.create(str(source), request=request.to_dict())
     store.update(
@@ -114,8 +114,8 @@ def test_resume_recovers_orphan_and_reuses_same_job_in_fresh_process(
     store.close()  # the "old process" is gone; no worker exists for this row
 
     result = _run_cli(
-        [command, str(source), "--resume", "--model", "tiny", "--device", "cpu",
-         "--formats", "json", "--output-dir", str(output), "--quiet"],
+        [command, str(source), "--resume", "--engine", "whisper", "--model", "tiny",
+         "--device", "cpu", "--formats", "json", "--output-dir", str(output), "--quiet"],
         _child_env(db, output),
     )
 
@@ -178,8 +178,8 @@ def test_submit_request_does_not_reap_unconditionally(tmp_path, monkeypatch):
             lambda media, *, work_dir, check_cancel=None, confined=False: Path(media),
         )
         job = submit_request(
-            store, SubmissionRequest(source=str(source), model="tiny", device="cpu",
-                                     formats=["json"]),
+            store, SubmissionRequest(source=str(source), engine="whisper", model="tiny",
+                                     device="cpu", formats=["json"]),
             background=False,
         )
         assert job.state is JobState.DONE

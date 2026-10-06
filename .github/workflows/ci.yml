@@ -58,7 +58,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install ./packages/textflowkit-fonts
-          python -m pip install -e ".[dev,mcp,http,export]"
+          # `whisper` is installed here because the existing engine tests
+          # (openai-whisper's verbose/quiet contract, model-name validation)
+          # genuinely need the openai-whisper package present. It is an optional
+          # extra now that Whistle is the default engine, so it must be named.
+          python -m pip install -e ".[dev,mcp,http,export,whisper]"
 
       - name: Show ffmpeg version
         shell: bash
