@@ -271,6 +271,10 @@
           <img src="assets/architecture-overview.svg" alt="TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports." loading="lazy" width="1180" height="700">
           <figcaption>One shared core, four thin doors. Whistle is the default engine; openai-whisper is opt-in.</figcaption>
         </figure>
+        <figure class="figure">
+          <img src="assets/whistle-resume.svg" alt="Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to two seconds of context per side so every clip stays at or under the native CLI's 30-second limit, each core runs as one owned child process with a per-clip timeout and forced telemetry-off flags, a partial checkpoint is written to the durable SQLite store after each finished core, and a resume validates the source and decoded-WAV hashes and the window policy then re-runs only the unfinished cores." loading="lazy" width="1120" height="760">
+          <figcaption>A Whistle run is 26-second cores with up to 2 seconds of context per side, so each clip handed to the native CLI stays at or under its 30-second limit. Every core is one owned child process with forced telemetry-off flags — those flags are set, not physically stripped from the binary. Durable resume needs a SQLite store configured with <code>TEXTFLOWKIT_DB</code>, because a checkpoint cannot outlive a process that kept it in memory; a resume then re-runs only the cores that never finished.</figcaption>
+        </figure>
       </div>
     </section>
 
