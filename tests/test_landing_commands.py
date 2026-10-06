@@ -40,9 +40,15 @@ VOID_ELEMENTS = frozenset({
     "param", "source", "track", "wbr",
 })
 
-# The hero example and the quickstart example, as the page presents them.
+# The hero example, the local UI install, and the developer quickstart, as the page
+# presents them. The UI example legitimately pins its version (it documents a shipped
+# release), so the pin is optional here; the requirement itself stays the same shape in
+# every install line, because double quotes are the one form CMD, PowerShell and POSIX sh
+# all strip to the same argv.
 TRANSCRIBE = re.compile(r"^textflowkit transcribe \S+ --formats [\w,]+$")
-PIP_INSTALL = re.compile(r'^python -m pip install "(?P<requirement>textflowkit\[[^"\]]+\])"$')
+PIP_INSTALL = re.compile(
+    r'^python -m pip install "textflowkit\[(?P<extra>[^"\]]+)\](?:==[\w.]+)?"$'
+)
 
 # Syntax that only one of CMD, PowerShell and POSIX sh accepts. None of it may appear in
 # text a reader can select out of a code block.
@@ -204,13 +210,24 @@ def test_hero_transcription_command_is_a_single_portable_line(commands: list[str
     )
 
 
-def test_quickstart_pip_requirement_is_double_quoted(commands: list[str]) -> None:
-    """Double quotes are the one form CMD, PowerShell and POSIX sh all strip to the same argv."""
+def test_every_pip_install_is_double_quoted_with_the_expected_requirement(
+    commands: list[str],
+) -> None:
+    """Double quotes are the one form CMD, PowerShell and POSIX sh all strip to the same argv.
+
+    The page shows two real installs: the local browser UI (pinned to the shipped release)
+    and the developer quickstart. Every one of them has to be a requirement a reader can
+    paste into any of the three shells, so the extras are asserted rather than the version.
+    """
     installs = [line for line in commands if line.startswith("python -m pip install")]
-    assert len(installs) == 1, installs
-    match = PIP_INSTALL.match(installs[0])
-    assert match is not None, (
-        f"the pip requirement in {installs[0]!r} is not double-quoted; CMD passes single "
-        "quotes to pip verbatim"
-    )
-    assert match.group("requirement") == "textflowkit[mcp,http]"
+    assert installs, "the page must still show a pip install line"
+    extras = []
+    for line in installs:
+        match = PIP_INSTALL.match(line)
+        assert match is not None, (
+            f"the pip requirement in {line!r} is not a double-quoted 'textflowkit[...]' "
+            "requirement; CMD passes single quotes to pip verbatim"
+        )
+        extras.append(match.group("extra"))
+    assert "mcp,http" in extras, extras
+    assert "http,export" in extras, extras
