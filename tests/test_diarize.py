@@ -179,7 +179,7 @@ def test_pipeline_diarize_failure_is_not_silent(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "get_diarizer", lambda *a, **k: Boom())
 
     with pytest.raises(PipelineError) as exc:
-        transcribe(str(media), input_root=tmp_path, diarize=True)
+        transcribe(str(media), input_root=tmp_path, diarize=True, engine="whisper")
     assert "diarization" in str(exc.value).lower()
     assert "no token configured" in str(exc.value)
 
@@ -216,7 +216,7 @@ def test_pipeline_records_diarization_metadata(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "get_diarizer", lambda *a, **k: FakeDiarizer())
 
-    result = transcribe(str(media), input_root=tmp_path, diarize=True)
+    result = transcribe(str(media), input_root=tmp_path, diarize=True, engine="whisper")
     speakers = [s.speaker for s in result.transcript.segments]
     assert speakers == ["SPEAKER_00", "SPEAKER_01"]
     meta = result.transcript.metadata["diarization"]
@@ -243,7 +243,7 @@ def test_pipeline_without_diarize_leaves_speakers_empty(monkeypatch, tmp_path):
             source=str(audio), language="en", segments=[Segment(0.0, 1.0, "hi")]
         ),
     )
-    result = transcribe(str(media), input_root=tmp_path)
+    result = transcribe(str(media), input_root=tmp_path, engine="whisper")
     assert result.transcript.segments[0].speaker is None
     assert "diarization" not in result.transcript.metadata
 

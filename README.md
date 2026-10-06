@@ -5,9 +5,10 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [Project landing page](https://www.textflowkit.org/) ·
 [PyPI package](https://pypi.org/project/textflowkit/) ·
 [GitHub releases](https://github.com/scottconverse/textflowkit/releases) ·
-[User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
+[User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
+[Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8).**
+**Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -54,7 +55,7 @@ URL or file  ─►  detect platform  ─►  acquire media  ─►  ffmpeg
                                                           │
                               ┌───────────────────────────┘
                               ▼
-                    speech-to-text (Whisper)
+              speech-to-text (Whistle default; Whisper on request)
                               │
                               ▼
                  canonical transcript (JSON)
@@ -67,6 +68,8 @@ URL or file  ─►  detect platform  ─►  acquire media  ─►  ffmpeg
 DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
+
+![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.9/docs/assets/architecture-overview.svg)
 
 The design principle is **one engine, three doors**. Everything of substance lives in
 the core; the interfaces are thin.
@@ -107,6 +110,22 @@ python -m pip install textflowkit
 textflowkit doctor
 ```
 
+The default engine is **Whistle**: a native CPU-only transcription CLI that
+needs no PyTorch. It downloads one pinned model (about 17 MB) and a small pinned
+binary on first use; a fresh default install therefore stays small and pulls no
+torch. To use the `openai-whisper` engine instead — the ROCm/CUDA/CPU torch
+stack — install the `whisper` extra and name it explicitly:
+
+```bash
+python -m pip install 'textflowkit[whisper]'
+textflowkit transcribe meeting.mp4 --engine whisper --model small
+```
+
+See [Whistle (default engine)](#whistle-default-engine) for platform and
+language coverage, and the [install guide](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md)
+for the AMD ROCm path, which applies to the explicit `whisper` engine and
+diarization.
+
 For MCP or the JSON HTTP adapter, install the matching extra:
 
 ```bash
@@ -130,7 +149,6 @@ from textflowkit import transcribe
 
 result = transcribe(
     "meeting.mp4",            # also accepts supported URLs
-    model="small",
     formats=["json", "srt", "txt"],
     output_dir="transcripts", # omit to return the transcript without writing files
 )
@@ -142,6 +160,10 @@ for segment in result.transcript.segments:
     for word in segment.words:
         print("  ", word.start, word.end, word.text)
 ```
+
+`engine` defaults to the product default (Whistle) and `model=None` resolves to
+that engine's own model. To use the Whisper-family engines, name one and its
+model explicitly: `transcribe("meeting.mp4", engine="whisper", model="small")`.
 
 `transcribe()` returns `TranscribeResult` with a canonical `Transcript` and
 written output paths. `Transcript.to_dict()` / `.to_json()` preserve segment and
@@ -207,6 +229,60 @@ does **not** assert that the remote bytes are still identical.
 textflowkit export ./transcript.json --format vtt
 ```
 
+## Whistle (default engine)
+
+**Whistle is the default engine** as of v0.1.9. It is a native CPU-only CLI that
+needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
+torch; `openai-whisper` is an explicitly selectable opt-in engine.
+
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.9/docs/assets/whistle-resume.svg)
+
+- **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
+  model on first use. Naming a GPU device is refused rather than silently
+  ignored: a GPU request names the explicit `whisper` engine as the alternative,
+  and the engine is never switched for you.
+- **Seven advertised languages:** `en`, `de`, `fr`, `es`, `it`, `nl`, `pl`. A
+  request for another language is refused at request construction, before any
+  media is fetched.
+- **Native platforms:** Windows x86-64 and arm64, Linux x86-64 and arm64, and
+  Apple Silicon. **Intel Macs are not supported**; a request there is refused
+  with a message that names the explicit `whisper` engine instead. No WSL layer
+  is involved.
+- **How it works:** long audio is split into 26-second cores with up to 2 seconds
+  of context on each side, so every standalone clip is ≤ 30 seconds (the native
+  CLI's limit). Overlap words are selected by core midpoint rather than text
+  deduplication, so repeated spoken phrases are preserved.
+- **Streaming is not used.** The native `--audio-stream` mode failed its
+  coverage and is never passed; only the committed standalone output is parsed.
+- **Durable block resume.** With `TEXTFLOWKIT_DB` set, a long run writes partial
+  per-block checkpoints; a resume checks the source and decoded-WAV hashes and the
+  config, then re-runs only the blocks that were not finished. The durable store
+  still assumes one owning process.
+- **Cancellation.** A running Whistle run terminates its exact owned child
+  process bounded by a per-clip timeout. A single long `openai-whisper` model call
+  is still only cancellable at its next stage boundary, as documented for the
+  Whisper engine.
+- **Telemetry is off, unconditionally.** Every Whistle child process forces
+  `NEEDLE_TELEMETRY=0`, `DO_NOT_TRACK=1`, and `CI=1`, overriding a parent that
+  opted in. The product ships no analytics, usage SDK, anonymous ids, or events,
+  and there is no opt-in setting. This applies the upstream documented gate; it
+  is **not** a claim that the upstream binary's tracking code is physically
+  removed.
+- **Offline and downloads.** Set `TEXTFLOWKIT_OFFLINE` to refuse any download, and
+  `TEXTFLOWKIT_MODELS_DIR` to choose the asset directory. The Whistle asset helper
+  downloads only pinned runtime/model assets; media acquisition and optional
+  translation may independently use the network. These downloads are not
+  telemetry.
+
+**Verification boundary.** A local run transcribed a 4-hour (14,407 s)
+recording on CPU into 555 clips / 34,596 words / 2,875 segments in 731 s, with
+telemetry forced off and offline mode on; a separate run proved durable block
+resume across two processes. These are **first local test numbers**, not a
+promise of universal performance or of accuracy equal to Whisper — no
+human-scored word-error rate is claimed. See the
+[user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md)
+and [install guide](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md).
+
 ## Use as an MCP server
 
 ```bash
@@ -266,7 +342,7 @@ scope here, so no image is claimed to build or start. See
 
 ```bash
 TEXTFLOWKIT_DB=./jobs.db            # job state survives restart (SQLite)
-TEXTFLOWKIT_MAX_CONCURRENCY=1        # default; Whisper saturates a GPU alone
+TEXTFLOWKIT_MAX_CONCURRENCY=1        # default; bounded job worker pool
 ```
 
 `cancel_job` stops a queued job immediately, or a running job at its next stage
@@ -281,14 +357,31 @@ web frontend share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.8 release.** Core, CLI, MCP, and HTTP have automated
-coverage. This release carries the four fixes for the 2026-10-01 post-release
-audit-lite (findings AL-001 – AL-004): CLI owning-process startup recovery so an
-interrupted run's saved work can be resumed instead of being refused as
-"already active", preservation of the completed transcript across resume setup
-failures, a correction to the MCP batch cookie capability, and corrected roadmap
-evidence receipts. It builds on the v0.1.7 audit repair set and the v0.1.6
-review repairs that precede it. The preceding v0.1.7 source candidate was verified with real CLI, HTTP and MCP speech, seven-format exports and completed resume. The v0.1.8 runtime fixes were independently checked through fresh-process CLI restart probes, real SQLite setup-failure tests, and the full Windows test suite; those checks are not new individual-harness receipts. Release publication uses the tag workflow, which requires successful exact-commit main CI before PyPI uploads and creates the public GitHub release only afterward. Check the linked release for artifacts and workflow status; local source verification is not a fresh PyPI-install or individual-harness receipt.
+**v0.1.9 release.** Core, CLI, MCP, and HTTP have automated
+coverage. This release makes **Whistle the default engine** — a native CPU-only
+transcriber that needs no PyTorch — and moves `openai-whisper` to the optional
+`whisper` extra, selected explicitly with `--engine whisper` or
+`engine="whisper"`. Legacy engine aliases are preserved, so older saved jobs and
+`transcribe()` calls still decode. Whistle refuses an unsupported platform,
+language, or GPU request instead of silently falling back. Its engine's
+verification boundary is in [Whistle (default engine)](#whistle-default-engine)
+above. Release publication uses the tag workflow, which requires successful
+exact-commit main CI before PyPI uploads and creates the public GitHub release
+only afterward. Check the linked release for artifacts and workflow status; local
+source verification is not a fresh PyPI-install or individual-harness receipt.
+
+The v0.1.8 release carried four fixes for the 2026-10-01 post-release audit-lite
+(findings AL-001 – AL-004): CLI owning-process startup recovery so an interrupted
+run's saved work can be resumed instead of being refused as "already active",
+preservation of the completed transcript across resume setup failures, a
+correction to the MCP batch cookie capability, and corrected roadmap evidence
+receipts. It built on the v0.1.7 audit repair set and the v0.1.6 review repairs
+that precede it. The v0.1.7 source candidate was verified with real CLI, HTTP and
+MCP speech, seven-format exports and completed resume; the v0.1.8 runtime fixes
+were independently checked through fresh-process CLI restart probes, real SQLite
+setup-failure tests, and the full Windows test suite. Those checks are not new
+individual-harness receipts. That is the previous release's record, not evidence
+for v0.1.9.
 
 The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
@@ -305,9 +398,9 @@ The v0.1.6 release is public: the
 [v0.1.6 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.6)
 and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
-live — that is the previous release's evidence, not a receipt for v0.1.8.
+live — that is the v0.1.6 release's evidence, not a receipt for a later release.
 Everything from here to the end of this section is the v0.1.6 release's
-historical record as published: it is not re-verified for v0.1.8, whose separate release evidence is not supplied by these historical paragraphs.
+historical record as published: it is not re-verified for v0.1.9, whose separate release evidence is not supplied by these historical paragraphs.
 Merged-main CI passed 16/16 on the tagged commit; the published wheel and
 sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
 Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI

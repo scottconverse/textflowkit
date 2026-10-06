@@ -206,7 +206,7 @@ def test_concurrent_synchronous_resume_of_one_job_has_a_single_owner(
     """Two synchronous resumes of the same ERROR job must not both execute it."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore() if store_kind == "memory" else SqliteJobStore(tmp_path / "jobs.db")
     try:
         job = _seed_terminal_job(store, request, media)
@@ -250,7 +250,7 @@ def test_synchronous_resume_rejects_a_second_owner_with_and_without_checkpoint(
     """The terminal-state claim holds for ERROR and CANCELLED, checkpoint or not."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = SqliteJobStore(tmp_path / "jobs.db")
     try:
         job = _seed_terminal_job(store, request, media, state=state, with_checkpoint=with_checkpoint)
@@ -289,7 +289,7 @@ def test_concurrent_background_resume_enqueues_one_execution(monkeypatch, tmp_pa
     """Background resumes must enqueue once; the loser gets a conflict, no orphan."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore()
     job = _seed_terminal_job(store, request, media)
     executor = JobExecutor(store, max_concurrency=1)
@@ -326,7 +326,7 @@ def test_resume_of_one_job_cannot_enqueue_twice_while_first_is_queued(monkeypatc
     """A resume racing a still-PENDING (just-reopened) row must be refused."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore()
     job = _seed_terminal_job(store, request, media)
 
@@ -367,7 +367,7 @@ def test_queue_full_refusal_leaves_no_pending_orphan_and_keeps_checkpoint(monkey
     """A claim refused by the queue must not strand a reopened PENDING job."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = SqliteJobStore(tmp_path / "jobs.db")
     try:
         job = _seed_terminal_job(store, request, media, with_checkpoint=True)
@@ -415,7 +415,7 @@ def test_queue_full_claim_does_not_consume_the_job_or_enqueue_it(monkeypatch, tm
     """A refused admission leaves nothing queued for the job id."""
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore()
     job = _seed_terminal_job(store, request, media)
 
@@ -453,7 +453,7 @@ def test_two_store_handles_over_one_db_claim_one_winner(monkeypatch, tmp_path):
     media = tmp_path / "media.wav"
     _wav(media)
     db = tmp_path / "jobs.db"
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
 
     seeder = SqliteJobStore(db)
     job = _seed_terminal_job(seeder, request, media)
@@ -530,7 +530,7 @@ def test_implicit_selection_loads_the_checkpoint_it_pinned(tmp_path, monkeypatch
     _wav(media)
     store = MemoryJobStore()
     request = SubmissionRequest(
-        source=str(media), model="tiny", device="cpu", formats=["txt"],
+        source=str(media), engine="whisper", model="tiny", device="cpu", formats=["txt"],
     )
     job = _seed_terminal_job(store, request, media, with_checkpoint=True)
     stale = _checkpoint_for(request, media, with_transcript=True)
@@ -580,7 +580,7 @@ def test_implicit_selection_resumes_with_the_pinned_checkpoint(tmp_path, monkeyp
     _wav(media)
     store = MemoryJobStore()
     request = SubmissionRequest(
-        source=str(media), model="tiny", device="cpu", formats=["txt"],
+        source=str(media), engine="whisper", model="tiny", device="cpu", formats=["txt"],
     )
     job = _seed_terminal_job(store, request, media, with_checkpoint=True)
 

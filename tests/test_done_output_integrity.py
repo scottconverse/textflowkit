@@ -86,9 +86,13 @@ def _finish_job(
     formats: tuple[str, ...] = ("txt",),
 ):
     """Run a whole job to DONE through the shared submission path."""
+    # The engine is a test double (`fake_pipeline` patches `get_engine`), so the
+    # model name only has to be *valid for the named engine*. Name the Whisper
+    # family explicitly: `tiny` was written when it implicitly meant Whisper, and
+    # `whistle` (the product default now) publishes no `tiny`.
     request = SubmissionRequest(
         source=str(source), formats=list(formats), output_dir=str(out_dir),
-        model="tiny", device="cpu",
+        engine="whisper", model="tiny", device="cpu",
     )
     job = submit_request(store, request, background=False)
     assert store.get(job.id).state is JobState.DONE, store.get(job.id).error
@@ -183,7 +187,7 @@ def test_cli_resume_refuses_a_modified_output_with_one_clean_error(
     monkeypatch.setattr(cli, "get_default_store", lambda: store)
     args = [
         "transcribe", str(source), "--formats", "txt", "--output-dir", str(out_dir),
-        "--model", "tiny", "--device", "cpu", "--quiet",
+        "--engine", "whisper", "--model", "tiny", "--device", "cpu", "--quiet",
     ]
     try:
         assert cli.main(args) == 0, capsys.readouterr().err

@@ -146,7 +146,7 @@ def test_resume_that_observed_a_stale_failure_is_refused(monkeypatch, tmp_path, 
     """
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore() if store_kind == "memory" else SqliteJobStore(tmp_path / "jobs.db")
     try:
         job = _seed_terminal_job(store, request, media)
@@ -365,7 +365,7 @@ def test_queue_full_refusal_does_not_clobber_a_newer_claim(monkeypatch, tmp_path
     """
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = SqliteJobStore(tmp_path / "jobs.db")
     try:
         job = _seed_terminal_job(store, request, media)
@@ -410,7 +410,7 @@ def test_shutdown_refusal_does_not_leave_a_pending_orphan(monkeypatch, tmp_path)
     """
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = MemoryJobStore()
     job = _seed_terminal_job(store, request, media)
 

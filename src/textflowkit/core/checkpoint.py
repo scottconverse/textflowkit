@@ -29,12 +29,27 @@ Only DONE is hydrated that way. For an ERROR or CANCELLED job the checkpoint is
 still the sole copy, so filling it in from the job field would invent work that
 never finished; `metadata_only_checkpoint` is the write half of this contract
 and `load_checkpoint` is the read half.
+
+Partial work
+------------
+
+A long native run (Whistle cuts a recording into short windows) can also be
+resumed *mid-transcription*. That is a different kind of record: version 3 adds
+``engine_progress``, a validated snapshot of the engine's own per-block progress
+which carries no completed transcript. A partial record therefore can never be
+hydrated or promoted as a finished result - it has no transcript to serve - and
+it must not list ``transcribe`` as finished. It is matched and source-validated
+exactly like a full record; the engine revalidates the progress body against the
+real redecoded audio before running a single remaining window. A record that
+carries a transcript never also carries ``engine_progress``: the two would be the
+same words stored twice.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,7 +60,18 @@ from textflowkit.core.model import Transcript
 from textflowkit.core.paths import opened_file_path, resolve_input_path
 from textflowkit.render import ensure_outputs
 
-CHECKPOINT_VERSION = 2
+#: The current record version. v3 adds a *partial* form: a checkpoint that holds
+#: per-block engine progress (``engine_progress``) but no completed transcript,
+#: so long native-engine work can resume where it stopped. A v3 record is still
+#: written in full at every completed stage, exactly as v2 was.
+CHECKPOINT_VERSION = 3
+#: The version that introduced the local-source fingerprint (``local_identity``).
+#: A record at or above this version can be validated against the bytes on disk;
+#: anything older has no fingerprint and a local resume must fail closed rather
+#: than reuse work whose source may have changed. Kept separate from
+#: ``CHECKPOINT_VERSION`` so bumping the current version does not silently strip
+#: the fingerprint from the records that already carry one.
+IDENTITY_VERSION = 2
 RESUMABLE_STATES = frozenset(
     {JobState.PENDING, JobState.RUNNING, JobState.ERROR, JobState.CANCELLED, JobState.DONE}
 )
@@ -67,6 +93,12 @@ class CheckpointRecord:
     options: dict[str, Any] = field(default_factory=dict)
     finished_stages: list[str] = field(default_factory=list)
     transcript: dict[str, Any] | None = None
+    #: Per-block engine progress for a *partial* run (Whistle's windowed
+    #: transcription). Present only while ``transcribe`` has not finished: it is
+    #: validated, unfinished work, never a completed transcript, so it can resume
+    #: the engine but can never be served as a finished result. A record with a
+    #: ``transcript`` never carries this.
+    engine_progress: dict[str, Any] | None = None
     media_path: str | None = None
     audio_path: str | None = None
     local_identity: dict[str, Any] | None = None
@@ -83,6 +115,7 @@ class CheckpointRecord:
             "options": dict(self.options),
             "finished_stages": list(self.finished_stages),
             "transcript": self.transcript,
+            "engine_progress": self.engine_progress,
             "media_path": self.media_path,
             "audio_path": self.audio_path,
             "local_identity": self.local_identity,
@@ -92,9 +125,9 @@ class CheckpointRecord:
     def from_dict(cls, data: dict[str, Any]) -> CheckpointRecord:
         if not isinstance(data, dict):
             raise CheckpointError("checkpoint is not an object")
-        # Records written before versioning was explicit are legacy v1, not v2.
+        # Records written before versioning was explicit are legacy v1, not v3.
         version = data.get("version", 1)
-        if version not in {1, CHECKPOINT_VERSION}:
+        if version not in {1, 2, CHECKPOINT_VERSION}:
             raise CheckpointError(f"unsupported checkpoint version: {version!r}")
         source = data.get("source")
         model = data.get("model")
@@ -112,16 +145,74 @@ class CheckpointRecord:
         if not isinstance(stages, list) or not all(isinstance(s, str) for s in stages):
             raise CheckpointError("checkpoint finished_stages are invalid")
         transcript = data.get("transcript")
-        if not isinstance(transcript, dict):
-            # A checkpoint without a validated transcript cannot be resumed;
-            # treat it as corrupt rather than "start from nothing".
+        engine_progress = data.get("engine_progress")
+        # The record's engine is read here, before the partial branch: the partial
+        # form is Whistle's own per-block body, so a record that claims to carry
+        # one must also claim the Whistle engine. A non-Whistle engine with a
+        # Whiskey-shaped partial is corrupt rather than a resumable run - no
+        # other engine emits that body, so accepting it would let a foreign
+        # object masquerade as durable work.
+        #
+        # The persisted name is canonicalized the same way ``SubmissionRequest``
+        # decodes a saved request, because the two are matched against each other
+        # on resume. Before Whistle existed, ``default`` and ``openai-whisper``
+        # both meant openai-whisper - a record saved under the old default is a
+        # *Whisper* record, and decoding it as the new default (Whistle) would
+        # break the checkpoint match and re-run completed work. The current
+        # canonical form never persists ``default`` at all, so this rewrite only
+        # ever touches pre-Whistle records. A name that is already canonical
+        # (``whistle``, ``whisper``, ``faster-whisper``) is kept unchanged: in
+        # particular an actual ``whistle`` record is never rewritten.
+        record_engine = _canonical_persisted_engine(data.get("engine"))
+        if transcript is not None:
+            # A record carrying a transcript is a finished one: the transcript
+            # must validate, transcription must be marked done, and a partial
+            # engine body must not coexist with it (that would be the same words
+            # stored twice, and would leave a resume able to read either copy).
+            if not isinstance(transcript, dict):
+                raise CheckpointError("checkpoint transcript is invalid")
+            Transcript.from_dict(transcript)
+            if "transcribe" not in stages:
+                raise CheckpointError("checkpoint has not finished transcription")
+            if engine_progress is not None:
+                raise CheckpointError(
+                    "checkpoint carries both a transcript and partial engine progress"
+                )
+        elif engine_progress is not None:
+            # Only v3 introduces the partial form; an older version has no field
+            # for it, so seeing one there is corrupt rather than a partial run.
+            if version != CHECKPOINT_VERSION:
+                raise CheckpointError(
+                    f"checkpoint version {version} cannot carry partial engine progress"
+                )
+            # Partial progress is Whistle's per-block body and nothing else. Gate
+            # on the canonical engine *name* here (cheap, import-free) rather than
+            # on the body's shape alone: the engine's own ``validate_progress`` is
+            # the authoritative check against the real audio, but a record that
+            # does not even name Whistle must not be adopted as partial Whistle
+            # work. A pre-Whistle record still naming the old ``default`` alias is
+            # a Whisper record - the rewrite above makes it ``whisper`` - so a v3
+            # partial body on it fails closed here rather than being reinterpreted
+            # as Whistle's own.
+            if record_engine != "whistle":
+                raise CheckpointError(
+                    "partial engine progress is Whistle-only but the checkpoint "
+                    f"names engine {record_engine!r}"
+                )
+            _validate_engine_progress(engine_progress)
+            if "transcribe" in stages:
+                # Partial progress by definition has not finished transcription;
+                # a record that says it did is contradictory and must not be
+                # treated as either a finished or a resumable one.
+                raise CheckpointError(
+                    "partial engine progress lists transcription as finished"
+                )
+        else:
+            # A checkpoint with neither a validated transcript nor partial
+            # progress cannot be resumed; treat it as corrupt rather than
+            # "start from nothing", exactly as before.
             raise CheckpointError("checkpoint is missing a transcript")
-        # Validate nested transcript structure now; callers should never
-        # discover corruption halfway through a resumed pipeline.
-        Transcript.from_dict(transcript)
-        if "transcribe" not in stages:
-            raise CheckpointError("checkpoint has not finished transcription")
-        identity = data.get("local_identity") if version == CHECKPOINT_VERSION else None
+        identity = data.get("local_identity") if version >= IDENTITY_VERSION else None
         if identity is not None and not _valid_local_identity(identity):
             raise CheckpointError("checkpoint local source identity is invalid")
         return cls(
@@ -129,11 +220,12 @@ class CheckpointRecord:
             source=source,
             model=model,
             language=language,
-            engine=str(data.get("engine") or "whisper"),
+            engine=record_engine,
             device=data.get("device") if isinstance(data.get("device"), str) else None,
             options=dict(options),
             finished_stages=list(stages),
             transcript=transcript,
+            engine_progress=engine_progress,
             media_path=_optional_str(data.get("media_path")),
             audio_path=_optional_str(data.get("audio_path")),
             local_identity=identity,
@@ -144,6 +236,104 @@ def _optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+#: The engine names a persisted record may carry after canonicalization, and the
+#: legacy aliases that map onto them. Kept as literals here rather than importing
+#: ``engine`` so reading a job row pulls in neither the engine module nor the
+#: asset table. ``default`` and ``openai-whisper`` both named openai-whisper
+#: before Whistle was the default; the current canonical form never writes
+#: ``default``, so any record still holding it predates that change.
+_PERSISTED_ENGINE_ALIASES = {
+    "default": "whisper",
+    "openai-whisper": "whisper",
+}
+
+
+def _canonical_persisted_engine(value: Any) -> str:
+    """Canonical engine name for a persisted record, decoding legacy aliases.
+
+    A missing or non-string engine decodes to ``whisper``: records written before
+    the engine field existed were all openai-whisper runs. A legacy alias
+    ``default``/``openai-whisper`` decodes to ``whisper`` - what it *meant when
+    written* - so a pre-Whistle record is never reinterpreted as the new default.
+    An already-canonical name is returned unchanged, with case folded only for
+    the alias lookup's benefit.
+    """
+    if not isinstance(value, str) or not value:
+        return "whisper"
+    return _PERSISTED_ENGINE_ALIASES.get(value.casefold(), value)
+
+
+def _valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(c in "0123456789abcdef" for c in value)
+    )
+
+
+#: The Whistle progress schema marker. Duplicated as a literal rather than
+#: imported so reading a checkpoint does not pull the engine module (and its
+#: asset table) into every process that touches a job row. The engine revalidates
+#: the whole body against the real redecoded audio before any core runs, so this
+#: is only the "this claims to be a validated Whistle progress" gate - see
+#: ``whistle.validate_progress`` for the authoritative check.
+_WHISTLE_PROGRESS_SCHEMA = "textflowkit.whistle.progress/1"
+
+
+def _validate_engine_progress(progress: Any) -> None:
+    """Reject a partial engine-progress body whose *shape* is not trustworthy.
+
+    This is a structural gate, not the full validation: a partial checkpoint is
+    data from another process, so it must at minimum be an object carrying the
+    Whistle progress schema, content/model/binary identities, a finite positive
+    duration, a scalar language, a non-negative completed-core index, and a
+    *present* segment list. The engine re-decides everything that needs the real
+    audio (window policy, hashes, language, word ownership) before executing a
+    single remaining core; nothing here is sanitized, so a malformed body is
+    refused rather than trimmed into something that parses.
+    """
+    if not isinstance(progress, dict):
+        raise CheckpointError("checkpoint partial engine progress is not an object")
+    if progress.get("schema") != _WHISTLE_PROGRESS_SCHEMA:
+        raise CheckpointError("checkpoint partial engine progress has an incompatible schema")
+    if not isinstance(progress.get("policy"), str) or not progress["policy"]:
+        raise CheckpointError("checkpoint partial engine progress has no window policy")
+    if not _valid_sha256(progress.get("wav_identity")):
+        raise CheckpointError("checkpoint partial engine progress has no audio identity")
+    if not _valid_sha256(progress.get("model_sha256")):
+        raise CheckpointError("checkpoint partial engine progress has no model identity")
+    if not _valid_sha256(progress.get("binary_sha256")):
+        raise CheckpointError("checkpoint partial engine progress has no runtime identity")
+    # The duration is the resume match key against the real audio (`validate_progress`
+    # compares it back), so a body without a finite positive one cannot be checked
+    # and must not be trusted as *this* recording's partial work.
+    try:
+        stored_duration = float(progress.get("duration"))
+    except (TypeError, ValueError) as exc:
+        raise CheckpointError(
+            "checkpoint partial engine progress has no usable duration"
+        ) from exc
+    if not math.isfinite(stored_duration) or stored_duration <= 0:
+        raise CheckpointError(
+            "checkpoint partial engine progress has a non-positive duration"
+        )
+    # Language is the requested language, or None for auto-detect. Anything else
+    # (a list, an object, a number) is not a value the engine could have emitted
+    # and would never compare equal to the current run's language choice.
+    language = progress.get("language")
+    if language is not None and not isinstance(language, str):
+        raise CheckpointError("checkpoint partial engine progress has an invalid language")
+    completed = progress.get("completed_core_index")
+    if not isinstance(completed, int) or isinstance(completed, bool) or completed < 0:
+        raise CheckpointError("checkpoint partial engine progress has no completed core index")
+    # The segment list is required, not optional: it is the accumulated words the
+    # resume adopts, so an absent list is a body with no work in it rather than a
+    # partial run. ``validate_progress`` re-checks each entry against the audio.
+    segments = progress.get("segments")
+    if not isinstance(segments, list):
+        raise CheckpointError("checkpoint partial engine progress has a corrupt segment list")
+
+
 def _valid_local_identity(identity: Any) -> bool:
     return (
         isinstance(identity, dict)
@@ -151,9 +341,7 @@ def _valid_local_identity(identity: Any) -> bool:
         and bool(identity["path"])
         and isinstance(identity.get("size"), int)
         and identity["size"] >= 0
-        and isinstance(identity.get("sha256"), str)
-        and len(identity["sha256"]) == 64
-        and all(c in "0123456789abcdef" for c in identity["sha256"])
+        and _valid_sha256(identity.get("sha256"))
     )
 
 
@@ -195,10 +383,17 @@ def validate_local_resume(
     *,
     input_root: str | Path | None = None,
 ) -> None:
-    """Fail closed for missing, changed, or pre-v2 local-source checkpoints."""
+    """Fail closed for missing, changed, or fingerprintless local checkpoints.
+
+    The threshold is ``IDENTITY_VERSION``, not the current record version: the
+    fingerprint arrived with v2 and a v2 record still carries one, so bumping the
+    current version to v3 must not retroactively refuse a v2 resume whose source
+    is provably unchanged. Only a record *older than the fingerprint itself* has
+    nothing to compare and is refused.
+    """
     if not is_local_source(source):
         return  # URL bytes can change; URL resume is a separate explicit policy.
-    if record.version < CHECKPOINT_VERSION or record.local_identity is None:
+    if record.version < IDENTITY_VERSION or record.local_identity is None:
         raise ValueError("legacy local checkpoint has no fingerprint; resubmit without resume")
     try:
         current = local_source_identity(source, input_root=input_root)
@@ -237,18 +432,26 @@ def load_checkpoint(job: Job | None) -> CheckpointRecord | None:
 def metadata_only_checkpoint(
     checkpoint: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """Return a finished job's checkpoint with its transcript body removed.
+    """Return a finished job's checkpoint with its duplicated bodies removed.
 
-    None means there was no body to remove - the checkpoint is absent, already
+    A DONE job stores its words once, in the job's own ``transcript`` field, so
+    the checkpoint drops both the transcript *and* any partial engine progress:
+    either is a second copy of the same words (the partial's cumulative segments
+    are a prefix of the final transcript), and leaving one behind would let a
+    later reader find the words twice - in the row and in the checkpoint. None
+    means there was no body to remove - the checkpoint is absent, already
     metadata only, or not an object at all - so a caller leaves the stored value
     exactly as it found it instead of writing a value it did not read. The
     metadata that matching and local-source validation depend on is kept
-    untouched; only the duplicated transcript goes.
+    untouched; only the duplicated bodies go.
     """
-    if not isinstance(checkpoint, dict) or checkpoint.get("transcript") is None:
+    if not isinstance(checkpoint, dict):
+        return None
+    if checkpoint.get("transcript") is None and checkpoint.get("engine_progress") is None:
         return None
     payload = dict(checkpoint)
     payload.pop("transcript", None)
+    payload.pop("engine_progress", None)
     return payload
 
 

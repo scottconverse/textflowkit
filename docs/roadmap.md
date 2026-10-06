@@ -153,6 +153,23 @@ not on GitHub-hosted runners that were challenged as bots. Production URL jobs a
 require an operator-provided SSRF-filtering egress proxy. These are deliberate
 verification/deployment boundaries, not claims of complete platform coverage.
 
+## v0.1.9 — Whistle as the default engine
+
+- [x] Ship v0.1.9 review follow-ups: **Whistle primary engine.** **Whistle** — a
+  CPU-only native CLI that needs no PyTorch — becomes the default engine, with
+  `openai-whisper` moved to the optional `whisper` extra and selected explicitly
+  with `--engine whisper`. Whistle advertises seven languages (`en`, `de`, `fr`,
+  `es`, `it`, `nl`, `pl`), runs natively on Windows x86-64/arm64, Linux
+  x86-64/arm64 and Apple Silicon (an Intel Mac is refused and pointed at
+  `--engine whisper`), splits long audio into 26-second cores (≤ 30 s clips), and
+  forces telemetry off in every child process. Durable per-block resume and
+  prompt cancellation of the owned child are included. Legacy engine aliases are
+  preserved, so older saved jobs and `transcribe()` calls still decode. First
+  local evidence is a 4-hour CPU run (555 clips / 34,596 words in 731 s) and a
+  two-process durable-resume run — first local numbers, not a universal
+  performance or accuracy claim. Publication and its exact-commit CI are tracked
+  by the [release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml).
+
 ## Design constraints
 
 - Platform differences stay in the source layer. The pipeline never branches on
@@ -184,4 +201,4 @@ the full five-role audit of v0.1.6 main commit
 
 Deferral does not remove these findings or waive their acceptance criteria.
 Core engineering/runtime bugs and the major documentation corrections remain
-in the active repair goal. See the [unreleased changelog](../CHANGELOG.md).
+in the active repair goal. See the [changelog](../CHANGELOG.md).

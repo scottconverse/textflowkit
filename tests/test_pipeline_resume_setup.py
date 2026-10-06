@@ -43,6 +43,7 @@ def _record(source: Path, request: SubmissionRequest, **kwargs) -> CheckpointRec
     return CheckpointRecord(
         source=str(source),
         model=request.model,
+        engine=request.engine,
         options=request.options(),
         finished_stages=["source", "fetch", "extract", "transcribe"],
         transcript=Transcript(
@@ -99,8 +100,11 @@ def test_work_dir_that_is_a_file_keeps_the_previous_checkpoint(tmp_path):
     assert before is not None and before.transcript is not None
 
     with pytest.raises(OSError):
+        # The record above was seeded from the default-engine request, so resume
+        # it with that same default (Whistle) rather than the old implicit Whisper
+        # `small`, which the default engine no longer publishes.
         transcribe(
-            str(source), formats=["json"], model="small", work_dir=str(blocked),
+            str(source), formats=["json"], work_dir=str(blocked),
             resume_checkpoint=before.to_dict(),
             on_checkpoint=lambda rec: write_checkpoint(store, job.id, rec),
         )

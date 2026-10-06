@@ -1,8 +1,14 @@
 # Install notes
 
-Current release: [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8).
+Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
+
+As of v0.1.9 the default engine is **Whistle**, a CPU-only native CLI that needs
+no PyTorch; `openai-whisper` is moved to the optional `whisper` extra and is
+selected with `--engine whisper`. The ROCm instructions below apply to the
+explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
+or WSL**.
 
 ## Requirements
 
@@ -12,13 +18,51 @@ commands and outputs, start with the [user manual](user-manual.md).
 
 For a standard CPU or NVIDIA environment, install from
 [PyPI](https://pypi.org/project/textflowkit/) with
-`python -m pip install textflowkit`. For an existing AMD ROCm environment,
-follow the instructions below instead of allowing pip to replace your torch.
+`python -m pip install textflowkit`. The default engine (Whistle)
+pulls no torch; to use the `openai-whisper` torch engine, install the `whisper`
+extra (`python -m pip install 'textflowkit[whisper]'`) and select it with
+`--engine whisper`. For an existing AMD ROCm environment, follow the
+instructions below instead of allowing pip to replace your torch.
+
+## Default engine: Whistle
+
+A plain `python -m pip install textflowkit` gets Whistle:
+
+- **No torch, no extra.** Whistle is a CPU-only native CLI. It downloads a pinned
+  native binary and one pinned model (about 17 MB) on first use, outside the
+  package and the wheel. Nothing else is required.
+- **Platforms:** Windows x86-64/arm64, Linux x86-64/arm64, and Apple Silicon.
+  **Intel Macs are not supported** — the refusal names the explicit `whisper`
+  engine, which you can install with `pip install 'textflowkit[whisper]'`. No WSL
+  is involved.
+- **Languages:** `en`, `de`, `fr`, `es`, `it`, `nl`, `pl`. Any other language, or a
+  non-CPU device, is refused before anything is fetched. Whistle is never swapped
+  for another engine to satisfy a request.
+- **Offline and cache.** Set `TEXTFLOWKIT_OFFLINE` to refuse any download, and
+  `TEXTFLOWKIT_MODELS_DIR` to choose the asset directory. The Whistle asset helper
+  downloads only pinned runtime/model assets; media acquisition and optional
+  translation may independently use the network. These downloads are not telemetry.
+- **Telemetry is off, always.** Every Whistle child forces `NEEDLE_TELEMETRY=0`,
+  `DO_NOT_TRACK=1`, and `CI=1`, overriding a parent that opted in; there is no
+  opt-in setting. This applies the upstream gate — it is not a claim that the
+  upstream binary's tracking code is physically removed.
+- **ROCm is not needed.** The instruction above applies to the explicit `whisper`
+  engine and to diarization, never to Whistle.
+
+`doctor` reports the default engine, the Whistle platform and cache, whether the
+model is cached, offline mode, and the telemetry gate, all with no network. For
+the full engine behaviour — windowing, resume, cancellation — see the
+[user manual](user-manual.md#7-whistle-the-default-engine).
 
 ## AMD GPU support (ROCm) — no WSL required
 
-textflowkit runs natively on Windows. On AMD hardware, GPU acceleration comes from a
-**ROCm build of PyTorch**; no Linux layer or WSL is involved.
+**This section is for the explicit `openai-whisper` engine and for diarization.**
+The default Whistle engine is CPU-only and needs neither ROCm nor WSL, so if you
+are using the default engine you can skip this section entirely.
+
+textflowkit runs natively on Windows. On AMD hardware, GPU acceleration for
+`openai-whisper` comes from a **ROCm build of PyTorch**; no Linux layer or WSL is
+involved.
 
 This project was developed against AMD Strix Halo (`gfx1151`, Radeon 8060S) using
 AMD's `rocm-sdk` pip distribution:
@@ -35,7 +79,8 @@ distribution for the target architecture.
 
 `openai-whisper` depends on `torch` **unpinned**. A plain `pip install openai-whisper`
 will happily replace a working ROCm torch with a stock PyPI CPU wheel, silently
-disabling GPU acceleration.
+disabling GPU acceleration. (Whistle, the default engine, has no
+torch dependency and is unaffected.)
 
 Install textflowkit and the engine **without** letting either resolve torch:
 
@@ -136,12 +181,15 @@ textflowkit selftest              # compute device + a real tiny transcription
 textflowkit selftest --skip-transcribe   # compute device only, no model download
 ```
 
-It runs a real matmul on the selected device and then a real Whisper pass over a
-bundled synthetic speech clip. It fails if Whisper returns no nonempty, timed
-speech segment. A PASS proves text generation, not transcription accuracy.
-It prints PASS/FAIL for each stage and names the torch build. A
-ROCm install reports `torch <ver>+rocm*` and the device name; a stock CPU wheel
-reports plain `torch <ver>`.
+`selftest` defaults to Whistle (CPU-only, no torch): it normalizes
+the bundled synthetic speech fixture to the engine's sample rate and runs a real
+transcription. It fails if the engine returns no nonempty, timed speech segment. A
+PASS proves text generation, not transcription accuracy. `selftest --engine
+whisper --model tiny` checks the openai-whisper/torch stack instead, running a real
+matmul on the selected device and then a real Whisper pass; that path prints
+PASS/FAIL for each stage and names the torch build, so a ROCm install reports
+`torch <ver>+rocm*` and the device name, while a stock CPU wheel reports plain
+`torch <ver>`.
 
 `--skip-transcribe` is cheap enough to run in CI and is exercised there on every
 platform.
@@ -156,9 +204,10 @@ working torch install.
 ### 1. Choose the install path **before** running pip
 
 `pyannote.audio` requires `torch>=2.0.0` (open-ended, not pinned), and installing
-the `textflowkit[diarize]` extra resolves the **whole project** - base
-`openai-whisper` included. Either can therefore resolve a stock CPU wheel over a
-ROCm build, silently losing the GPU. Decide which case you are in first:
+the `textflowkit[diarize]` extra resolves the **whole project** - including the
+`whisper` extra's `openai-whisper` if you also ask for it. Either can therefore
+resolve a stock CPU wheel over a ROCm build, silently losing the GPU. Decide
+which case you are in first:
 
 **If a native Windows AMD ROCm stack already works, do not run a plain pyannote
 or extra install first.** Inspect the installed stack, then let pip resolve only
@@ -279,8 +328,11 @@ how many segments were labelled. If the backend or token is missing, the run
 
 ## CPU fallback
 
-With no GPU, the engine selects CPU automatically. Pass `--device cpu` to force it.
-CPU transcription is dramatically slower; prefer a smaller `--model`.
+With no GPU, the Whisper-family engines select CPU automatically; pass
+`--device cpu` to force it, and prefer a smaller `--model` since CPU Whisper is
+dramatically slower. The default Whistle engine is CPU-only already, so
+`--device` does not apply to it — naming a non-CPU device for Whistle is refused,
+and the message points at `--engine whisper` for the GPU path.
 
 ## Optional CPU/Mac engine: faster-whisper
 
@@ -295,24 +347,26 @@ textflowkit transcribe meeting.mp4 --engine faster-whisper
 The double quotes matter: CMD treats single quotes as literal characters, so a
 single-quoted extra name is passed to pip with the quotes still on it.
 
-- It is an extra, never a base dependency, and **the default engine does not
-  change**: without `--engine` you still get `openai-whisper` on the
-  torch/ROCm/CUDA stack.
+- It is an extra, never a base dependency. The default engine is
+  Whistle, so `faster-whisper` is reached only by naming it; without `--engine`
+  you get Whistle (CPU, no torch).
 - With no `--device`, or `--device cpu`, it runs CPU `int8`.
 - It is **not** the ROCm path. CTranslate2's GPU path is CUDA-only (a ROCm build
-  means compiling it yourself with `-DWITH_HIP=ON`), so on AMD Windows keep the
-  default engine. `--engine faster-whisper --device cuda` passes `cuda` straight
-  to upstream; on an AMD box that fails there, and that failure is the point -
-  the device is never silently rewritten into a CPU run.
+  means compiling it yourself with `-DWITH_HIP=ON`), so on AMD Windows use the
+  `whisper` engine (`--engine whisper`) for GPU. Note `--engine faster-whisper
+  --device cuda` passes `cuda` straight to upstream; on an AMD box that fails
+  there, and that failure is the point - the device is never silently rewritten
+  into a CPU run.
 - Its decoding defaults differ from `openai-whisper`, so the same audio can
   produce different text. No speed or accuracy comparison is claimed here;
   measure on your own machine.
 
 **If you already have a ROCm torch build,** do not let this install re-resolve
 your environment. CTranslate2 itself has no torch dependency, but `pip install`
-resolves the *whole project*, base `openai-whisper` included, and that resolution
-is what disturbs a working ROCm setup. Install the way the ROCm section above
-does - without allowing dependency resolution:
+resolves the *whole project*, including the `whisper` extra's `openai-whisper` if
+you also ask for it, and that resolution is what disturbs a working ROCm setup.
+Install the way the ROCm section above does - without allowing dependency
+resolution:
 
 ```bash
 python -m pip install "textflowkit[faster-whisper]" --no-deps

@@ -9,9 +9,15 @@ current source paths noted throughout.
 
 TextFlowKit is a self-hosted media transcription library with a CLI and two
 adapters (MCP and a JSON HTTP API). Native Windows is the primary local target,
-including AMD ROCm through PyTorch; no WSL layer is involved. Linux and macOS are
-additional targets. The published website is static documentation and never runs
-the pipeline.
+including AMD ROCm through PyTorch for the explicit `whisper` engine; no WSL layer
+is involved. Linux and macOS are additional targets. The published website is
+static documentation and never runs the pipeline.
+
+![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+
+As of v0.1.9 the default engine is **Whistle**, a CPU-only native CLI that needs
+no torch and downloads one pinned model on first use. `openai-whisper` is an
+explicit opt-in engine (`--engine whisper`), not the default.
 
 One shared submission contract (`core/submission.py`) owns job creation and
 resume for every door. The CLI runs the pipeline synchronously; MCP and HTTP
@@ -33,7 +39,7 @@ flowchart LR
     PY[Python transcribe] --> PIPE
     PIPE --> ACQ[Local input or yt-dlp]
     ACQ --> DEC[ffmpeg PCM WAV]
-    DEC --> ENG[openai-whisper or optional faster-whisper]
+    DEC --> ENG[whistle default; openai-whisper or faster-whisper optional]
     ENG --> POST[Optional pyannote and Ollama]
     POST --> TR[Canonical Transcript]
     TR --> RENDER[Render and publish files]
@@ -53,7 +59,7 @@ flowchart LR
 | Persistence | `core/jobs.py`, `core/sqlite_store.py` | In-memory or SQLite-WAL job records |
 | Pipeline | `core/pipeline.py` | Resolve, acquire, decode, infer, postprocess, render, clean scratch |
 | Source handling | `sources/detect.py`, `sources/acquire.py` | Domain recognition, URL checks, yt-dlp, confined file staging, ffmpeg |
-| Engine | `core/engine.py` | Lazy cached engine instances, per-instance inference lock, word extraction |
+| Engine | `core/engine.py`, `core/whistle.py`, `core/whistle_assets.py` | Lazy cached engine instances, per-instance inference lock, word extraction; Whistle windowing, progress, and cancellation |
 | Postprocessing | `core/diarize.py`, `core/translate.py` | Optional speaker assignment and translation |
 | Output | `render/` | Human-readable formats and canonical JSON; atomic file publication |
 | Retrieval | `core/retrieval.py` | Hidden filtering, time selection, paging, substring search |
@@ -187,6 +193,17 @@ verifies the normalized path, file size, and SHA-256 digest. URL reuse reuses th
 saved transcript for the same URL/options and does **not** prove the remote bytes
 are unchanged.
 
+**Whistle block resume.** The Whistle engine's long-audio run emits a
+serializable progress snapshot after each 26-second core; the runner persists it as
+a **partial** checkpoint body (no transcript yet). Resuming validates that body
+against the requested configuration — schema, window policy, duration, the
+full-content decoded-WAV SHA-256, and the model/binary/language identity — and then
+re-runs only the cores that were not finished, adopting the saved blocks' words
+verbatim. A partial body is **Whistle-only**: a checkpoint that names another
+engine cannot carry partial block progress. This reuses the existing single
+persistence mechanism and the one-owning-process store model; it adds no second
+store and no new process-sharing model.
+
 **Ownership.** The reopen of a terminal row for resume is an atomic claim
 (`JobStore.claim` / `prepare_resume`), pinned to the attempt the caller observed.
 Two callers racing the same job id cannot both reopen it; one transitions the row
@@ -293,7 +310,8 @@ surface with its own loopback guard; the JSON HTTP token does not secure MCP.
 |---|---|---|
 | yt-dlp and public media sites | URL acquisition | Recognition is not live-support proof; sites can block or change |
 | ffmpeg / ffprobe | Decode and duration | Decode has a wall-clock limit in every profile |
-| PyTorch / openai-whisper | Default inference | Preserve a working native-Windows ROCm stack during package install |
+| Whistle native binary + pinned model | Default inference (CPU only) | Pinned first-use download, hash-verified; refusal on an unsupported platform (e.g. Intel Mac) |
+| PyTorch / openai-whisper | Explicit `whisper` engine | Optional `whisper` extra; preserve a working native-Windows ROCm stack during package install |
 | faster-whisper / CTranslate2 | Optional engine | CPU int8 by default; not an AMD-Windows GPU replacement |
 | Hugging Face / pyannote | Optional diarization | Separate gated access and token required |
 | Ollama | Optional translation | Explicit model required; cloud-tagged or remote hosts can send text off-machine |

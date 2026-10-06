@@ -41,7 +41,10 @@ def test_submission_saves_the_same_request_it_runs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(runner, "transcribe", fake_transcribe)
     store = MemoryJobStore()
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    # `tiny` is a Whisper model name, and this test is about a request round-
+    # tripping unchanged, so the engine is named explicitly rather than relying
+    # on the default (Whistle, whose only model is `whistle`).
+    request = SubmissionRequest(source=str(media), model="tiny", engine="whisper", formats=["json"])
     job = submit_request(store, request, background=False)
     assert job.state is JobState.DONE
     assert job.request == request.to_dict()
@@ -85,7 +88,9 @@ def test_resume_after_sqlite_restart_reuses_transcript(monkeypatch, tmp_path):
     path = tmp_path / "jobs.db"
     media = tmp_path / "media.wav"
     media.write_bytes(b"source bytes")
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    # Explicit Whisper engine: `tiny` is a Whisper size, and the durable-restart
+    # behaviour under test is independent of which engine the request names.
+    request = SubmissionRequest(source=str(media), model="tiny", engine="whisper", formats=["json"])
     first = SqliteJobStore(path)
     job = first.create(request.source, request=request.to_dict())
     transcript = _result(request.source).transcript

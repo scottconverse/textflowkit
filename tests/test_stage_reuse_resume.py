@@ -207,6 +207,7 @@ def _request(
         source=str(source),
         formats=["txt", "srt"],
         output_dir=str(output_dir),
+        engine="whisper",
         model="tiny",
         device="cpu",
         diarize=diarize,

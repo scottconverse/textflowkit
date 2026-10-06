@@ -37,6 +37,7 @@ from textflowkit.core.bind import (
     check_bind_safety,
     developer_request_refusal,
 )
+from textflowkit.core.engine import DEFAULT_ENGINE
 from textflowkit.core.executor import (
     QueueFullError,
     get_default_executor,
@@ -256,12 +257,12 @@ def transcribe_media(
     language: str | None = None,
     formats: str = "json,srt,txt",
     output_dir: str | None = None,
-    model: str = "small",
+    model: str | None = None,
     device: str | None = None,
     cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
-    engine: str = "whisper",
+    engine: str = DEFAULT_ENGINE,
 ) -> dict[str, Any]:
     """Start transcribing a media URL or local file. Returns immediately with a job id.
 
@@ -281,9 +282,13 @@ def transcribe_media(
             (docx, pdf) are written to disk and require the export extra.
         output_dir: Directory to write rendered files into. Omit to keep the
             transcript in memory only.
-        model: Whisper model size - tiny, base, small, medium, or large.
-            Larger is more accurate and slower. Default small.
-        device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+        model: Model name. When omitted it resolves to the selected engine's own
+            default: 'whistle' for the Whistle engine (the default), or a
+            Whisper size ('tiny', 'base', 'small', 'medium', 'large') when
+            'whisper' or 'faster-whisper' is selected.
+        device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted. This
+            applies to the Whisper-family engines; Whistle is CPU-only and a
+            non-CPU device is refused rather than quietly ignored.
         cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
             'firefox'. Only for media you are authorised to access.
         diarize: Label speakers. Requires the optional diarize extra and a gated
@@ -291,11 +296,12 @@ def transcribe_media(
             rather than returning empty speakers.
         translate_to: Target language code (e.g. 'es'). Translates the transcript
             with the configured backend; fails loudly if it is unreachable.
-        engine: Speech engine. 'whisper' (the default: openai-whisper on the
-            torch stack - ROCm on AMD, CUDA on NVIDIA, CPU otherwise) or the
-            opt-in 'faster-whisper', a CTranslate2 engine for CPU and Apple
-            Silicon that needs the faster-whisper extra. The default is
-            unchanged; no speed or accuracy comparison is claimed here.
+        engine: Speech engine. 'whistle' (the default: a CPU-only native engine
+            that needs no torch) or 'whisper' (openai-whisper on the torch stack
+            - ROCm on AMD, CUDA on NVIDIA, CPU otherwise; needs the whisper
+            extra), or the opt-in 'faster-whisper', a CTranslate2 engine for CPU
+            and Apple Silicon that needs the faster-whisper extra. No speed or
+            accuracy comparison is claimed here.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     bad = [f for f in fmt_list if f not in SUPPORTED_FORMATS]
@@ -339,13 +345,13 @@ def submit_batch_media(
     language: str | None = None,
     formats: str = "json,srt,txt",
     output_dir: str | None = None,
-    model: str = "small",
+    model: str | None = None,
     device: str | None = None,
     cookies_from_browser: str | None = None,
     diarize: bool = False,
     translate_to: str | None = None,
     resume: bool = False,
-    engine: str = "whisper",
+    engine: str = DEFAULT_ENGINE,
 ) -> dict[str, Any]:
     """Queue multiple independent media jobs and return each job handle.
 
@@ -363,19 +369,23 @@ def submit_batch_media(
             Available: txt, srt, vtt, md, json, docx, pdf. The binary formats
             (docx, pdf) require the export extra.
         output_dir: Directory to write rendered files into.
-        model: Whisper model size - tiny, base, small, medium, or large.
+        model: Model name. When omitted it resolves to the selected engine's own
+            default: 'whistle' for the Whistle engine (the default), or a
+            Whisper size when 'whisper'/'faster-whisper' is selected.
         device: Torch device ('cuda' or 'cpu'). Auto-detected when omitted.
+            Applies to the Whisper-family engines; Whistle is CPU-only.
         cookies_from_browser: Pass cookies to yt-dlp from a browser, e.g.
             'firefox'. Only for media you are authorised to access.
         diarize: Label speakers (needs the diarize extra and a gated model).
         translate_to: Target language code; fails loudly if unreachable.
         resume: Reuse matching saved checkpoints and completed transcripts.
-        engine: Speech engine, applied to every job. 'whisper' (the default:
-            openai-whisper on the torch stack) or the opt-in 'faster-whisper'
-            (CPU/Mac; needs the faster-whisper extra). This one engine is shared
-            in every item's request, so an unusable engine (e.g. the optional
-            extra is absent) fails every item at admission; the per-item errors
-            carry each item's index and source.
+        engine: Speech engine, applied to every job. 'whistle' (the default: a
+            CPU-only native engine that needs no torch), 'whisper' (openai-whisper
+            on the torch stack; needs the whisper extra), or the opt-in
+            'faster-whisper' (CPU/Mac; needs the faster-whisper extra). This one
+            engine is shared in every item's request, so an unusable engine (e.g.
+            the optional extra is absent) fails every item at admission; the
+            per-item errors carry each item's index and source.
     """
     fmt_list = [f.strip().lower().lstrip(".") for f in formats.split(",") if f.strip()]
     # One slot per source, in submission order: a source that cannot be admitted

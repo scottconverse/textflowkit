@@ -1,10 +1,18 @@
 """Opt-in, live-network release smoke for a public YouTube clip.
 
 This is intentionally outside deterministic pytest/PR CI. It exercises URL
-acquisition, ffmpeg, Whisper and JSON rendering through the installed CLI, then
-checks that the transcript says something recognizable: a caller-named word or
-short phrase, defaulting to a word the documented default clip is observed to
-say. That is an assertion about one clip, not a transcription-accuracy test.
+acquisition, ffmpeg, speech recognition and JSON rendering through the installed
+CLI, then checks that the transcript says something recognizable: a caller-named
+word or short phrase, defaulting to a word the documented default clip is
+observed to say. That is an assertion about one clip, not a transcription-accuracy
+test.
+
+Engine choice is deliberate. The default clip's observed word (`elephants`) and
+its whole-word expectation were measured with the `openai-whisper` engine, so this
+smoke pins `--engine whisper --model tiny` rather than inheriting whatever the
+product default currently is. That keeps the historical expectation reproducible
+across the Whistle-default change; a run against the default Whistle engine would
+need its own separately-measured expected word, which is not claimed here.
 """
 
 from __future__ import annotations
@@ -21,11 +29,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+# The engine this smoke pins. The expected word below was measured with
+# openai-whisper, so the run names that engine explicitly instead of inheriting
+# the product default (Whistle as of v0.1.9), whose own expectation has not
+# been separately measured.
+DEFAULT_ENGINE = "whisper"
 # One whole word the default clip is observed to say. Measured 2026-09-24 on
-# this checkout with `--model tiny --device cpu`: the first of its three
-# segments is "Alright so here we are one of the elephants." Whisper output can
-# drift, but a plausible unrelated clip cannot produce this word, so it
-# separates recognized speech from any nonempty timed text. It is one word of
+# this checkout with `--engine whisper --model tiny --device cpu`: the first of
+# its three segments is "Alright so here we are one of the elephants." Whisper
+# output can drift, but a plausible unrelated clip cannot produce this word, so
+# it separates recognized speech from any nonempty timed text. It is one word of
 # one URL, not a transcript-accuracy claim.
 DEFAULT_EXPECT_TEXT = "elephants"
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +100,11 @@ def _candidate_commit() -> str | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=DEFAULT_URL)
+    parser.add_argument(
+        "--engine", default=DEFAULT_ENGINE,
+        help="speech engine; pinned to whisper so the default clip's measured "
+             "word stays reproducible (the product default is Whistle as of v0.1.9)",
+    )
     parser.add_argument("--model", default="tiny")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--timeout", type=int, default=300)
@@ -140,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
         command = [
             sys.executable, "-m", "textflowkit.cli", "transcribe", args.url,
-            "--model", args.model, "--device", args.device,
+            "--engine", args.engine, "--model", args.model, "--device", args.device,
             "--formats", "json", "--output-dir", temp, "--quiet",
         ]
         try:
@@ -192,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             "runner_os": platform.system(),
             "python_version": platform.python_version(),
             "url": args.url,
+            "engine": args.engine,
             "model": args.model,
             "device": args.device,
             "platform": payload["platform"],

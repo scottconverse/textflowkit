@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.1.9 — 2026-10-05
+
+**Whistle is now the default engine.** This release ships the Whistle integration
+prepared on the `feat/whistle-primary` branch.
+
+### Changed
+
+- **Whistle is the default engine; openai-whisper becomes an explicit opt-in.**
+  Whistle is a CPU-only native CLI that needs no PyTorch, so a fresh
+  `pip install textflowkit` no longer pulls the torch stack. `openai-whisper`
+  moves to a new optional `whisper` extra and is selected with `--engine whisper`
+  (or `engine="whisper"` on the Python/MCP/HTTP surfaces); the `all` extra still
+  includes it. A saved request or checkpoint from before this change keeps running
+  on the engine it names, so legacy Whisper work is never silently migrated, and
+  legacy engine aliases are preserved so older decoders keep working.
+- **Engine selection is never silent.** An unknown engine name, an unsupported
+  language, or a non-CPU device for Whistle is refused at request construction —
+  before any media is fetched — and the message names `--engine whisper` as the
+  GPU alternative. The engine is not switched to satisfy a request.
+
+### Added
+
+- **Whistle engine.** Seven advertised languages (`en`, `de`, `fr`, `es`, `it`,
+  `nl`, `pl`); native Windows x86-64/arm64, Linux x86-64/arm64, and Apple Silicon
+  (an Intel Mac is refused and pointed at the explicit Whisper engine); no WSL.
+  One pinned native binary and one pinned model are downloaded and hash-verified
+  on first use, outside the package. Long audio is split into 26-second cores with
+  up to 2 seconds of context (each clip ≤ 30 s); a word is owned by the clip whose
+  core contains its midpoint, so repeated phrases are preserved. Native
+  `--audio-stream` is never used.
+- **Durable per-block resume for Whistle.** A long run persists a partial
+  checkpoint after each core; a resume validates the source and decoded-WAV
+  hashes and the configuration, then re-runs only the unfinished blocks and adopts
+  the rest. A partial body is Whistle-only. Reuses the existing single SQLite
+  store and its one-owning-process model.
+- **Prompt, bounded cancellation.** A running Whistle run polls for cancellation
+  between clips and terminates its exact owned child process, bounded by a
+  per-clip timeout and a bounded stdout cap. A single long `openai-whisper` model
+  call is still cancellable only at its next stage boundary.
+- **Telemetry off, unconditionally.** Every Whistle child process forces
+  `NEEDLE_TELEMETRY=0`, `DO_NOT_TRACK=1`, and `CI=1`, overriding a parent that
+  opted in, and there is no opt-in setting. The product adds no analytics, usage
+  SDK, anonymous ids, or events. `TEXTFLOWKIT_OFFLINE` refuses downloads and
+  `TEXTFLOWKIT_MODELS_DIR` chooses the asset directory; the pinned first-use
+  asset/model download is not telemetry.
+
+### Documentation
+
+- README, user manual, install/adapter/architecture/roadmap/release docs and the
+  website source now describe Whistle as the shipped default. ROCm (and the
+  torch-pinning caveat) is scoped to the explicit `whisper` engine and
+  diarization, never to Whistle.
+- Self-contained checked-in SVG architecture drawings were added under
+  `docs/assets` and embedded in the README, both manuals (`user-manual.md` and the
+  renamed **Developer and integration manual**, `adapters.md`), the architecture
+  guide, and the landing page.
+- The live YouTube release smoke pins `--engine whisper --model tiny` so its
+  measured default-clip word stays reproducible across the default-engine change.
+
+### Verification boundary
+
+Local evidence only: a 4-hour (14,407-second) CPU run produced 555
+clips / 34,596 words / 2,875 segments in 731 seconds, offline with telemetry
+forced off, and a separate two-process run proved durable block resume. These are
+first local test numbers on one machine — not a universal performance claim, and
+not a claim that Whistle's accuracy equals Whisper's. No human-scored
+word-error rate is claimed.
+
 ## v0.1.8 — 2026-10-02
 
 The 2026-10-02 audit-lite repair release. Core version: 0.1.8; unchanged optional fonts: 0.1.6. It carries the four fixes for the post-release audit-lite of 2026-10-01 (findings AL-001 – AL-004). Release artifacts and publication status are recorded on [GitHub Releases](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8). Local source-candidate verification does not establish installed-package or individual harness compatibility.

@@ -123,7 +123,7 @@ def test_stale_cleanup_does_not_overwrite_a_newer_queued_reclaim(
     """
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = _make_store(store_kind, tmp_path)
     try:
         job = _seed_terminal_job(store, request, media, with_checkpoint=True)
@@ -279,7 +279,7 @@ def test_observation_is_refused_after_an_unadmitted_claim(monkeypatch, tmp_path,
     """
     media = tmp_path / "media.wav"
     _wav(media)
-    request = SubmissionRequest(source=str(media), model="tiny", formats=["json"])
+    request = SubmissionRequest(source=str(media), engine="whisper", model="tiny", formats=["json"])
     store = _make_store(store_kind, tmp_path)
     try:
         job = _seed_terminal_job(store, request, media)

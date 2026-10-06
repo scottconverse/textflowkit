@@ -6,13 +6,19 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from importlib.resources import files
 from pathlib import Path
 
 from textflowkit import __version__
 from textflowkit.core.batch import run_batch
 from textflowkit.core.checkpoint import metadata_only_checkpoint
-from textflowkit.core.engine import ENGINE_CHOICES, ensure_engine_available, get_engine
+from textflowkit.core.engine import (
+    DEFAULT_ENGINE,
+    ENGINE_CHOICES,
+    ensure_engine_available,
+    get_engine,
+)
 from textflowkit.core.jobs import JobState, get_default_store
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import default_input_root, output_root
@@ -46,15 +52,19 @@ def _build_parser() -> argparse.ArgumentParser:
                    help=f"comma-separated outputs (default: json,srt,txt; available: {', '.join(SUPPORTED_FORMATS)})")
     t.add_argument("--output-dir", "-o", default=None, help="directory for written outputs")
     t.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
-    t.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
-    t.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    t.add_argument("--model", default=None,
+                   help="model name; default is the engine's own (whistle, or a "
+                        "whisper size such as small/tiny for the whisper engines)")
+    t.add_argument("--device", default=None,
+                   help="torch device (cuda/cpu) for the whisper engines; default auto (whistle is CPU-only)")
     t.add_argument(
         "--engine",
-        default="whisper",
+        default=DEFAULT_ENGINE,
         help=(
-            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
-            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
-            "CPU/Mac engine and needs its optional extra"
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whistle: a "
+            "CPU-only native engine needing no torch). whisper is openai-whisper on "
+            "the torch/ROCm stack and needs the whisper extra; faster-whisper is an "
+            "opt-in CPU/Mac engine and needs its own extra"
         ),
     )
     t.add_argument(
@@ -92,15 +102,19 @@ def _build_parser() -> argparse.ArgumentParser:
                    help=f"comma-separated outputs (default: json,srt,txt; available: {', '.join(SUPPORTED_FORMATS)})")
     b.add_argument("--output-dir", "-o", default=None, help="directory for written outputs")
     b.add_argument("--language", default=None, help="source language code (e.g. en); default auto-detect")
-    b.add_argument("--model", default="small", help="whisper model size (tiny/base/small/medium/large); default small")
-    b.add_argument("--device", default=None, help="torch device (cuda/cpu); default auto")
+    b.add_argument("--model", default=None,
+                   help="model name; default is the engine's own (whistle, or a "
+                        "whisper size such as small/tiny for the whisper engines)")
+    b.add_argument("--device", default=None,
+                   help="torch device (cuda/cpu) for the whisper engines; default auto (whistle is CPU-only)")
     b.add_argument(
         "--engine",
-        default="whisper",
+        default=DEFAULT_ENGINE,
         help=(
-            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whisper: "
-            "openai-whisper on the torch/ROCm stack). faster-whisper is an opt-in "
-            "CPU/Mac engine and needs its optional extra"
+            f"speech engine, one of {', '.join(ENGINE_CHOICES)} (default whistle: a "
+            "CPU-only native engine needing no torch). whisper is openai-whisper on "
+            "the torch/ROCm stack and needs the whisper extra; faster-whisper is an "
+            "opt-in CPU/Mac engine and needs its own extra"
         ),
     )
     b.add_argument("--diarize", action="store_true", help="label speakers (same requirements as transcribe)")
@@ -125,7 +139,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "selftest",
         help="run a real end-to-end check on this machine (compute device + a tiny transcription)",
     )
-    st.add_argument("--model", default="tiny", help="whisper model for the check (default tiny)")
+    st.add_argument("--engine", default=DEFAULT_ENGINE,
+                    help=f"engine for the check, one of {', '.join(ENGINE_CHOICES)} (default whistle)")
+    st.add_argument("--model", default=None,
+                    help="model for the check; default is the engine's own "
+                         "(whistle, or a whisper size such as tiny for the whisper engines)")
     st.add_argument(
         "--skip-transcribe",
         action="store_true",
@@ -435,6 +453,7 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
 
     line("textflowkit", __version__)
     line("python", sys.version.split()[0])
+    line("default engine", DEFAULT_ENGINE)
 
     # ffmpeg
     ffmpeg = shutil.which("ffmpeg")
@@ -468,11 +487,15 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
     runtime = detect_js_runtime()
     line("js runtime", runtime or "none found (YouTube formats may be limited)")
 
-    # optional extras
+    # Optional extras. `whisper` (openai-whisper) is listed too, because since
+    # the default engine moved to Whistle it is no longer a base dependency: its
+    # absence is expected on a fresh install, and doctor must say so plainly
+    # rather than implying the default engine is missing.
     for label, module in (
         ("mcp", "mcp"),
         ("fastapi", "fastapi"),
         ("pyannote", "pyannote.audio"),
+        ("whisper", "whisper"),
         ("faster-whisper", "faster_whisper"),
         ("python-docx", "docx"),
         ("reportlab", "reportlab"),
@@ -483,6 +506,27 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
             line(label, "not installed")
         else:
             line(label, "installed")
+
+    # Whistle is the default engine and needs no torch. Report only what is
+    # cheap and import-free: which platform the pinned binary would be chosen
+    # for, where its cache lives, and whether it is already present or would be
+    # downloaded on first use. No asset is fetched and no model is loaded here.
+    from textflowkit.core import whistle_assets
+
+    try:
+        status = whistle_assets.cache_status()
+    except Exception as exc:  # noqa: BLE001 - diagnostic; an unsupported platform is information
+        line("whistle platform", f"unsupported: {exc}")
+    else:
+        line("whistle platform", status["platform"])
+        line("whistle cache", status["models_dir"])
+        present = "cached" if status.get("model_present") else "not downloaded (fetched on first use)"
+        line("whistle model", f"{whistle_assets.WHISTLE_MODEL.filename}: {present}")
+    offline = os.environ.get("TEXTFLOWKIT_OFFLINE", "").strip().lower() not in ("", "0", "false")
+    line("offline mode", "on (no downloads)" if offline else "off")
+    # Telemetry is forced off on every Whistle child; report the gate, not a
+    # claim about the upstream binary's own code.
+    line("whistle telemetry", "disabled in child env (NEEDLE_TELEMETRY=0, DO_NOT_TRACK=1)")
 
     # Compute devices are separate decisions: pyannote may be pinned to CPU
     # while Whisper uses ROCm/CUDA, or vice versa.
@@ -522,9 +566,12 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
 def _cmd_selftest(args: argparse.Namespace) -> int:
     """Prove the compute path works on THIS machine, end to end.
 
-    The GPU path cannot run in hosted CI - no runner has an AMD GPU - so the
-    honest way to keep it verified is to make the check reproducible and runnable
-    on demand rather than relying on one engineer's memory of a good run.
+    Defaults to the product's default engine (Whistle). An explicit
+    ``--engine whisper --model tiny`` checks the openai-whisper/torch stack
+    instead. The GPU path cannot run in hosted CI - no runner has an AMD GPU -
+    so the honest way to keep it verified is to make the check reproducible and
+    runnable on demand rather than relying on one engineer's memory of a good
+    run.
     """
     failures: list[str] = []
 
@@ -535,24 +582,57 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         failures.append(label)
         print(f"  FAIL  {label}  ({detail})")
 
+    # The torch matmul probe is the Whisper engine's compute path, so it runs
+    # only when that engine is selected. Whistle is CPU-only and needs no torch,
+    # so under the default engine this probe would test a stack the run will not
+    # use; printing it as a PASS/FAIL would misreport what was checked.
     print("compute")
-    try:
-        import torch
+    if args.engine in ("whisper", "openai-whisper"):
+        try:
+            import torch
 
-        print(f"  torch {torch.__version__}, hip={torch.version.hip}, cuda_available={torch.cuda.is_available()}")
-        device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        a = torch.randn(512, 512, device=device)
-        b = torch.randn(512, 512, device=device)
-        c = a @ b
-        torch.cuda.synchronize() if torch.cuda.is_available() else None
-        assert c.shape == (512, 512)
-        if torch.cuda.is_available():
-            name = torch.cuda.get_device_name(0)
-            ok("matmul on device", name)
-        else:
-            ok("matmul on device", "cpu (no GPU visible)")
-    except Exception as exc:  # noqa: BLE001 - this is a diagnostic
-        bad("matmul on device", f"{type(exc).__name__}: {exc}")
+            print(f"  torch {torch.__version__}, hip={torch.version.hip}, cuda_available={torch.cuda.is_available()}")
+            device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+            a = torch.randn(512, 512, device=device)
+            b = torch.randn(512, 512, device=device)
+            c = a @ b
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            assert c.shape == (512, 512)
+            if torch.cuda.is_available():
+                name = torch.cuda.get_device_name(0)
+                ok("matmul on device", name)
+            else:
+                ok("matmul on device", "cpu (no GPU visible)")
+        except Exception as exc:  # noqa: BLE001 - this is a diagnostic
+            bad("matmul on device", f"{type(exc).__name__}: {exc}")
+    elif args.engine == "faster-whisper":
+        # faster-whisper is CTranslate2, not torch, and it is *not* the Whistle
+        # native CLI: reporting a Whistle platform here would name a runtime this
+        # engine never uses. Its own CPU path is what runs with no device, so
+        # report that and nothing pretend-Whistle.
+        try:
+            from textflowkit.core.engine import FasterWhisperEngine
+
+            engine = FasterWhisperEngine(model=args.model or "small")
+            ok(
+                "engine compute path",
+                f"faster-whisper on {engine.device} ({engine.compute_type})",
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("engine compute path", f"{type(exc).__name__}: {exc}")
+    else:
+        # Whistle runs on CPU as a native binary; there is no torch device to
+        # probe. Report the engine and the platform it will actually select -
+        # cheap, import-free, and no download.
+        try:
+            from textflowkit.core import whistle_assets
+
+            ok(
+                "engine compute path",
+                f"whistle on cpu, platform {whistle_assets.current_platform()}",
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostic
+            bad("engine compute path", f"{type(exc).__name__}: {exc}")
 
     def summarise() -> int:
         print()
@@ -574,20 +654,59 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         ok("bundled speech fixture")
         from importlib.resources import as_file
 
-        with as_file(fixture) as wav:
-            engine = get_engine("whisper", model=args.model)
-            transcript = engine.transcribe(wav)
+        model = args.model  # None resolves to the selected engine's own default
+        with as_file(fixture) as wav, tempfile.TemporaryDirectory(
+            prefix="textflowkit-selftest-"
+        ) as work:
+            engine = get_engine(args.engine, model=model)
+            transcribe_input = _selftest_transcribe_input(engine, wav, work_dir=Path(work))
+            transcript = engine.transcribe(transcribe_input)
             speech = [s for s in transcript.segments if s.text.strip() and s.end > s.start]
             if not speech:
                 raise ValueError("model returned no nonempty timed speech segments")
             recognized = " ".join(s.text for s in speech).lower().split()
             if "transcribe" not in {word.strip(".,!?;:\"'()") for word in recognized}:
                 raise ValueError("model did not recognize 'transcribe' in the bundled speech")
-            ok("whisper produced timed speech", f"model={args.model} device={transcript.metadata.get('device')} segments={len(speech)}")
+            ok(
+                "engine produced timed speech",
+                f"engine={transcript.engine} model={transcript.metadata.get('model')} "
+                f"device={transcript.metadata.get('device')} segments={len(speech)}",
+            )
     except Exception as exc:  # noqa: BLE001 - diagnostic
-        bad("whisper produced timed speech", f"{type(exc).__name__}: {exc}")
+        bad("engine produced timed speech", f"{type(exc).__name__}: {exc}")
 
     return summarise()
+
+
+def _selftest_transcribe_input(engine, wav: Path, *, work_dir: Path) -> Path:
+    """The WAV to hand the selected engine, normalized if the engine requires it.
+
+    The bundled fixture is 22.05 kHz mono - the rate the Whisper-family engines
+    read directly. Whistle's native CLI requires **16 kHz** mono 16-bit PCM and
+    refuses anything else, so passing the fixture through unchanged made
+    ``selftest`` fail on the default engine even though the product works: the
+    pipeline always decodes to 16 kHz via ``extract_audio`` before transcribing,
+    and the self-test must exercise that same normalized input rather than a raw
+    file the engine would never see in production.
+
+    The normalization reuses the pipeline's own ``extract_audio`` (same ffmpeg
+    arguments as a real run). ``work_dir`` is a caller-owned ``TemporaryDirectory``
+    that outlives the transcription, so the normalized file is present while the
+    engine reads it and removed with the directory afterwards - no global state
+    or file is touched. Other engines get the fixture unchanged.
+    """
+    from textflowkit.core.whistle import WhistleEngine, read_wav_info
+
+    if not isinstance(engine, WhistleEngine):
+        return wav
+    info = read_wav_info(wav)
+    if info.sample_rate == 16000 and info.channels == 1 and info.sample_width == 2:
+        return wav  # already in the engine's required format
+
+    from textflowkit.sources.acquire import extract_audio, require_tool
+
+    require_tool("ffmpeg")
+    return extract_audio(wav, work_dir=work_dir)
 
 
 def _cmd_sources(_: argparse.Namespace) -> int:

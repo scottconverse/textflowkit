@@ -1,6 +1,6 @@
-# Adapters and integration
+# Developer and integration manual
 
-Current published release: [v0.1.8](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8).
+Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
@@ -8,6 +8,8 @@ the version of TextFlowKit currently published.
 textflowkit has one core and several thin doors. Nothing is duplicated between
 them: the CLI, the MCP server, and the HTTP API all call
 `textflowkit.core.submission` and share one job model.
+
+![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 ```
                     ┌──────────────────────┐
@@ -200,11 +202,15 @@ the same options: `source`, `language`, `formats`, `output_dir`, `model`,
 `/jobs/batch` these are **per item**: each entry is its own full request, so an
 item's model/language/device apply only to that item (unlike the MCP batch tool,
 which takes one shared set for every source).
-`engine` defaults to `whisper` — openai-whisper on the torch stack: ROCm on AMD,
-CUDA on NVIDIA, CPU otherwise — and may be set to `faster-whisper`, the opt-in
-CTranslate2 engine for CPU and Apple Silicon that needs
-`pip install "textflowkit[faster-whisper]"`. The default is unchanged, and no
-speed or accuracy comparison between the engines is claimed. On a **single**
+`engine` defaults to `whistle` (a CPU-only native CLI needing no torch).
+`engine: "whisper"`
+selects openai-whisper on the torch stack — ROCm on AMD, CUDA on NVIDIA, CPU
+otherwise — and needs `pip install "textflowkit[whisper]"`; `engine:
+"faster-whisper"` is the opt-in CTranslate2 engine for CPU and Apple Silicon that
+needs `pip install "textflowkit[faster-whisper]"`. An unknown engine name, an
+unsupported language or non-CPU device for Whistle, or a missing extra is refused
+rather than silently re-routed, and no speed or accuracy comparison between the
+engines is claimed. On a **single**
 submission (`POST /jobs`) an unknown engine name or a missing extra is answered
 with **422 before a job record is written**. On `/jobs/batch` each item is
 admitted independently: an unusable engine (or any other per-item refusal - an
@@ -530,8 +536,9 @@ pool:
 TEXTFLOWKIT_MAX_CONCURRENCY=1   # default
 ```
 
-The default is **1** deliberately. Whisper saturates a GPU on its own, so parallel
-jobs thrash VRAM rather than finishing sooner.
+The default is **1** deliberately. A single model call saturates a GPU (Whisper)
+or holds a CPU-bound native run (Whistle) on its own, so parallel jobs contend for
+that resource rather than finishing sooner.
 
 **Raising the bound does not by itself parallelise transcription.** Model inference
 is serialized per engine *instance*: `WhisperEngine.transcribe` holds a lock across
@@ -563,7 +570,11 @@ because these are genuinely different situations:
 mid-call. Download hooks and the ffmpeg process respond during acquisition and
 decode, but cancellation during a 20-minute Whisper call takes effect when that
 call returns. The API reports `cancelling` rather than claiming an instant stop
-it cannot deliver.
+it cannot deliver. The default Whistle engine is the exception: a
+running Whistle run polls for cancellation between clips and terminates its exact
+owned child process, bounded by a per-clip timeout — so a long Whistle job stops
+promptly, while a single long `openai-whisper` model call is still only
+cancellable at its next stage boundary.
 
 ## Export formats
 

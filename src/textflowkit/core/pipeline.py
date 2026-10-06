@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from textflowkit.core.cancel import CancelledError
 from textflowkit.core.checkpoint import (
     CheckpointRecord,
     local_source_identity,
@@ -26,7 +27,14 @@ from textflowkit.core.checkpoint import (
     validate_local_resume,
 )
 from textflowkit.core.diarize import DiarizationError, assign_speakers, get_diarizer
-from textflowkit.core.engine import get_engine, require_engine
+from textflowkit.core.engine import (
+    DEFAULT_ENGINE,
+    engine_default_model,
+    get_engine,
+    require_engine,
+    validate_engine_options,
+    validate_model,
+)
 from textflowkit.core.model import Transcript
 from textflowkit.core.paths import (
     UnsafeInputPathError,
@@ -111,6 +119,33 @@ def _checkpoint_paths_usable(resumed: CheckpointRecord | None) -> bool:
     if resumed is None or resumed.transcript is None:
         return False
     return "transcribe" in resumed.finished_stages
+
+
+#: The keyword hooks a resumable native engine may accept on ``transcribe``.
+_ENGINE_RESUME_HOOKS = ("on_progress", "resume_progress", "check_cancel")
+
+
+def _engine_accepts_resume_hooks(engine: Any) -> bool:
+    """Whether this engine's ``transcribe`` can take the durable-resume hooks.
+
+    The engine interface is intentionally tiny (``transcribe(audio, *,
+    language)``), and every other engine - Whisper, faster-whisper, a test
+    double, a caller's custom engine - implements exactly that. Passing extra
+    keywords to one of them would raise ``TypeError`` and break a working engine,
+    so the decision is made from the callable's actual signature rather than from
+    its name: an engine that declares the hooks (or forwards ``**kwargs``) gets
+    them; everything else is called exactly as before. This is why adding
+    per-block resume never touched the shared ``Engine`` protocol.
+    """
+    import inspect
+
+    try:
+        parameters = inspect.signature(engine.transcribe).parameters
+    except (TypeError, ValueError):
+        return False
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return True
+    return all(name in parameters for name in _ENGINE_RESUME_HOOKS)
 
 
 # The per-stage completion markers a run leaves after each *optional*
@@ -211,8 +246,8 @@ def transcribe(
     language: str | None = None,
     formats: list[str] | None = None,
     output_dir: str | Path | None = None,
-    model: str = "small",
-    engine: str = "whisper",
+    model: str | None = None,
+    engine: str = DEFAULT_ENGINE,
     device: str | None = None,
     cookies_from_browser: str | None = None,
     keep_media: bool = False,
@@ -254,15 +289,17 @@ def transcribe(
     transcript: Transcript | None = None
     scratch: Path | None = None
     local_identity: dict[str, Any] | None = resumed.local_identity if resumed else None
+    # A partial (unfinished) engine body adopted from the checkpoint. Held here,
+    # read once, *before* any callback can overwrite the stored record - so the
+    # progress the resume depends on is never lost to an earlier stage snapshot.
+    # It is cleared the instant a full transcript exists, so no record ever
+    # carries the words twice.
+    engine_progress: dict[str, Any] | None = (
+        resumed.engine_progress if resumed is not None else None
+    )
 
-    def _checkpoint(stage: str | None = None) -> CheckpointRecord | None:
-        if check_cancel is not None:
-            check_cancel()
-        if stage is None or on_checkpoint is None:
-            return None
-        if stage not in finished_stages:
-            finished_stages.append(stage)
-        snapshot = CheckpointRecord(
+    def _snapshot() -> CheckpointRecord:
+        return CheckpointRecord(
             source=source,
             model=model,
             language=language,
@@ -277,12 +314,56 @@ def transcribe(
             },
             finished_stages=list(finished_stages),
             transcript=transcript.to_dict() if isinstance(transcript, Transcript) else None,
+            engine_progress=engine_progress,
             media_path=_recordable(media),
             audio_path=_recordable(audio),
             local_identity=local_identity,
         )
+
+    def _checkpoint(stage: str | None = None) -> CheckpointRecord | None:
+        if check_cancel is not None:
+            check_cancel()
+        if stage is None or on_checkpoint is None:
+            return None
+        if stage not in finished_stages:
+            finished_stages.append(stage)
+        snapshot = _snapshot()
         on_checkpoint(snapshot.to_dict())
         return snapshot
+
+    def _checkpoint_engine_progress(progress: dict[str, Any]) -> None:
+        """Persist one completed block's progress through the run-owned sink.
+
+        Called from the engine's ``on_progress`` once a core has finished. It is
+        deliberately *not* cancellation-guarded: the work is done, and this
+        snapshot is exactly the resume material a later attempt reads, so an
+        accepted cancellation arriving now must not throw it away. The write
+        still goes through the runner's guarded, run-owned sink, so it can never
+        land on a row a newer attempt owns. A display notice is emitted after the
+        write, and only through ``on_stage`` - whose own sink is guarded - so a
+        stop that has already been accepted is never announced as progress.
+        """
+        nonlocal engine_progress
+        if transcript is not None:
+            # A full transcript exists; partial progress must never be recorded
+            # beside it. This cannot happen in a normal run (progress fires only
+            # while transcribing) but the guard makes the invariant local.
+            return
+        engine_progress = progress
+        if on_checkpoint is not None:
+            on_checkpoint(_snapshot().to_dict())
+        # The display is separate from the durable write: a caller may want the
+        # block count without owning a checkpoint sink (and vice versa). It goes
+        # only through ``on_stage`` - whose own sink is guarded - so a stop that
+        # has already been accepted is never announced as progress.
+        if on_stage is not None:
+            completed = progress.get("completed_core_index")
+            total = progress.get("total_cores")
+            if isinstance(completed, int) and isinstance(total, int) and total > 0:
+                # A block count, not a percentage: windows are equal-sized cores,
+                # but decode time is not uniform across them, so "block N/M" is
+                # honest where "N%" would not be.
+                on_stage(f"transcribing block {completed}/{total}")
 
     def _stage(name: str) -> None:
         """Announce the stage now starting, or stop if cancellation arrived.
@@ -329,9 +410,35 @@ def transcribe(
     # typo or a missing extra costs neither a download, a decode, nor a model
     # load. The adapters preflight through `SubmissionRequest` and
     # `submit_request`; this is the same refusal for a caller who reaches the
-    # pipeline directly from Python.
+    # pipeline directly from Python. An unnamed model resolves to the selected
+    # engine's default (Whistle's `whistle`, or `small` for the Whisper-family
+    # engines), and engine options the selection cannot honour are refused here
+    # too - all before acquisition, so a direct Python caller gets the same
+    # cheap refusal the adapters do.
     try:
-        require_engine(engine)
+        # `require_engine` returns the *canonical* engine name - `default` and
+        # `openai-whisper` are accepted aliases that resolve to `whistle` and
+        # `whisper`. Assigning it here is not cosmetic: every checkpoint this run
+        # publishes records the engine it ran under, and a record that stored the
+        # raw alias (`default`) would name no canonical engine. A later resume
+        # reads that name back and matches it against the request, and a v3
+        # partial record gates on it - so persisting the alias would make a run
+        # that actually executed Whistle persist as `default` and then be refused
+        # by the Whistle-only partial gate. Canonical here means the request and
+        # every snapshot agree on the concrete engine that ran, and a direct
+        # Python caller's `engine='default'` records `whistle`, durably resumable.
+        engine = require_engine(engine)
+        validate_engine_options(engine, language=language, device=device)
+        if model is None:
+            model = engine_default_model(engine)
+        # An *explicit* model name must be checked here too, before acquisition.
+        # Without this a bad name (a typo, or the Whisper family's `small` handed
+        # to Whistle) reached the engine, which fails only *after* the media was
+        # fetched and decoded - a paid decode for a request that was never going
+        # to work. `validate_model` is the same cheap, import-free name check the
+        # adapters run through `SubmissionRequest`; a direct Python caller gets
+        # the identical refusal here, as a `PipelineError`.
+        validate_model(model, engine)
     except ValueError as exc:
         raise PipelineError(str(exc)) from exc
 
@@ -442,8 +549,31 @@ def transcribe(
 
                 eng = get_engine(engine, model=model, device=device)
                 _stage("transcribing")
+                # A resumable engine (Whistle) is handed its durable hooks: the
+                # per-block sink that persists partial progress, the validated
+                # partial to resume from, and the cancellation poll. Every other
+                # engine - and every test double or custom engine, which
+                # implements only `transcribe(audio, *, language)` - is called
+                # exactly as before, because the hooks are added only when the
+                # callable actually accepts them. The engine revalidates
+                # `resume_progress` against the real redecoded audio (identity,
+                # model, language, window policy) before running a single
+                # remaining block, so a stale or foreign partial is refused here
+                # rather than silently resumed.
+                transcribe_kwargs: dict[str, Any] = {"language": language}
+                if _engine_accepts_resume_hooks(eng):
+                    transcribe_kwargs["check_cancel"] = check_cancel
+                    transcribe_kwargs["on_progress"] = _checkpoint_engine_progress
+                    if engine_progress is not None:
+                        transcribe_kwargs["resume_progress"] = engine_progress
                 try:
-                    transcript = eng.transcribe(audio, language=language)
+                    transcript = eng.transcribe(audio, **transcribe_kwargs)
+                except CancelledError:
+                    # Cancellation is an orderly stop, not a failure. It must not
+                    # be wrapped into a PipelineError, or the runner would record
+                    # ERROR and lose the distinction (and the ownership) a
+                    # cancelled run carries.
+                    raise
                 except Exception as exc:  # engine failures are user-facing
                     raise PipelineError(f"transcription failed: {exc}") from exc
                 # extract_audio always writes PCM WAV. Its frame count includes
@@ -462,6 +592,11 @@ def transcribe(
                         raise PipelineError("local source changed during transcription") from exc
                     if current != local_identity:
                         raise PipelineError("local source changed during transcription")
+                # Transcription is now complete: the full transcript supersedes
+                # the partial body, so it is dropped before the finished
+                # checkpoint is written. The two must never coexist - they are
+                # the same words, and a record holding both could serve either.
+                engine_progress = None
                 _checkpoint("transcribe")
             elif needs_audio_for_resume and audio is None:
                 # A finished transcript is the expensive checkpoint, and the

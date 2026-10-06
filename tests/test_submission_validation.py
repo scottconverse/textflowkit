@@ -114,13 +114,17 @@ def test_real_names_and_local_files_are_still_accepted(tmp_path, no_work):
     media = tmp_path / "clip.wav"
     media.write_bytes(b"not really audio, but present")
     accepted = [
-        # Default engine, model names openai-whisper itself publishes.
-        {"source": str(media), "model": "tiny"},
-        {"source": str(media), "model": "small.en"},
-        # Explicit engine name and its alias.
-        {"source": str(media), "model": "base", "engine": "whisper"},
+        # The default engine (Whistle): its one model name, and the resolved
+        # default when no model is named at all.
+        {"source": str(media)},
+        {"source": str(media), "model": "whistle"},
+        # openai-whisper is now an explicit engine; its published size names are
+        # accepted there, including via the `openai-whisper` alias.
+        {"source": str(media), "model": "tiny", "engine": "whisper"},
+        {"source": str(media), "model": "small.en", "engine": "whisper"},
         {"source": str(media), "model": "base", "engine": "openai-whisper"},
-        {"source": str(media), "model": "small"},
+        # An unnamed model on an explicit engine resolves to that engine's own.
+        {"source": str(media), "engine": "whisper"},
     ]
     store = MemoryJobStore()
     for body in accepted:
@@ -255,7 +259,9 @@ def test_model_validation_loads_no_weights(monkeypatch, tmp_path):
     monkeypatch.setattr(whisper, "load_model", explode)
     media = tmp_path / "clip.wav"
     media.write_bytes(b"present")
-    assert SubmissionRequest(source=str(media), model="tiny").model == "tiny"
+    # This test is specifically about openai-whisper's loader, so the engine is
+    # named explicitly; the default engine (Whistle) does not import whisper.
+    assert SubmissionRequest(source=str(media), model="tiny", engine="whisper").model == "tiny"
 
 
 # --- output_dir confinement -------------------------------------------------

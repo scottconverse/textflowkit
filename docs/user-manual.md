@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.8
+# TextFlowKit user manual — v0.1.9
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -6,13 +6,21 @@ transcription website. The same core is available through the CLI, Python,
 MCP, and a JSON HTTP adapter. It runs on native Windows (no WSL), macOS, and
 Linux. The software is Apache-2.0 and provided **as is, without warranty**.
 
+**v0.1.9 makes Whistle the default engine.** It is a CPU-only native CLI that
+needs no PyTorch, so a fresh install stays small; `openai-whisper` moves to an
+optional extra selected explicitly with `--engine whisper`. See
+[section 2](#2-transcribe-one-file-or-url) and
+[section 7](#7-whistle-the-default-engine).
+
+![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+
 ## 1. Install and check the machine
 
 Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.8'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.9'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -20,9 +28,11 @@ textflowkit selftest
 
 The `export` extra installs DOCX support and a separate `textflowkit-fonts`
 package for offline multilingual PDFs. Omit extras you do not need. `doctor`
-reports available tools, extras, and compute device. `selftest` runs a real
-tiny-model transcription of bundled synthetic speech and checks for a known
-word; it may need to download Whisper weights on first use.
+reports available tools, extras, and compute device. `selftest` defaults to
+Whistle: it runs a real transcription of bundled synthetic speech and
+checks for a known word, normalizing the fixture to the engine's native sample
+rate; it downloads Whistle's pinned binary and model on first use. `selftest
+--engine whisper --model tiny` checks the openai-whisper torch stack instead.
 
 **Existing Windows AMD ROCm installation:** do not use the generic install
 command above if you already have a working ROCm PyTorch build. Normal pip
@@ -34,7 +44,8 @@ selection for yt-dlp, GPU checks, and optional diarization dependencies.
 ## 2. Transcribe one file or URL
 
 ```bash
-textflowkit transcribe meeting.mp4 --model small --formats json,srt,txt --output-dir transcripts
+textflowkit transcribe meeting.mp4 --formats json,srt,txt --output-dir transcripts
+textflowkit transcribe meeting.mp4 --engine whisper --model small --formats json,srt,txt --output-dir transcripts
 textflowkit transcribe 'https://www.youtube.com/watch?v=EXAMPLE' --formats json,srt --output-dir transcripts
 ```
 
@@ -42,7 +53,7 @@ The default formats are JSON, SRT, and TXT. Other supported outputs are VTT,
 Markdown, DOCX, and PDF. Output filenames include a job identifier so separate
 runs do not silently overwrite one another. JSON is the full-fidelity format:
 it retains segment timing, source text, optional speaker/translation fields,
-and Whisper word timings. `duration` represents the decoded audio length,
+and word timings from the engine. `duration` represents the decoded audio length,
 including trailing silence, rather than the end of the last spoken segment.
 
 To print only rendered text instead of writing files:
@@ -56,11 +67,15 @@ change their access rules. Of the 13 recognized platforms, only YouTube has a
 maintained live URL release check; the others are not independently verified
 on every release. See [sources and limitations](sources.md).
 
-`--engine` chooses the speech engine. The default is `whisper`
-(`openai-whisper` on the torch stack — ROCm on AMD, CUDA on NVIDIA, CPU
-otherwise) and is unchanged. `--engine faster-whisper` is an opt-in CPU/Mac
-engine; it needs `pip install "textflowkit[faster-whisper]"` and is not a ROCm
-replacement. The same choice is available as `engine` on the MCP tools
+`--engine` chooses the speech engine. The default is `whistle` (a CPU-only
+native CLI that needs no torch — see
+[section 7](#7-whistle-the-default-engine)). `--engine whisper` selects
+`openai-whisper` on the torch stack — ROCm
+on AMD, CUDA on NVIDIA, CPU otherwise.
+and `--engine faster-whisper` is an opt-in CPU/Mac engine; it needs
+`pip install "textflowkit[faster-whisper]"` and is not a ROCm replacement. The
+`whisper` extra (`pip install "textflowkit[whisper]"`) is required for the
+openai-whisper engine. The same choice is available as `engine` on the MCP tools
 (`transcribe_media`, `submit_batch_media`) and on the HTTP `/jobs` and
 `/jobs/batch` request bodies. On every surface an unknown engine name, or a
 missing extra, is rejected before anything is fetched — the install line above
@@ -154,13 +169,17 @@ can push a line past the target - text is never sacrificed to the width.
 ```python
 from textflowkit import transcribe
 
-result = transcribe("meeting.mp4", model="small", formats=["json", "srt"])
+result = transcribe("meeting.mp4", formats=["json", "srt"])
 print(result.transcript.duration)
 print(result.transcript.text)
 for segment in result.transcript.segments:
     for word in segment.words:
         print(word.start, word.end, word.text)
 ```
+
+`engine` defaults to the product default (Whistle) and a `model=None` resolves to
+that engine's own model. To use the torch engine, name it and its model explicitly:
+`transcribe("meeting.mp4", engine="whisper", model="small")`.
 
 `transcribe()` returns a `TranscribeResult` with `transcript` and `outputs`.
 Pass `output_dir=` to write files, or omit it to keep only the Python result.
@@ -244,9 +263,11 @@ production settings.
 
 The HTTP server is local-only by default. Do not expose it on a network
 without the documented authentication/TLS gateway, input/output boundaries,
-and SSRF-filtering egress proxy. Long model calls cancel cooperatively at
-their next stage boundary, not immediately. MCP and HTTP jobs decode under the
-same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
+and SSRF-filtering egress proxy. A long `openai-whisper` model call cancels
+cooperatively at its next stage boundary, not immediately; a Whistle run
+terminates its owned child process promptly between clips (see
+[section 7](#7-whistle-the-default-engine)). MCP and HTTP jobs decode
+under the same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 (see [transcribe one file or URL](#2-transcribe-one-file-or-url)).
 
 With `TEXTFLOWKIT_INPUT_ROOT` set, confined inputs must be self-contained
@@ -258,13 +279,80 @@ reach of that root. The `ffprobe` duration check is restricted the same way.
 See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
 [SECURITY.md](../SECURITY.md) for the exact guarantee and its limits.
 
-## 7. Release and help
+## 7. Whistle, the default engine
 
-- [v0.1.8 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.8)
-- [Core package 0.1.8 on PyPI](https://pypi.org/project/textflowkit/0.1.8/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+Whistle is the default engine in v0.1.9. It is a native CPU-only CLI that needs
+no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
+
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](assets/whistle-resume.svg)
+
+- **CPU only, no torch.** Whistle runs a pinned native binary and downloads one
+  pinned model on first use (about 17 MB). A request naming a GPU device (`cuda`,
+  `mps`) is refused, and the message names the explicit `whisper` engine as the
+  way to get a GPU — the engine never switches itself.
+- **Languages:** `en`, `de`, `fr`, `es`, `it`, `nl`, `pl`. Any other language is
+  refused when the request is built, before any media is fetched.
+- **Platforms:** Windows x86-64/arm64, Linux x86-64/arm64, Apple Silicon. **Intel
+  Macs are not supported** — the refusal names the explicit `whisper` engine. No
+  WSL is involved on Windows.
+- **Long audio.** The run splits audio into 26-second cores with up to 2 seconds
+  of context on each side, so each clip handed to the native CLI stays within its
+  30-second limit. A word belongs to the clip whose core contains its midpoint, so
+  every word is emitted once and repeated phrases are kept; per-clip words are
+  shifted to absolute time.
+- **Streaming is not used.** The native `--audio-stream` mode failed its coverage
+  and is never passed; only the standalone committed JSON output is read.
+- **Resume.** With `TEXTFLOWKIT_DB` set, a long run writes a partial checkpoint
+  after each clip. A resume checks the source and decoded-WAV hashes and the
+  configuration, then re-runs only the clips that were not finished — the finished
+  blocks' words are adopted as-is. The durable store still assumes one owning
+  process, as in [section 3](#3-batch-and-resume).
+- **Cancellation.** A running Whistle run terminates its exact owned child
+  process, bounded by a per-clip timeout and a bounded output cap, and always
+  re-raises a cancellation. A single long `openai-whisper` model call is still
+  cancellable only at its next stage boundary.
+- **Telemetry.** Every Whistle child process is launched with
+  `NEEDLE_TELEMETRY=0`, `DO_NOT_TRACK=1`, and `CI=1`, overriding a parent that
+  opted in. The product ships no analytics, usage SDK, anonymous ids, or events,
+  and there is no setting to turn them on. This applies the upstream documented
+  gate; it does not claim the upstream binary's tracking code has been physically
+  removed. `doctor` reports `whistle telemetry  disabled in child env`.
+- **Offline.** Set `TEXTFLOWKIT_OFFLINE` to refuse any download (a missing asset
+  raises; a present-but-corrupt asset is refused, never silently replaced). Set
+  `TEXTFLOWKIT_MODELS_DIR` to choose where pinned assets live. `TEXTFLOWKIT_OFFLINE`
+  governs the Whistle asset helper only: it downloads just pinned runtime/model
+  assets, while media acquisition and optional translation may independently use
+  the network. These downloads are not telemetry.
+- **Doctor.** With no network, `doctor` reports the default engine, the Whistle
+  platform and cache location, whether the model is cached, whether offline mode
+  is on, and the telemetry gate.
+
+**Honest verification boundary.** A local run transcribed a 4-hour
+(14,407-second) recording on CPU into 555 clips, 34,596 words, and 2,875 segments
+in 731 seconds, offline and with telemetry forced off; a separate two-process run
+proved durable block resume. These are first local test numbers on one machine —
+not a promise of universal performance, and not a claim that its accuracy equals
+Whisper's. No human-scored word-error rate is claimed. The bundled self-test
+passes with Whistle's own real speech output.
+
+## 8. Release and help
+
+- [v0.1.9 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9)
+- [Core package 0.1.9 on PyPI](https://pypi.org/project/textflowkit/0.1.9/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The preceding v0.1.7 source-candidate verification covered real CLI/HTTP/MCP speech, exports and completed resume. The v0.1.8 runtime fixes were independently checked through fresh-process CLI restart probes, real SQLite setup-failure tests, and the full Windows test suite. See release artifacts and workflow results for publication evidence. The following paragraphs retain historical evidence for v0.1.6 and v0.1.5; they do not establish v0.1.8 installed-package or harness verification.
+The v0.1.9 release makes Whistle the default engine and moves `openai-whisper` to
+the optional `whisper` extra. Whistle's own verification boundary is in
+[section 7](#7-whistle-the-default-engine). Release artifacts and workflow
+results are the publication evidence. The paragraphs below retain historical
+evidence for v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish v0.1.9
+installed-package or harness verification.
+
+The v0.1.8 release carried the four audit-lite fixes for the 2026-10-01
+post-release audit, and the preceding v0.1.7 source-candidate verification
+covered real CLI/HTTP/MCP speech, exports and completed resume. The v0.1.8
+runtime fixes were independently checked through fresh-process CLI restart
+probes, real SQLite setup-failure tests, and the full Windows test suite.
 
 The v0.1.6 release passed the Windows/Linux/macOS CI matrix on the tagged
 commit, and a fresh Windows Python 3.12 install of

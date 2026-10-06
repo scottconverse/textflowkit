@@ -120,6 +120,71 @@ def test_corrupt_checkpoint_is_treated_as_absent():
     assert load_checkpoint(store.get(job.id)) is None
 
 
+def test_persisted_record_naming_the_default_alias_decodes_as_legacy_whisper():
+    """A saved ``engine='default'`` record is a pre-Whistle Whisper record.
+
+    The alias now means Whistle, but the record was written when it meant the
+    Whisper engine; canonicalizing it to the new default would break the match
+    against a decoded ``whisper`` request and re-run completed work. It decodes
+    to ``whisper`` - what it meant - so it still matches the legacy request.
+    """
+    raw = _record(engine="default").to_dict()
+    record = CheckpointRecord.from_dict(raw)
+    assert record.engine == "whisper"
+    # And it matches a request decoded from the same legacy row.
+    request = SubmissionRequest.from_dict(
+        {"source": "https://example.com/v", "model": "small", "language": "en",
+         "device": "cpu", "engine": "default"}
+    )
+    assert request.engine == "whisper"
+    assert matches(
+        record, source=request.source, model=request.model,
+        language=request.language, engine=request.engine, device=request.device,
+        options=record.options,
+    )
+
+
+def test_persisted_record_naming_openai_whisper_alias_canonicalises_to_whisper():
+    record = CheckpointRecord.from_dict(_record(engine="openai-whisper").to_dict())
+    assert record.engine == "whisper"
+
+
+def test_persisted_record_naming_whistle_keeps_whistle():
+    record = CheckpointRecord.from_dict(_record(engine="whistle").to_dict())
+    assert record.engine == "whistle"
+
+
+def test_v3_partial_progress_with_the_default_alias_fails_closed_not_as_whistle():
+    """The partial body is Whistle-only; a ``default`` alias must not sneak in.
+
+    A pre-Whistle record still naming ``default`` resolves to ``whisper``, which
+    is not Whistle, so a v3 partial engine body on it is refused rather than
+    reinterpreted as Whistle's own partial work.
+    """
+    from textflowkit.core.checkpoint import CheckpointError
+
+    raw = {
+        "version": 3,
+        "source": "https://example.com/v",
+        "model": "whistle",
+        "engine": "default",
+        "finished_stages": ["source"],
+        "engine_progress": {
+            "schema": "textflowkit.whistle.progress/1",
+            "policy": "p",
+            "wav_identity": "a" * 64,
+            "model_sha256": "b" * 64,
+            "binary_sha256": "c" * 64,
+            "duration": 3600.0,
+            "language": "en",
+            "completed_core_index": 0,
+            "segments": [],
+        },
+    }
+    with pytest.raises(CheckpointError):
+        CheckpointRecord.from_dict(raw)
+
+
 def test_matches_rejects_different_source_model_language_device_or_options():
     record = _record()
     base = {
@@ -193,7 +258,10 @@ def test_v1_local_checkpoint_is_rejected_for_resume_but_v1_url_is_explicitly_reu
     media = tmp_path / "old.wav"
     media.write_bytes(b"old media")
     store = MemoryJobStore()
-    local_request = SubmissionRequest(source=str(media), formats=["json"])
+    # A legacy v1 record predates the engine field, so it decodes as the
+    # Whisper family with its `small` model. The request that resumes it must
+    # name that same engine; the bare default (`whistle`) publishes no `small`.
+    local_request = SubmissionRequest(source=str(media), formats=["json"], engine="whisper")
     local = store.create(local_request.source, request=local_request.to_dict())
     local_record = CheckpointRecord(
         source=str(media), model="small", options=local_request.options(),
@@ -214,7 +282,7 @@ def test_v1_local_checkpoint_is_rejected_for_resume_but_v1_url_is_explicitly_reu
     with pytest.raises(ValueError, match="legacy local checkpoint"):
         submit_request(store, local_request, background=False, resume=True)
 
-    url_request = SubmissionRequest(source="https://example.com/clip.mp3", formats=["json"])
+    url_request = SubmissionRequest(source="https://example.com/clip.mp3", formats=["json"], engine="whisper")
     url = store.create(url_request.source, request=url_request.to_dict())
     url_record = CheckpointRecord(
         source=url_request.source, model="small", options=url_request.options(),
@@ -274,7 +342,7 @@ def test_resume_does_not_require_scratch_media(tmp_path, monkeypatch):
     # include this test's temp directory for the duration of the call.
     monkeypatch.setenv("TEXTFLOWKIT_OUTPUT_ROOT", str(tmp_path))
     result = pipeline.transcribe(
-        str(media), model="tiny", formats=["json"],
+        str(media), engine="whisper", model="tiny", formats=["json"],
         output_dir=tmp_path, resume_checkpoint=checkpoint,
         input_root=tmp_path,
     )
@@ -310,7 +378,7 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
         state=JobState.DONE,
         transcript=tr.to_dict(),
         checkpoint=CheckpointRecord(
-            source=str(media), model="tiny",
+            source=str(media), model="tiny", engine="whisper",
             options={"formats": ["json"], "diarize": False,
                      "diarizer_backend": "pyannote",
                      "translate_to": None, "translator_backend": "ollama"},
@@ -330,6 +398,7 @@ def test_cli_resume_actually_reuses_a_checkpoint(tmp_path, monkeypatch, capsys):
 
     rc = cli_mod.main([
         "transcribe", str(media),
+        "--engine", "whisper",
         "--model", "tiny",
         "--formats", "json",
         "--output-dir", str(tmp_path),
@@ -522,6 +591,7 @@ def test_pipeline_resume_skips_acquisition_extraction_and_engine(monkeypatch, tm
 
     result = pipeline.transcribe(
         source,
+        engine="whisper",
         model="small",
         language="en",
         device="cpu",
@@ -579,7 +649,7 @@ def test_diarization_resume_reacquires_audio_without_whisper(monkeypatch, tmp_pa
     monkeypatch.setattr(pipeline, "get_diarizer", lambda *a, **k: Diarizer())
 
     result = pipeline.transcribe(
-        source, model="small", language="en", device="cpu", diarize=True,
+        source, engine="whisper", model="small", language="en", device="cpu", diarize=True,
         resume_checkpoint=checkpoint.to_dict(),
     )
     assert calls == ["fetch", "extract", "diarize"]
@@ -624,6 +694,7 @@ def test_pipeline_resume_falls_back_when_transcribe_stage_is_missing(monkeypatch
 
     result = pipeline.transcribe(
         source,
+        engine="whisper",
         model="small",
         language="en",
         device="cpu",
@@ -667,6 +738,7 @@ def test_pipeline_checkpoints_follow_stage_order(monkeypatch, tmp_path):
 
     pipeline.transcribe(
         source,
+        engine="whisper",
         model="small",
         language="en",
         formats=["json"],

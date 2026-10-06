@@ -94,6 +94,7 @@ def _request(source: Path, output_dir: Path) -> SubmissionRequest:
         source=str(source),
         formats=["txt", "srt"],
         output_dir=str(output_dir),
+        engine="whisper",
         model="tiny",
         device="cpu",
     )
@@ -208,6 +209,8 @@ def test_cli_resume_completes_a_partially_published_job(
         "txt,srt",
         "--output-dir",
         str(output_dir),
+        "--engine",
+        "whisper",
         "--model",
         "tiny",
         "--device",

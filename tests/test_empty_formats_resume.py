@@ -80,6 +80,7 @@ def test_empty_formats_request_resumes_its_own_checkpoint(
         request = SubmissionRequest(
             source=str(source),
             formats=[],
+            engine="whisper",
             model="tiny",
             device="cpu",
             output_dir=str(output_dir) if with_output_dir else None,
@@ -118,14 +119,14 @@ def test_empty_formats_request_finds_its_own_checkpoint_without_a_job_id(
     store = MemoryJobStore()
     try:
         first = submit_request(
-            store, SubmissionRequest(source=str(source), formats=[], model="tiny", device="cpu"),
+            store, SubmissionRequest(source=str(source), formats=[], engine="whisper", model="tiny", device="cpu"),
             background=False,
         )
         assert first.state is JobState.DONE
         assert fake_pipeline.calls == 1
 
         again = submit_request(
-            store, SubmissionRequest(source=str(source), formats=[], model="tiny", device="cpu"),
+            store, SubmissionRequest(source=str(source), formats=[], engine="whisper", model="tiny", device="cpu"),
             background=False, resume=True,
         )
         assert again.id == first.id

@@ -30,6 +30,7 @@ from textflowkit.core.bind import (
     developer_request_refusal,
     resolve_client_identity,
 )
+from textflowkit.core.engine import DEFAULT_ENGINE
 from textflowkit.core.executor import (
     QueueFullError,
     get_default_executor,
@@ -242,16 +243,17 @@ class TranscribeRequest(BaseModel):
     language: str | None = Field(None, description="ISO language code; auto-detected if omitted")
     formats: list[str] = Field(default_factory=lambda: list(DEFAULT_FORMATS))
     output_dir: str | None = Field(None, description="Directory for rendered files; omit for none")
-    model: str = Field("small", description="Whisper model size")
-    device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted")
+    model: str | None = Field(None, description="Model name; defaults to the engine's own (whistle, or small for whisper)")
+    device: str | None = Field(None, description="cuda or cpu; auto-detected if omitted (Whistle is CPU-only)")
     cookies_from_browser: str | None = None
     diarize: bool = False
     translate_to: str | None = None
     engine: str = Field(
-        "whisper",
+        DEFAULT_ENGINE,
         description=(
-            "Speech engine: 'whisper' (default, openai-whisper on the torch stack) "
-            "or the opt-in 'faster-whisper' (CPU/Mac; needs the faster-whisper extra)"
+            "Speech engine: 'whistle' (default, CPU-only, no torch), 'whisper' "
+            "(openai-whisper on the torch stack; needs the whisper extra), or "
+            "'faster-whisper' (CPU/Mac; needs the faster-whisper extra)"
         ),
     )
 

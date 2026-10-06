@@ -103,7 +103,8 @@ def test_confined_cli_transcribes_real_media(suffix, cli_boundary, capsys):
     _wav(media) if suffix == ".wav" else _media(media)
 
     rc = cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
-                   str(output), "--model", "tiny", "--device", "cpu", "--quiet"])
+                   str(output), "--engine", "whisper", "--model", "tiny",
+                   "--device", "cpu", "--quiet"])
     captured = capsys.readouterr()
 
     assert rc == 0, captured.err
@@ -136,7 +137,8 @@ def test_completed_local_resume_requires_existing_unchanged_file(cli_boundary, c
     media = root / "clip.wav"
     _wav(media)
     args = ["transcribe", str(media), "--formats", "json", "--output-dir",
-            str(output), "--model", "tiny", "--device", "cpu", "--quiet"]
+            str(output), "--engine", "whisper", "--model", "tiny",
+            "--device", "cpu", "--quiet"]
     assert cli.main(args) == 0
     first = capsys.readouterr().out.strip()
     assert cli.main([*args, "--resume"]) == 0
@@ -179,7 +181,7 @@ def test_local_resume_rejects_changed_or_deleted_media_independent_of_wav_fix(
     media = root / "mutable.mp3"
     _media(media)
     args = ["transcribe", str(media), "--formats", "json", "--output-dir",
-            str(output), "--model", "tiny", "--quiet"]
+            str(output), "--engine", "whisper", "--model", "tiny", "--quiet"]
     assert cli.main(args) == 0
     capsys.readouterr()
     assert engine.calls == 1
@@ -214,7 +216,7 @@ def test_http_and_mcp_resume_share_local_identity_validation(
     media = root / "shared.wav"
     _wav(media)
     assert cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
-                     str(output), "--model", "tiny", "--quiet"]) == 0
+                     str(output), "--engine", "whisper", "--model", "tiny", "--quiet"]) == 0
     capsys.readouterr()
     assert engine.calls == 1
     job = store.list(limit=1)[0]
@@ -258,7 +260,7 @@ def test_mcp_resume_honors_tightened_input_root(cli_boundary, monkeypatch):
     def request_for(media, media_root):
         return submission.SubmissionRequest(
             source=str(media), formats=["json"], output_dir=str(output),
-            model="tiny", device="cpu", input_root=str(media_root),
+            engine="whisper", model="tiny", device="cpu", input_root=str(media_root),
         )
 
     # Saved while the wider root was configured, then interrupted and reaped.
@@ -321,7 +323,7 @@ def test_local_diarization_resume_reacquires_wav_without_collision(
     media = root / "speaker.wav"
     _wav(media)
     assert cli.main(["transcribe", str(media), "--formats", "json", "--output-dir",
-                     str(output), "--model", "tiny", "--quiet"]) == 0
+                     str(output), "--engine", "whisper", "--model", "tiny", "--quiet"]) == 0
     capsys.readouterr()
     assert engine.calls == 1
     # A finished job keeps its transcript in the job field and its checkpoint
@@ -340,7 +342,8 @@ def test_local_diarization_resume_reacquires_wav_without_collision(
     monkeypatch.setattr(pipeline, "get_engine", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("Whisper must not rerun on diarization resume")))
     monkeypatch.setattr(pipeline, "get_diarizer", lambda *a, **k: Diarizer())
-    result = pipeline.transcribe(str(media), model="tiny", formats=["json"],
+    result = pipeline.transcribe(str(media), engine="whisper", model="tiny",
+                                 formats=["json"],
                                  input_root=root, output_dir=output, diarize=True,
                                  resume_checkpoint=checkpoint)
     assert result.transcript.segments[0].speaker == "SPEAKER_00"

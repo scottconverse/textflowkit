@@ -138,6 +138,7 @@ def test_batch_resume_reopens_error_and_forwards_checkpoint(monkeypatch):
         ["https://example.com/v"],
         store=store,
         resume=True,
+        engine="whisper",
         model="small",
         language="en",
         formats=["json"],
@@ -168,7 +169,8 @@ def test_batch_resume_reopens_cancelled_item(monkeypatch):
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
     report = run_batch(["https://example.com/v"], store=store,
-                       resume=True, model="small", language="en", formats=["json"])
+                       resume=True, engine="whisper", model="small", language="en",
+                       formats=["json"])
 
     assert report.items[0].resumed is True
     assert report.items[0].job_id == prior.id
@@ -201,6 +203,7 @@ def test_batch_resume_reuses_done_result_without_new_job(monkeypatch):
         ["https://example.com/v"],
         store=store,
         resume=True,
+        engine="whisper",
         model="small",
         language="en",
         formats=["json"],
@@ -225,7 +228,7 @@ def test_batch_resume_without_checkpoint_starts_new_job(monkeypatch, tmp_path):
 
     monkeypatch.setattr(submission, "run_job", fake_run_job)
 
-    report = run_batch([media], store=store, resume=True, model="small")
+    report = run_batch([media], store=store, resume=True, engine="whisper", model="small")
 
     assert report.items[0].resumed is False
     assert seen[0][1] is None
