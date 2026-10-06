@@ -2,10 +2,18 @@
 
 The [TextFlowKit landing page](https://www.textflowkit.org/) is the static
 `docs/index.html` file. It does **not** run the CLI, MCP server, HTTP adapter,
-or speech models. A public transcription service is a separate, future
-deployment with its own security and capacity design.
+local browser interface, or speech models. A public transcription service is a
+separate, future deployment with its own security and capacity design.
 The landing page links to the versioned [user manual](user-manual.md), which
 is rendered on GitHub rather than by the static Pages site.
+
+**The local browser interface is not this site.** As of v0.1.10 the core package
+ships `textflowkit-ui`, a loopback-only workspace that runs on the operator's own
+machine. It is deliberately **not** hosted here: the Pages site publishes no
+upload form, no transcription endpoint, and no link that would imply the local app
+is reachable on the public server. The landing page describes the local workspace
+and links its install/shortcut instructions, but the program itself exists only on
+the machine that installed it.
 
 ## Cloudflare Pages configuration
 

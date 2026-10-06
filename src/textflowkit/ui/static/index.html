@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="textflowkit-capability" content="__TFK_CAPABILITY__">
+<meta name="textflowkit-origin" content="__TFK_ORIGIN__">
+<meta name="textflowkit-version" content="__TFK_VERSION__">
+<title>TextFlowKit</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<a class="skip-link" href="#workspace">Skip to the workspace</a>
+
+<header class="site-header">
+  <h1>TextFlowKit</h1>
+  <p class="subtitle">Local transcription workspace &mdash; runs on this machine only.</p>
+  <p class="version" id="version-line" aria-live="polite"></p>
+</header>
+
+<main id="workspace" class="workspace">
+  <!-- Input column -->
+  <section class="panel input-panel" aria-labelledby="input-heading">
+    <h2 id="input-heading">1 &middot; Choose media</h2>
+
+    <div id="drop-zone" class="drop-zone" tabindex="0"
+         role="button" aria-label="Drop a media file here, or activate to choose one">
+      <p class="drop-primary">Drop a media file here</p>
+      <p class="drop-secondary">or <span class="link-look">choose a file</span></p>
+      <input id="file-input" type="file" class="visually-hidden"
+             accept="audio/*,video/*" aria-label="Choose a media file to transcribe">
+      <p id="upload-note" class="hint"></p>
+    </div>
+
+    <div class="upload-progress" id="upload-progress" hidden>
+      <progress id="upload-bar" max="100" value="0"></progress>
+      <span id="upload-progress-text" class="hint" aria-live="polite"></span>
+    </div>
+
+    <div class="source-alt">
+      <label for="source-input">Or paste a URL</label>
+      <input id="source-input" type="url" inputmode="url" autocomplete="off"
+             placeholder="https://&hellip;">
+      <button id="source-use" type="button" class="secondary">Use URL</button>
+    </div>
+
+    <button id="transcribe" type="button" class="primary">Transcribe</button>
+    <p id="preflight" class="preflight" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- Progress column -->
+  <section class="panel progress-panel" aria-labelledby="progress-heading">
+    <h2 id="progress-heading">2 &middot; Progress</h2>
+    <div id="current-job" class="current-job">
+      <p class="muted">No job running.</p>
+    </div>
+    <div class="current-actions" id="current-actions" hidden>
+      <button id="cancel-job" type="button" class="danger">Cancel</button>
+      <button id="resume-job" type="button" class="secondary" hidden>Resume</button>
+    </div>
+  </section>
+
+  <!-- Results column -->
+  <section class="panel results-panel" aria-labelledby="results-heading">
+    <h2 id="results-heading">3 &middot; Results</h2>
+
+    <div class="results-toolbar">
+      <input id="search-input" type="search" placeholder="Search the transcript&hellip;"
+             aria-label="Search the transcript">
+      <button id="search-button" type="button" class="secondary">Find</button>
+      <button id="copy-button" type="button" class="secondary">Copy text</button>
+      <label class="download-label" for="download-format">Download
+        <select id="download-format">
+          <option value="txt">TXT</option>
+          <option value="md">Markdown</option>
+          <option value="srt">SRT</option>
+          <option value="vtt">VTT</option>
+          <option value="json">JSON</option>
+          <option value="docx">DOCX</option>
+          <option value="pdf">PDF</option>
+        </select>
+      </label>
+      <button id="download-button" type="button" class="secondary">Save</button>
+    </div>
+
+    <!-- Visible local player: when a local file is chosen, app.js moves the
+         blob-backed <audio>/<video> element in here so the operator can see
+         what is playing and pause or stop it. Native controls, no remote
+         playback; the element is removed again when the selection changes. -->
+    <div id="player" class="player" hidden></div>
+
+    <p id="results-status" class="hint" role="status" aria-live="polite"></p>
+    <div id="search-results" class="search-results" hidden></div>
+    <div id="transcript" class="transcript" aria-label="Transcript"></div>
+  </section>
+
+  <!-- Recent jobs -->
+  <section class="panel recent-panel" aria-labelledby="recent-heading">
+    <h2 id="recent-heading">Recent jobs</h2>
+    <ul id="recent-list" class="recent-list"></ul>
+  </section>
+
+  <!-- Advanced options -->
+  <section class="panel advanced-panel" aria-labelledby="advanced-heading">
+    <h2 id="advanced-heading">
+      <button id="advanced-toggle" type="button" class="disclosure"
+              aria-expanded="false" aria-controls="advanced-body">Advanced options</button>
+    </h2>
+    <div id="advanced-body" class="advanced-body" hidden>
+      <div class="field-grid">
+        <label>Language
+          <input id="opt-language" type="text" placeholder="auto-detect" autocomplete="off">
+        </label>
+        <label>Engine
+          <select id="opt-engine"></select>
+        </label>
+        <label>Model
+          <select id="opt-model"></select>
+        </label>
+        <label>Device
+          <select id="opt-device">
+            <option value="">auto</option>
+            <option value="cpu">cpu</option>
+            <option value="cuda">cuda</option>
+          </select>
+        </label>
+        <label>Output folder (optional)
+          <input id="opt-output-dir" type="text" placeholder="(managed folder)" autocomplete="off">
+        </label>
+      </div>
+
+      <fieldset class="formats">
+        <legend>Output formats</legend>
+        <label><input type="checkbox" name="format" value="txt" checked> TXT</label>
+        <label><input type="checkbox" name="format" value="srt" checked> SRT</label>
+        <label><input type="checkbox" name="format" value="json" checked> JSON</label>
+        <label><input type="checkbox" name="format" value="vtt"> VTT</label>
+        <label><input type="checkbox" name="format" value="md"> Markdown</label>
+        <label><input type="checkbox" name="format" value="docx"> DOCX</label>
+        <label><input type="checkbox" name="format" value="pdf"> PDF</label>
+      </fieldset>
+
+      <div class="opt-note" id="diarize-block">
+        <label class="toggle">
+          <input id="opt-diarize" type="checkbox"> Label speakers (diarize)
+        </label>
+        <p class="notice" id="diarize-notice">
+          Needs the optional <code>diarize</code> extra <em>and</em> a Hugging Face
+          token with access to the gated pyannote model. Presence of the package is
+          not proof the model is downloadable; the job fails loudly if either is
+          missing.
+        </p>
+      </div>
+
+      <div class="opt-note" id="translate-block">
+        <label for="opt-translate">Translate to (optional)</label>
+        <input id="opt-translate" type="text" placeholder="e.g. es" autocomplete="off">
+        <p class="notice">
+          Uses the configured Ollama backend. The job fails loudly if the backend is
+          unreachable. If that backend is remote or cloud-hosted (not on this
+          machine), the transcript text is sent to it for translation &mdash; choose
+          a local model if transcripts must not leave this machine.
+        </p>
+      </div>
+
+      <p class="notice" id="asset-notice" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>
+    Local interface &mdash; this page loads no analytics and no external assets;
+    every page asset is served by this process. Transcription runs on this
+    machine by default.
+  </p>
+  <p class="notice">
+    Network is used in a few cases. Choosing a <em>URL</em> source downloads that
+    media from the internet. The first run of an engine may download its model.
+    And if you configure remote/cloud translation, the transcript text is sent to
+    that translation backend. With a local translation model and local media, no
+    transcript leaves this machine.
+  </p>
+  <p>
+    <button id="stop-server" type="button" class="secondary">Stop server</button>
+    <span id="stop-status" class="hint" role="status" aria-live="polite"></span>
+  </p>
+</footer>
+
+<!-- Confirmation for stopping the local server. Native <dialog> keeps the focus
+     trap and Escape handling in the browser. Stopping waits for the current
+     jobs to finish before shutting down; it does not interrupt them (use Cancel
+     on a job first if you want to stop it early). -->
+<dialog id="stop-dialog" class="dialog">
+  <form method="dialog">
+    <h3>Stop the local server?</h3>
+    <p>
+      This shuts down the local web server. It waits for the current jobs to
+      finish, then stops; it does not interrupt a job that is still running. If
+      you want to interrupt a job, press Cancel on that job first. Saved progress
+      is kept, so a job can be resumed the next time you start the UI. Recent
+      jobs are not deleted.
+    </p>
+    <menu class="dialog-actions">
+      <button value="cancel" class="secondary">Keep running</button>
+      <button value="confirm" class="danger" id="stop-confirm">Stop server</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- Confirmation dialog for first-use asset download. Native <dialog> keeps the
+     focus trap and Escape handling in the browser rather than in our script. -->
+<dialog id="asset-dialog" class="dialog">
+  <form method="dialog">
+    <h3>First use will download a model</h3>
+    <p id="asset-dialog-text"></p>
+    <menu class="dialog-actions">
+      <button value="cancel" class="secondary">Cancel</button>
+      <button value="confirm" class="primary" id="asset-confirm">Download and continue</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

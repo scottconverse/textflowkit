@@ -170,6 +170,30 @@ verification/deployment boundaries, not claims of complete platform coverage.
   performance or accuracy claim. Publication and its exact-commit CI are tracked
   by the [release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml).
 
+## v0.1.10 — local browser interface shipped
+
+- [x] Ship v0.1.10 review follow-ups: **local browser interface.** The
+  loopback-only browser workspace (`textflowkit-ui`) is now part of the core
+  package and is **shipped, not future**: a regular install carries the
+  `textflowkit-ui` command (it needs the `http` extra, which supplies FastAPI and
+  uvicorn, and adds no new dependency). It mounts the existing developer HTTP app
+  under `/api` unchanged, reuses the same submission contract and durable job
+  store, and adds only transport — a loopback session layer, a streamed upload
+  (2 GiB default cap), a fixed-format download, in-workspace playback on the
+  currently selected media, and a capability endpoint. One process owns a
+  database via an OS file lock; **Stop server** drains (waits for current jobs to
+  finish rather than cancelling them). A Windows desktop shortcut is available
+  (`textflowkit-ui --create-shortcut`, no `pywin32`). The engine, CLI, Python,
+  MCP, and HTTP surfaces are unchanged and there is **no endpoint-breaking
+  change**. Verification is an automated suite plus a **native Windows**
+  real-browser proof; **no live Linux or macOS UI run is claimed here** — those
+  platforms are covered by automated tests and by CI (Windows/Linux/macOS), which
+  the coordinator runs separately. No live optional-backend
+  (translation/diarization) run through the UI is claimed. Publication and its
+  exact-commit CI are tracked by the
+  [release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml).
+  Fonts remain 0.1.6 and are reused without republishing.
+
 ## Design constraints
 
 - Platform differences stay in the source layer. The pipeline never branches on

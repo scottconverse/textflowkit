@@ -1,15 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 700" width="1180" height="700"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 720" width="1240" height="720"
      role="img" aria-labelledby="ovTitle ovDesc" font-family="Inter, ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
   <title id="ovTitle">TextFlowKit shared-core architecture</title>
   <desc id="ovDesc">One shared core turns a media source into a canonical transcript and
-exports. Four thin entry points feed the core, but they differ: CLI, MCP and HTTP go
-through the shared submission contract that owns jobs and resume; the public Python
-transcribe() calls the pipeline directly and creates no adapter job. The core acquires and
-decodes audio with ffmpeg, then transcribes with one of two alternative engines — Whistle
-by default, or an explicitly selected openai-whisper — never both in sequence. Optional
-postprocessing (speaker labels or translation) sits after the transcript; when no
-postprocess is selected the transcript routes straight to export, bypassing it. Renderers
-publish TXT, SRT, VTT, JSON, Markdown, and optionally DOCX and PDF.</desc>
+exports. Five thin entry points feed the core, but they differ. CLI, MCP, HTTP, and the
+local browser interface go through the shared submission contract that owns jobs and resume;
+the local browser interface is layered over the existing HTTP application — it mounts it
+under /api unchanged and adds only a loopback browser session — and shares the same job
+store, so it is not a new pipeline. The public Python transcribe() calls the pipeline
+directly and creates no adapter job. The core acquires and decodes audio with ffmpeg, then
+transcribes with one of two alternative engines — Whistle by default, or an explicitly
+selected openai-whisper — never both in sequence. Optional postprocessing (speaker labels or
+translation) sits after the transcript; when no postprocess is selected the transcript routes
+straight to export, bypassing it. Renderers publish TXT, SRT, VTT, JSON, Markdown, and
+optionally DOCX and PDF.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
@@ -36,6 +39,10 @@ publish TXT, SRT, VTT, JSON, Markdown, and optionally DOCX and PDF.</desc>
       <stop offset="0" stop-color="#fff8ea"/>
       <stop offset="1" stop-color="#fdf0d8"/>
     </linearGradient>
+    <linearGradient id="uiPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef1fb"/>
+      <stop offset="1" stop-color="#e2e8f8"/>
+    </linearGradient>
   </defs>
 
   <style>
@@ -43,147 +50,164 @@ publish TXT, SRT, VTT, JSON, Markdown, and optionally DOCX and PDF.</desc>
     .core  { fill: url(#corePanel); stroke: #7fceb1; stroke-width: 1.8; rx: 12; }
     .opt   { fill: url(#optPanel); stroke: #e6c47a; stroke-width: 1.5; rx: 10; }
     .io    { fill: #ffffff; stroke: #9db4c6; stroke-width: 1.5; rx: 10; }
+    .ui    { fill: url(#uiPanel); stroke: #8fa3d6; stroke-width: 1.7; rx: 10; }
     .h     { fill: #14303f; font-size: 17px; font-weight: 700; }
     .hs    { fill: #1c3b4a; font-size: 15px; font-weight: 700; }
     .t     { fill: #2a4356; font-size: 13px; }
     .ts    { fill: #4a6478; font-size: 11.5px; }
     .tag   { fill: #0f7a56; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
     .tag2  { fill: #9a6a12; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .tag3  { fill: #3f5391; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
     .edge  { stroke: #3b556e; stroke-width: 2; fill: none; marker-end: url(#arrow); }
     .edgeM { stroke: #2f9e7a; stroke-width: 2.4; fill: none; marker-end: url(#arrowMint); }
     .edgeA { stroke: #b07d1a; stroke-width: 2; fill: none; marker-end: url(#arrowAmber); }
+    .edgeU { stroke: #3f5391; stroke-width: 2; fill: none; marker-end: url(#arrow); }
     .edgeD { stroke: #3b556e; stroke-width: 2; fill: none; stroke-dasharray: 6 5;
              marker-end: url(#arrow); }
     .edgeDB{ stroke: #b07d1a; stroke-width: 2; fill: none; stroke-dasharray: 6 5;
              marker-end: url(#arrowAmber); }
     .el    { fill: #3b556e; font-size: 11.5px; }
     .ela   { fill: #b07d1a; font-size: 11.5px; }
+    .elu   { fill: #3f5391; font-size: 11.5px; }
     .elw   { fill: #ffffff; font-size: 11.5px; }
     .cap   { fill: #5b7186; font-size: 12px; }
   </style>
 
-  <rect x="0" y="0" width="1180" height="700" fill="#ffffff"/>
+  <rect x="0" y="0" width="1240" height="720" fill="#ffffff"/>
   <text x="40" y="46" class="h">TextFlowKit — one shared core, thin doors</text>
   <text x="40" y="70" class="cap">Media in, canonical transcript and subtitles out. The pipeline lives in the core; every interface is thin.</text>
 
   <!-- Entry points column -->
-  <text x="40" y="112" class="tag">ENTRY POINTS</text>
+  <text x="40" y="106" class="tag">ENTRY POINTS</text>
 
-  <rect class="box" x="40" y="126" width="212" height="64"/>
-  <text x="58" y="152" class="hs">CLI</text>
-  <text x="58" y="174" class="ts">transcribe · batch · export</text>
+  <rect class="box" x="40" y="118" width="212" height="50"/>
+  <text x="58" y="140" class="hs">CLI</text>
+  <text x="58" y="158" class="ts">transcribe · batch · export</text>
 
-  <rect class="io" x="40" y="202" width="212" height="64"/>
-  <text x="58" y="228" class="hs">Python API</text>
-  <text x="58" y="250" class="ts">transcribe() · direct call</text>
+  <rect class="io" x="40" y="176" width="212" height="50"/>
+  <text x="58" y="198" class="hs">Python API</text>
+  <text x="58" y="216" class="ts">transcribe() · direct call</text>
 
-  <rect class="box" x="40" y="278" width="212" height="64"/>
-  <text x="58" y="304" class="hs">MCP server</text>
-  <text x="58" y="326" class="ts">stdio · Streamable HTTP</text>
+  <rect class="box" x="40" y="234" width="212" height="50"/>
+  <text x="58" y="256" class="hs">MCP server</text>
+  <text x="58" y="274" class="ts">stdio · Streamable HTTP</text>
 
-  <rect class="box" x="40" y="354" width="212" height="64"/>
-  <text x="58" y="380" class="hs">HTTP API</text>
-  <text x="58" y="402" class="ts">job-based JSON</text>
+  <rect class="box" x="40" y="292" width="212" height="50"/>
+  <text x="58" y="314" class="hs">HTTP API</text>
+  <text x="58" y="332" class="ts">job-based JSON</text>
 
-  <!-- Submission contract: only CLI/MCP/HTTP own jobs through it -->
-  <rect class="core" x="316" y="118" width="170" height="216"/>
-  <text x="336" y="150" class="hs">Submission</text>
-  <text x="336" y="170" class="hs">contract</text>
-  <text x="336" y="196" class="ts">validate request</text>
-  <text x="336" y="216" class="ts">match resume</text>
-  <text x="336" y="236" class="ts">owns job +</text>
-  <text x="336" y="256" class="ts">resume state</text>
-  <text x="336" y="292" class="ts">core/</text>
-  <text x="336" y="310" class="ts">submission.py</text>
+  <!-- Fifth door: local browser UI, layered over the HTTP app -->
+  <rect class="ui" x="40" y="350" width="212" height="58"/>
+  <text x="58" y="371" class="tag3">FIFTH DOOR — v0.1.10</text>
+  <text x="58" y="391" class="hs">Local browser UI</text>
+  <text x="58" y="405" class="ts">textflowkit-ui · loopback only</text>
 
-  <!-- arrows entry -> submission (CLI, MCP, HTTP only) -->
-  <path class="edge" d="M 252 158 C 288 158, 288 196, 316 206"/>
-  <path class="edge" d="M 252 310 C 292 310, 300 250, 316 236"/>
-  <path class="edge" d="M 252 386 C 292 386, 300 268, 316 250"/>
+  <!-- Submission contract: CLI/MCP/HTTP/UI own jobs through it -->
+  <rect class="core" x="316" y="112" width="170" height="240"/>
+  <text x="336" y="144" class="hs">Submission</text>
+  <text x="336" y="164" class="hs">contract</text>
+  <text x="336" y="190" class="ts">validate request</text>
+  <text x="336" y="210" class="ts">match resume</text>
+  <text x="336" y="230" class="ts">owns job +</text>
+  <text x="336" y="250" class="ts">resume state</text>
+  <text x="336" y="288" class="ts">core/</text>
+  <text x="336" y="306" class="ts">submission.py</text>
+
+  <!-- arrows entry -> submission (CLI, MCP, HTTP, UI) -->
+  <path class="edge" d="M 252 146 C 288 146, 288 176, 316 186"/>
+  <path class="edge" d="M 252 262 C 292 262, 300 240, 316 228"/>
+  <path class="edge" d="M 252 320 C 292 320, 300 252, 316 240"/>
+  <path class="edgeU" d="M 252 388 C 296 388, 300 282, 316 258"/>
 
   <!-- Jobs + SQLite (attached to submission) -->
-  <rect class="box" x="316" y="378" width="170" height="104"/>
-  <text x="336" y="406" class="hs">Jobs</text>
-  <text x="336" y="428" class="ts">in-memory or</text>
-  <text x="336" y="446" class="ts">SQLite (WAL)</text>
-  <text x="336" y="464" class="ts">one owning</text>
-  <text x="336" y="482" class="ts">process</text>
-  <path class="edge" d="M 401 334 L 401 378"/>
+  <rect class="box" x="316" y="392" width="170" height="104"/>
+  <text x="336" y="420" class="hs">Jobs</text>
+  <text x="336" y="442" class="ts">in-memory or</text>
+  <text x="336" y="460" class="ts">SQLite (WAL)</text>
+  <text x="336" y="478" class="ts">one owning</text>
+  <text x="336" y="496" class="ts">process</text>
+  <path class="edge" d="M 401 352 L 401 392"/>
+
+  <!-- UI reuses the HTTP app + shared jobs (layered, not a new pipeline) -->
+  <path class="edgeU" d="M 146 408 L 146 420 L 286 420 L 286 466 L 316 480"/>
+  <text x="146" y="438" class="elu">same jobs — /api over HTTP app</text>
+  <text x="146" y="454" class="elu">(no new pipeline)</text>
 
   <!-- Core pipeline band -->
-  <text x="516" y="112" class="tag">SHARED CORE — core/pipeline.py</text>
+  <text x="540" y="106" class="tag">SHARED CORE — core/pipeline.py</text>
 
-  <rect class="io" x="516" y="126" width="200" height="78"/>
-  <text x="536" y="154" class="hs">Media source</text>
-  <text x="536" y="175" class="ts">local file · URL</text>
-  <text x="536" y="193" class="ts">13 platforms via yt-dlp</text>
+  <rect class="io" x="540" y="118" width="200" height="78"/>
+  <text x="560" y="146" class="hs">Media source</text>
+  <text x="560" y="167" class="ts">local file · URL</text>
+  <text x="560" y="185" class="ts">13 platforms via yt-dlp</text>
 
-  <rect class="box" x="516" y="226" width="200" height="78"/>
-  <text x="536" y="254" class="hs">Acquire + decode</text>
-  <text x="536" y="275" class="ts">yt-dlp → ffmpeg PCM WAV</text>
-  <text x="536" y="293" class="ts">bounded, cancellable</text>
+  <rect class="box" x="540" y="218" width="200" height="78"/>
+  <text x="560" y="246" class="hs">Acquire + decode</text>
+  <text x="560" y="267" class="ts">yt-dlp → ffmpeg PCM WAV</text>
+  <text x="560" y="285" class="ts">bounded, cancellable</text>
 
   <!-- submission -> pipeline; python -> pipeline directly -->
-  <path class="edge" d="M 486 206 L 516 178"/>
-  <path class="edge" d="M 252 234 C 360 220, 440 190, 516 168"/>
-  <path class="edge" d="M 616 204 L 616 226"/>
+  <path class="edge" d="M 486 200 L 540 170"/>
+  <path class="edge" d="M 252 200 C 360 190, 460 176, 540 162"/>
+  <path class="edge" d="M 640 196 L 640 218"/>
 
   <!-- Two ALTERNATIVE engines, branched from acquire/decode -->
-  <rect class="core" x="516" y="344" width="200" height="108"/>
-  <text x="536" y="370" class="tag">DEFAULT ENGINE</text>
-  <text x="536" y="394" class="hs">Whistle</text>
-  <text x="536" y="414" class="ts">CPU-only native CLI</text>
-  <text x="536" y="432" class="ts">no PyTorch · ≤ 30 s clips</text>
+  <rect class="core" x="540" y="336" width="200" height="108"/>
+  <text x="560" y="362" class="tag">DEFAULT ENGINE</text>
+  <text x="560" y="386" class="hs">Whistle</text>
+  <text x="560" y="406" class="ts">CPU-only native CLI</text>
+  <text x="560" y="424" class="ts">no PyTorch · ≤ 30 s clips</text>
 
-  <rect class="box" x="756" y="344" width="200" height="108"/>
-  <text x="776" y="370" class="tag2">EXPLICIT ONLY</text>
-  <text x="776" y="394" class="hs">openai-whisper</text>
-  <text x="776" y="414" class="ts">torch: ROCm · CUDA · CPU</text>
-  <text x="776" y="432" class="ts">never selected for you</text>
+  <rect class="box" x="780" y="336" width="200" height="108"/>
+  <text x="800" y="362" class="tag2">EXPLICIT ONLY</text>
+  <text x="800" y="386" class="hs">openai-whisper</text>
+  <text x="800" y="406" class="ts">torch: ROCm · CUDA · CPU</text>
+  <text x="800" y="424" class="ts">never selected for you</text>
 
   <!-- branch fan-out from decode to both alternative engines -->
-  <path class="edgeM" d="M 596 304 C 596 322, 596 330, 616 344"/>
-  <path class="edge" d="M 636 304 C 636 322, 836 326, 856 344"/>
-  <text x="628" y="326" class="el">or</text>
+  <path class="edgeM" d="M 620 296 C 620 314, 620 322, 640 336"/>
+  <path class="edge" d="M 660 296 C 660 314, 860 318, 880 336"/>
+  <text x="652" y="318" class="el">or</text>
 
   <!-- canonical transcript (both engines converge here) -->
-  <rect class="io" x="516" y="500" width="200" height="74"/>
-  <text x="536" y="528" class="hs">Canonical transcript</text>
-  <text x="536" y="550" class="ts">segments · words · timing</text>
-  <text x="536" y="568" class="ts">JSON is the contract</text>
+  <rect class="io" x="540" y="492" width="200" height="74"/>
+  <text x="560" y="520" class="hs">Canonical transcript</text>
+  <text x="560" y="542" class="ts">segments · words · timing</text>
+  <text x="560" y="560" class="ts">JSON is the contract</text>
 
-  <path class="edgeM" d="M 616 452 L 616 500"/>
-  <path class="edge"  d="M 856 452 C 856 480, 716 476, 716 500"/>
+  <path class="edgeM" d="M 640 444 L 640 492"/>
+  <path class="edge"  d="M 880 444 C 880 472, 740 468, 740 492"/>
 
   <!-- Optional postprocessing -->
-  <rect class="opt" x="856" y="500" width="200" height="74"/>
-  <text x="876" y="526" class="tag2">OPTIONAL POSTPROCESS</text>
-  <text x="876" y="548" class="ts">speaker labels (pyannote)</text>
-  <text x="876" y="566" class="ts">translation (Ollama)</text>
+  <rect class="opt" x="880" y="492" width="200" height="74"/>
+  <text x="900" y="518" class="tag2">OPTIONAL POSTPROCESS</text>
+  <text x="900" y="540" class="ts">speaker labels (pyannote)</text>
+  <text x="900" y="558" class="ts">translation (Ollama)</text>
 
   <!-- Exporters -->
-  <rect class="box" x="856" y="620" width="200" height="66"/>
-  <text x="876" y="646" class="hs">Render + publish</text>
-  <text x="876" y="668" class="ts">TXT SRT VTT JSON MD</text>
-  <text x="876" y="682" class="ts">+ DOCX PDF (export extra)</text>
+  <rect class="box" x="880" y="612" width="200" height="66"/>
+  <text x="900" y="638" class="hs">Render + publish</text>
+  <text x="900" y="660" class="ts">TXT SRT VTT JSON MD</text>
+  <text x="900" y="674" class="ts">+ DOCX PDF (export extra)</text>
 
   <!-- transcript -> postprocess (when selected) -->
-  <path class="edgeA" d="M 716 537 C 780 537, 796 535, 856 537"/>
-  <text x="792" y="530" class="ela">adds*</text>
+  <path class="edgeA" d="M 740 529 C 800 529, 820 527, 880 529"/>
+  <text x="816" y="522" class="ela">adds*</text>
   <!-- Bypass: transcript -> export when NO postprocess selected -->
-  <path class="edgeD" d="M 566 574 C 566 648, 740 668, 856 658"/>
-  <text x="352" y="600" class="el">no postprocess →</text>
-  <text x="352" y="616" class="el">straight to export</text>
+  <path class="edgeD" d="M 590 566 C 590 640, 760 660, 880 650"/>
+  <text x="440" y="600" class="el">no postprocess →</text>
+  <text x="440" y="616" class="el">straight to export</text>
   <!-- postprocess -> export -->
-  <path class="edgeA" d="M 956 574 L 956 620"/>
-  <text x="966" y="602" class="ela">then</text>
+  <path class="edgeA" d="M 980 566 L 980 612"/>
+  <text x="990" y="592" class="ela">then</text>
 
   <!-- transcript <-> jobs/resume (durable state) -->
-  <path class="edge" d="M 516 537 L 466 470"/>
-  <text x="300" y="532" class="el">job state + resume</text>
+  <path class="edge" d="M 540 529 L 486 480"/>
+  <text x="300" y="545" class="el">job state + resume</text>
 
   <!-- footer note -->
   <text x="40" y="646" class="cap">* Postprocess is optional: without a selected postprocessor the canonical transcript routes directly to export.</text>
-  <text x="40" y="664" class="cap">Whistle runs a pinned native binary and one pinned model (hash-verified, first use); every Whistle child forces telemetry off.</text>
-  <text x="40" y="682" class="cap">openai-whisper needs the optional “whisper” extra and is never chosen unless asked. The static website never runs the pipeline.</text>
+  <text x="40" y="664" class="cap">The local browser UI (fifth door) mounts the existing HTTP app under /api and shares the same job store — it adds transport only, not a new pipeline.</text>
+  <text x="40" y="682" class="cap">Whistle runs a pinned native binary and one pinned model (hash-verified, first use); every Whistle child forces telemetry off.</text>
+  <text x="40" y="700" class="cap">openai-whisper needs the optional “whisper” extra and is never chosen unless asked. The static website never runs the pipeline.</text>
 </svg>

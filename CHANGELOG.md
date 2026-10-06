@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.1.10 — 2026-10-06
+
+**The local browser interface ships.** The loopback-only browser workspace
+(`textflowkit-ui`) is now part of the core package rather than source-only, so a
+regular install of this release carries the command. Core version: 0.1.10;
+unchanged optional fonts: 0.1.6.
+
+### Added
+
+- **Local browser interface in the core package.** `textflowkit-ui` serves a
+  point-and-click workspace on **this machine only**: it binds `127.0.0.1` (never
+  off the machine, whatever `TEXTFLOWKIT_ALLOW_REMOTE` is set to) and opens a
+  browser once serving. It mounts the existing developer HTTP app under `/api`
+  **unchanged** — the same routes, submission contract, and job store — and adds
+  only transport: a loopback session layer, a streamed upload, a fixed-format
+  download, in-workspace playback, and a capability endpoint. It adds **no new
+  dependency** beyond the existing `http` extra (FastAPI + uvicorn).
+- **Durable jobs, cancel and resume in the workspace.** Jobs and checkpoints are
+  stored durably under the per-user data directory unless
+  `TEXTFLOWKIT_DB` / `TEXTFLOWKIT_WORK_ROOT` / `TEXTFLOWKIT_OUTPUT_ROOT` is set.
+  A dropped file is streamed and capped at **2 GiB** by default
+  (`TEXTFLOWKIT_UI_MAX_UPLOAD_BYTES` overrides it). A running job can be
+  cancelled, and a durable job resumed.
+- **Windows desktop shortcut.** `textflowkit-ui --create-shortcut` creates a Start
+  Menu entry that launches with `pythonw` (no console) and needs no `pywin32`.
+  Under `pythonw` a startup failure is logged under the per-user data directory
+  and shown in a message box rather than failing silently.
+- **Controlled shutdown that drains.** **Stop server** asks this process's own
+  uvicorn server to exit through its supported `should_exit` flag; the normal
+  lifespan teardown **waits for current jobs to finish** before draining the
+  worker pool rather than interrupting them, so a running job's saved progress
+  survives and is resumable. It never sends a signal to a pid.
+
+### Changed
+
+- **Documentation surfaces.** README, user manual, install notes, developer
+  manual, architecture guide, roadmap, release checklist, site deployment, the
+  landing page, and the checked-in SVG diagrams now describe the local browser
+  interface as a shipped feature and a fifth door, and remove the earlier
+  "unreleased candidate / install from source only" wording.
+- **No endpoint-breaking change.** The CLI, Python API, MCP server, and JSON HTTP
+  adapter are unchanged in this release; the optional engines, diarization, and
+  translation keep their documented dependency requirements.
+
+### Verification boundary
+
+Automated coverage runs the UI's routes, packaging, ownership/shutdown, and
+security boundaries. A **native Windows** machine, in a real browser, proved the
+workspace end to end (drop a file, submit, download, stop). That is one platform's
+browser proof, **not** a live Linux or macOS UI run — those platforms are covered
+by automated tests only, and cross-platform CI (Windows/Linux/macOS) is a separate
+step run by the coordinator. **No live optional-backend (translation or
+diarization) run through the UI is claimed.** The engine and packaging changes of
+v0.1.9 are unchanged by this release.
+
 ## v0.1.9 — 2026-10-05
 
 **Whistle is now the default engine.** This release ships the Whistle integration

@@ -1,0 +1,285 @@
+/* TextFlowKit local UI.
+   Plain CSS, no framework, no build step, no external font or asset.
+   High contrast in both light and dark via prefers-color-scheme, and a
+   responsive single workspace that stacks on narrow screens. */
+
+:root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --ink: #14161a;
+  --muted: #565b64;
+  --line: #c9ced6;
+  --accent: #0b5cad;
+  --accent-ink: #ffffff;
+  --danger: #a4161a;
+  --ok: #0d6b3f;
+  --focus: #d97706;
+  --radius: 8px;
+  --gap: 1rem;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101215;
+    --panel: #191c21;
+    --ink: #f2f4f7;
+    --muted: #a7aeb8;
+    --line: #333941;
+    --accent: #5fa8e8;
+    --accent-ink: #06121f;
+    --danger: #ff8a8a;
+    --ok: #6fd39b;
+    --focus: #f6c14b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+/* Visible focus for every interactive element, keyboard first. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.5rem 1rem;
+  z-index: 10;
+}
+.skip-link:focus { left: 0; }
+
+.site-header {
+  padding: 1.25rem 1.5rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.site-header h1 { margin: 0; font-size: 1.5rem; }
+.subtitle { margin: 0.25rem 0; color: var(--muted); }
+.version { margin: 0.25rem 0 0.75rem; color: var(--muted); font-size: 0.875rem; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(320px, 2fr);
+  grid-template-areas:
+    "input progress results"
+    "input recent   results"
+    "input advanced results";
+  gap: var(--gap);
+  padding: 1.25rem 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-areas: "input" "progress" "results" "recent" "advanced";
+  }
+}
+
+.input-panel { grid-area: input; }
+.progress-panel { grid-area: progress; }
+.results-panel { grid-area: results; }
+.recent-panel { grid-area: recent; }
+.advanced-panel { grid-area: advanced; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.panel h2 { margin-top: 0; font-size: 1.05rem; }
+
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 0.875rem; margin: 0.4rem 0; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+/* --- input --- */
+.drop-zone {
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  text-align: center;
+  cursor: pointer;
+  background: var(--bg);
+}
+.drop-zone:focus-visible { outline: 3px solid var(--focus); }
+.drop-zone.dragover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
+.drop-primary { margin: 0; font-weight: 600; }
+.drop-secondary { margin: 0.25rem 0 0; color: var(--muted); }
+.link-look { color: var(--accent); text-decoration: underline; }
+
+.source-alt { margin: 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.source-alt label { flex-basis: 100%; font-size: 0.875rem; color: var(--muted); }
+
+input[type="text"], input[type="url"], input[type="search"], select {
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  min-width: 0;
+}
+.source-alt input { flex: 1 1 12rem; }
+
+button {
+  font: inherit;
+  /* Every button declares its own text colour. A bare UA button default is
+     black, which is invisible on the dark theme's dark panel; inheriting the
+     theme ink keeps button labels readable in both schemes. */
+  color: var(--ink);
+  background: var(--bg);
+  padding: 0.55rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+button.secondary { background: var(--bg); color: var(--ink); }
+button.danger { background: var(--bg); color: var(--danger); border-color: var(--danger); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.preflight { font-size: 0.875rem; margin: 0.5rem 0 0; min-height: 1.2em; }
+.preflight.error { color: var(--danger); }
+.preflight.warn { color: var(--muted); }
+
+.upload-progress { margin-top: 0.6rem; }
+.upload-progress progress { width: 100%; }
+
+/* --- progress --- */
+.current-job { min-height: 3rem; }
+.stage-line { font-weight: 600; margin: 0 0 0.25rem; }
+.stage-meta { color: var(--muted); font-size: 0.875rem; margin: 0.15rem 0; }
+.current-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.current-actions button { width: auto; margin: 0; }
+
+/* --- results --- */
+.results-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.results-toolbar input[type="search"] { flex: 1 1 10rem; }
+.results-toolbar button { width: auto; margin: 0; }
+.download-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.875rem; }
+
+.transcript {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.segment {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+.segment:last-child { border-bottom: 0; }
+.segment .ts {
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  align-self: start;
+}
+.segment .ts:hover { text-decoration: underline; }
+.segment .ts.static { color: var(--muted); cursor: default; }
+.segment .text { white-space: pre-wrap; word-break: break-word; }
+.segment .speaker { font-weight: 600; margin-right: 0.35rem; }
+
+.player { margin: 0 0 0.75rem; }
+.player audio,
+.player video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.search-results { margin: 0.5rem 0; }
+.search-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  color: var(--ink);
+  margin-bottom: 0.35rem;
+}
+.search-hit .ts { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
+mark { background: var(--focus); color: #000; }
+
+/* --- recent --- */
+.recent-list { list-style: none; margin: 0; padding: 0; }
+.recent-list li { margin-bottom: 0.35rem; }
+.recent-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--bg);
+  color: var(--ink);
+}
+.recent-item .state { font-size: 0.8rem; color: var(--muted); }
+.recent-item .state.done { color: var(--ok); }
+.recent-item .state.error { color: var(--danger); }
+
+/* --- advanced --- */
+.disclosure {
+  background: none; border: 0; padding: 0;
+  font-size: 1.05rem; font-weight: 700; color: var(--ink); cursor: pointer;
+}
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.field-grid label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--muted); gap: 0.2rem; }
+@media (max-width: 560px) { .field-grid { grid-template-columns: 1fr; } }
+.formats { border: 1px solid var(--line); border-radius: 6px; margin: 0.75rem 0; padding: 0.5rem 0.75rem; }
+.formats label { margin-right: 0.75rem; }
+.opt-note { margin-top: 0.75rem; }
+.notice { font-size: 0.8rem; color: var(--muted); margin: 0.25rem 0 0; }
+.toggle { display: flex; align-items: center; gap: 0.4rem; }
+
+/* --- dialog --- */
+.dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); max-width: 32rem; }
+.dialog::backdrop { background: rgba(0,0,0,0.5); }
+.dialog-actions { display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0; margin: 1rem 0 0; list-style: none; }
+
+.site-footer {
+  padding: 1rem 1.5rem 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--line);
+}
