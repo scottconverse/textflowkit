@@ -7,17 +7,59 @@ current source paths noted throughout.
 
 ## One core, several doors
 
-TextFlowKit is a self-hosted media transcription library with a CLI and two
-adapters (MCP and a JSON HTTP API). Native Windows is the primary local target,
+TextFlowKit is a self-hosted media transcription library with a CLI, two adapters
+(MCP and a JSON HTTP API), and a local browser interface. Native Windows is the primary local target,
 including AMD ROCm through PyTorch for the explicit `whisper` engine; no WSL layer
 is involved. Linux and macOS are additional targets. The published website is
 static documentation and never runs the pipeline.
 
-![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 As of v0.1.9 the default engine is **Whistle**, a CPU-only native CLI that needs
 no torch and downloads one pinned model on first use. `openai-whisper` is an
 explicit opt-in engine (`--engine whisper`), not the default.
+
+A **local browser interface** (`textflowkit-ui`) is a further door alongside the
+CLI, MCP, and HTTP entry points. It mounts the existing developer HTTP app under
+`/api` unchanged and adds only transport: a loopback-only browser session layer,
+a streamed upload, and a capability endpoint. It **ships in the core package as
+of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
+app: the published website is static documentation and never runs the pipeline.
+
+### One owner per database
+
+The durable SQLite store is owned by exactly one process. `textflowkit-ui`
+enforces that with an exclusive owner lock (`ui/ownership.py`) keyed by the
+**resolved** database path and taken *before* startup recovery runs. The lock is a
+genuine operating-system file lock (`msvcrt` on Windows, `flock` on POSIX) on a
+small sibling file that is created once and **never unlinked**, so there is no
+unlink/recreate window in which two processes could lock different inodes at one
+path. The kernel holds the lock for the live holder and releases it on exit *or
+crash*, so a run that was killed does not block the next launch. A second launch
+against a live owner does not start a competing server: it discovers the running
+instance's loopback URL from a small owner record written beside the lock and
+opens that instead. Ownership is proved by the held lock plus a matching owner
+record — never by signalling or inspecting a pid. A leftover URL record with no
+held lock is not treated as a live instance. Nothing here signals, stops, or
+cleans up any other process — the documented rule is simply **do not point two
+processes at one database file.**
+
+Readiness is a property of the process, not a probe: the launcher reserves the
+listening socket itself and drives uvicorn with `Server.serve(sockets=[...])`, so
+the browser is opened only after *our* server is serving, and an unrelated
+service holding the preferred port number is passed over for a genuinely free
+one.
+
+A **controlled shutdown** (`POST /ui/shutdown`, gated like every mutator by the
+loopback origin gate and the session capability header, and confirmed in the
+browser) asks this process's own uvicorn server to exit through its supported
+`should_exit` flag. The server then runs its normal lifespan teardown, which
+waits for the current jobs to finish before draining the worker pool rather than
+interrupting them, so a running job's saved progress survives and is resumable.
+It does not cancel an in-flight job; cancel it first for that. It never sends a
+signal to a pid. On a console
+(`pythonw`) launch the launcher keeps its own log file and reports a startup
+failure in a message box, so a shortcut that fails to start is not a silent exit.
 
 One shared submission contract (`core/submission.py`) owns job creation and
 resume for every door. The CLI runs the pipeline synchronously; MCP and HTTP
@@ -30,6 +72,7 @@ flowchart LR
     CLI[CLI single and batch] --> SUB[core.submission]
     MCP[MCP stdio or Streamable HTTP] --> SUB
     HTTP[JSON HTTP adapter] --> SUB
+    UI[Local browser UI over /api] --> SUB
     SUB --> STORE[Memory store or SQLite WAL]
     SUB --> EXEC[In-process bounded executor]
     SUB --> SYNC[Synchronous inline run]

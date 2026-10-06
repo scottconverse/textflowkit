@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 660" width="1180" height="660"
+     role="img" aria-labelledby="uiTitle uiDesc" font-family="Inter, ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
+  <title id="uiTitle">TextFlowKit local browser interface — request flow</title>
+  <desc id="uiDesc">A local-only browser workspace. The operator opens it from a desktop
+shortcut (or the textflowkit-ui command), and it launches a loopback-only server on
+127.0.0.1 that holds an exclusive owner lock on the durable SQLite database so one process
+owns a store. The operator drops a file or pastes a URL in the page. A file is streamed to a
+per-user durable upload folder, capped at 2 GiB by default; a URL is fetched through the
+shared pipeline. Both become a submission through the same shared submission contract the
+CLI, MCP, and HTTP doors use, which writes a durable job. The job runs through the shared
+core — Whistle by default, or an explicitly selected optional engine — decoding with ffmpeg
+and transcribing on this machine. A finished job's transcript is searchable, copyable,
+downloadable in a fixed format list (TXT, Markdown, SRT, VTT, JSON, DOCX, PDF), and playable
+with the browser's native player on the currently selected media. The page loads no external
+asset and sends no analytics; only a URL source, a first-use model download, and an optional
+remote/cloud translation backend use the network.</desc>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b556e"/>
+    </marker>
+    <marker id="au" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3f5391"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f9e7a"/>
+    </marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b07d1a"/>
+    </marker>
+    <linearGradient id="uiP" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef1fb"/><stop offset="1" stop-color="#e0e7f8"/>
+    </linearGradient>
+    <linearGradient id="coreP" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eafaf3"/><stop offset="1" stop-color="#dff3ea"/>
+    </linearGradient>
+    <linearGradient id="ioP" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7fafc"/><stop offset="1" stop-color="#eef4f8"/>
+    </linearGradient>
+    <linearGradient id="optP" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff8ea"/><stop offset="1" stop-color="#fdf0d8"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .h     { fill: #14303f; font-size: 17px; font-weight: 700; }
+    .cap   { fill: #5b7186; font-size: 12px; }
+    .hs    { fill: #1c3b4a; font-size: 15px; font-weight: 700; }
+    .ts    { fill: #4a6478; font-size: 11.5px; }
+    .tag   { fill: #3f5391; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .tagc  { fill: #0f7a56; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .tago  { fill: #9a6a12; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .edge  { stroke: #3b556e; stroke-width: 2; fill: none; marker-end: url(#a); }
+    .edgeU { stroke: #3f5391; stroke-width: 2.2; fill: none; marker-end: url(#au); }
+    .edgeM { stroke: #2f9e7a; stroke-width: 2.2; fill: none; marker-end: url(#am); }
+    .edgeA { stroke: #b07d1a; stroke-width: 2; fill: none; marker-end: url(#aa); }
+    .edgeD { stroke: #3b556e; stroke-width: 1.8; fill: none; stroke-dasharray: 6 5; marker-end: url(#a); }
+    .el    { fill: #3b556e; font-size: 11.5px; }
+    .elu   { fill: #3f5391; font-size: 11.5px; }
+    .elg   { fill: #0f7a56; font-size: 11.5px; }
+    .eli   { fill: #4a6478; font-size: 11.5px; }
+    .io    { fill: url(#ioP); stroke: #c3d2df; stroke-width: 1.5; rx: 10; }
+    .ui    { fill: url(#uiP); stroke: #8fa3d6; stroke-width: 1.7; rx: 10; }
+    .core  { fill: url(#coreP); stroke: #7fceb1; stroke-width: 1.8; rx: 12; }
+    .opt   { fill: url(#optP); stroke: #e6c47a; stroke-width: 1.5; rx: 10; }
+  </style>
+
+  <rect x="0" y="0" width="1180" height="660" fill="#ffffff"/>
+  <text x="40" y="46" class="h">TextFlowKit — local browser interface (this machine only)</text>
+  <text x="40" y="70" class="cap">Open from a desktop shortcut or “textflowkit-ui”. A loopback-only server over the shared core; the same pipeline and job store as the other doors.</text>
+
+  <!-- Row 1: inputs -->
+  <text x="40" y="112" class="tag">1 · BRING MEDIA</text>
+  <rect class="io" x="40" y="124" width="240" height="66"/>
+  <text x="58" y="150" class="hs">Drop a file / paste a URL</text>
+  <text x="58" y="170" class="ts">local file, or a supported URL</text>
+
+  <rect class="io" x="40" y="206" width="240" height="70"/>
+  <text x="58" y="232" class="hs">Streamed upload folder</text>
+  <text x="58" y="250" class="ts">per-user durable area · server-</text>
+  <text x="58" y="266" class="ts">named · capped 2 GiB by default</text>
+
+  <!-- Row 2: UI server + launcher -->
+  <text x="330" y="112" class="tag">2 · LOCAL UI SERVER</text>
+  <rect class="ui" x="330" y="124" width="240" height="152"/>
+  <text x="350" y="150" class="tag">LOOPBACK ONLY</text>
+  <text x="350" y="174" class="hs">Browser workspace</text>
+  <text x="350" y="194" class="ts">binds 127.0.0.1 · opens browser</text>
+  <text x="350" y="212" class="ts">never off the machine</text>
+  <text x="350" y="236" class="ts">launcher: shortcut / CLI</text>
+  <text x="350" y="254" class="ts">reserves the port; /ui/* routes</text>
+
+  <rect class="ui" x="330" y="292" width="240" height="72"/>
+  <text x="350" y="316" class="ts" font-weight="700">Owner lock on the database</text>
+  <text x="350" y="334" class="ts">one process per store; a second</text>
+  <text x="350" y="350" class="ts">launch opens the running UI</text>
+
+  <!-- Row 3: shared submission -->
+  <text x="620" y="112" class="tagc">3 · SHARED SUBMISSION (core)</text>
+  <rect class="core" x="620" y="124" width="240" height="152"/>
+  <text x="640" y="150" class="tagc">SAME CONTRACT AS CLI/MCP/HTTP</text>
+  <text x="640" y="174" class="hs">Submission contract</text>
+  <text x="640" y="194" class="ts">validate request · match resume</text>
+  <text x="640" y="214" class="ts">owns job + resume state</text>
+  <text x="640" y="238" class="ts">core/submission.py</text>
+  <text x="640" y="258" class="ts">the UI mounts HTTP app /api</text>
+
+  <rect class="io" x="620" y="292" width="240" height="72"/>
+  <text x="640" y="316" class="hs">Durable jobs</text>
+  <text x="640" y="336" class="ts">SQLite (WAL) · cancel · resume</text>
+  <text x="640" y="354" class="ts">checkpoints survive restart</text>
+
+  <!-- Row 4: engines -->
+  <text x="620" y="412" class="tagc">4 · SHARED CORE — core/pipeline.py</text>
+  <rect class="core" x="620" y="424" width="240" height="96"/>
+  <text x="640" y="450" class="ts">ffmpeg decode → transcribe here</text>
+  <text x="640" y="470" class="tago" font-weight="700">Whistle (default, CPU, no torch)</text>
+  <text x="640" y="490" class="ts">or explicit optional engine</text>
+  <text x="640" y="508" class="ts">(openai-whisper / faster-whisper)</text>
+
+
+  <!-- Row 5: results -->
+  <text x="40" y="452" class="tago">5 · USE THE RESULT</text>
+  <rect class="opt" x="40" y="464" width="510" height="106"/>
+  <text x="60" y="490" class="hs">Transcript on this machine</text>
+  <text x="60" y="512" class="ts">Search · copy · download in a fixed format list (TXT, Markdown, SRT, VTT, JSON, DOCX, PDF)</text>
+  <text x="60" y="532" class="ts">Playback: browser's native player on the currently selected media (decode support varies)</text>
+  <text x="60" y="556" class="ts">No external asset, no analytics; token lives only in the page. Only a URL source, a first-use</text>
+  <text x="60" y="572" class="ts">model download, and an optional remote/cloud translation backend use the network.</text>
+
+  <!-- arrows -->
+  <path class="edge" d="M 280 157 L 330 176"/>
+  <path class="edge" d="M 280 240 C 300 240, 312 230, 330 226"/>
+  <text x="286" y="212" class="eli">stream</text>
+  <path class="edgeU" d="M 450 276 L 450 292"/>
+  <text x="456" y="288" class="elu">locks</text>
+
+  <path class="edge" d="M 570 190 C 596 190, 602 194, 620 196"/>
+  <text x="548" y="182" class="el">submit</text>
+  <path class="edge" d="M 740 276 L 740 292"/>
+  <path class="edgeM" d="M 740 364 L 740 424"/>
+
+  <path class="edgeM" d="M 620 484 C 570 484, 566 500, 552 510"/>
+  <text x="556" y="470" class="elg">transcript</text>
+  <path class="edgeD" d="M 620 320 L 600 320 L 600 452 L 548 462"/>
+  <text x="500" y="436" class="eli">job status</text>
+
+  <!-- footer note -->
+  <text x="40" y="612" class="cap">Stop server drains: it waits for current jobs to finish rather than cancelling them — cancel a job first to stop it early.</text>
+  <text x="40" y="632" class="cap">One process owns a database (an OS file lock released on exit or crash). Do not point two processes at one database file.</text>
+</svg>

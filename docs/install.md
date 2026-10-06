@@ -1,6 +1,6 @@
 # Install notes
 
-Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).
+Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -9,6 +9,39 @@ no PyTorch; `openai-whisper` is moved to the optional `whisper` extra and is
 selected with `--engine whisper`. The ROCm instructions below apply to the
 explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
 or WSL**.
+
+## Local browser interface
+
+The local browser workspace **ships in the core package as of v0.1.10**. A
+regular install of the current release carries the `textflowkit-ui` command:
+
+```bash
+python -m pip install 'textflowkit[http,export]==0.1.10'
+textflowkit-ui
+```
+
+It adds **no new dependency of its own**: the HTTP extra already supplies FastAPI
+and uvicorn, so an `http` install is what you need. The normal way to open it on
+Windows is the desktop shortcut:
+
+```powershell
+textflowkit-ui --create-shortcut                 # Start Menu entry (pythonw, no console)
+textflowkit-ui --create-shortcut --shortcut-dir 'C:\path\to\folder'
+```
+
+It uses Windows PowerShell and needs no `pywin32`, so an HTTP-only install can
+create one. The shortcut is created only on request. Under `pythonw` there is no
+console, so a startup failure is written to a log file under the per-user data
+directory and shown in a message box rather than failing silently.
+
+The UI is served on **loopback only** and is never reachable off the machine: it
+binds `127.0.0.1` and does **not** honour `TEXTFLOWKIT_ALLOW_REMOTE`. It is a
+**local app, not a public website** — the [landing page](https://www.textflowkit.org/)
+is static documentation that does not run the pipeline. **Stop server** in the
+workspace drains — it waits for current jobs to finish rather than interrupting
+them; cancel a job first to stop it early. See the
+[user manual](user-manual.md#7-local-browser-interface) and the
+[developer manual](adapters.md#local-browser-interface-textflowkit-ui).
 
 ## Requirements
 

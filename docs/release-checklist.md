@@ -76,10 +76,33 @@ neither result verifies the other 12 recognized sites.
 The script deletes its temporary media and transcript after producing the
 receipt. It does not upload cookies, media, or transcripts to GitHub.
 
+## Local browser interface (`textflowkit-ui`)
+
+The local browser interface ships in the core package from v0.1.10, so its
+packaging and launch are part of the release:
+
+1. Confirm the wheel carries the UI: the `ui/static` assets (`index.html`,
+   `app.css`, `app.js`) and the `ui/` modules are in the built **wheel** (not only
+   the source tree), and `textflowkit-ui` is declared in `[project.scripts]`
+   pointing at `textflowkit.ui.launcher:main`. `tests/test_ui_packaging.py`
+   covers this against a real wheel build.
+2. Confirm the declared core version (`pyproject.toml` `[project].version`) and
+   the runtime version (`textflowkit.__version__`) agree; the launcher's
+   `--version` and the `/ui/capabilities` payload read the runtime version. A
+   mismatch means the UI would label itself with the wrong version.
+3. Launch check on Windows: `textflowkit-ui --no-browser --port <free>` starts,
+   serves the workspace on `127.0.0.1`, and `Ctrl+C` stops it; a second launch
+   against the same database opens the already-running UI instead of a competing
+   server; **Stop server** drains rather than cancelling.
+4. Cross-platform coverage is the deterministic CI matrix (Windows/Linux/macOS)
+   plus the installed-wheel smoke — **not** a live UI run on every platform. The
+   live UI browser proof in the record is native **Windows**; do not describe it
+   as a live Linux or macOS UI run.
+
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.9` for a future release) on that verified
+version tag (for example `v0.1.10` for a future release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

@@ -1,15 +1,16 @@
 # Developer and integration manual
 
-Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).
+Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
 
 textflowkit has one core and several thin doors. Nothing is duplicated between
-them: the CLI, the MCP server, and the HTTP API all call
-`textflowkit.core.submission` and share one job model.
+them: the CLI, the MCP server, the HTTP API, and the local browser
+interface (`textflowkit-ui`) all call `textflowkit.core.submission` and share one
+job model.
 
-![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 ```
                     ┌──────────────────────┐
@@ -504,6 +505,77 @@ too, where this implementation falls back to the peer. Everywhere else the two
 agree. So if you do leave it on, put it behind a proxy that appends its own
 observation rather than forwarding the caller's header, and keep
 `FORWARDED_ALLOW_IPS` narrow.
+
+## Local browser interface (`textflowkit-ui`)
+
+`textflowkit-ui` is a fourth thin door beside the CLI, MCP, and HTTP entry
+points. It mounts the developer HTTP app (`adapters.http_server`) under `/api`
+**unchanged** - the same routes, the same submission contract, the same job
+store - and adds only transport: a loopback-only browser session layer, a
+streamed upload, a fixed-format download, and a capability endpoint. It
+**ships in the core package as of v0.1.10** (it needs the `http` extra, which
+supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
+of its own: it is a local app, not a hosted service.
+
+```bash
+python -m pip install 'textflowkit[http,export]==0.1.10'
+textflowkit-ui                 # serve on 127.0.0.1 and open a browser
+textflowkit-ui --no-browser --port 8901
+```
+
+![TextFlowKit local browser interface request flow: the operator opens the workspace from a desktop shortcut or the textflowkit-ui command, which launches a loopback-only server on 127.0.0.1 that holds an exclusive owner lock on the durable SQLite database; the operator drops a file or pastes a URL, a file is streamed to a per-user upload folder capped at 2 GiB by default; both become a submission through the same shared submission contract the CLI, MCP, and HTTP doors use, writing a durable job that runs through the shared core (Whistle by default or an explicit optional engine) decoding with ffmpeg and transcribing on this machine; a finished transcript is searchable, copyable, downloadable in a fixed format list, and playable with the browser's native player on the currently selected media.](assets/local-ui-flow.svg)
+
+Because it is a browser door and not a product, its rules are **stricter** than
+the developer HTTP app's:
+
+- **Loopback only, always.** It binds `127.0.0.1` and refuses any non-loopback
+  host, and it does **not** honour `TEXTFLOWKIT_ALLOW_REMOTE` - that opt-in widens
+  the developer API, and an unauthenticated browser interface must not be
+  reachable off the machine.
+- **A session capability on every mutator.** The shell embeds a per-process
+  random token in a `<meta>` element; every POST carries it in
+  `x-textflowkit-ui-capability`. A request must also pass a loopback host, a
+  provably-loopback peer, and an `Origin` that is *exactly* this UI's own origin.
+  The token never appears in a URL, a cookie, or a log line.
+- **No external asset, no telemetry.** The shell and its CSS/JS are served from
+  the package; the page loads no CDN script and no analytics. (`/ui/capabilities`
+  reports what the install can do without loading a model or downloading
+  anything.) Network *is* used for a URL source, an engine's first-use model
+  download, and a remote/cloud translation backend - see the translation caveat
+  [above](#translation): a `:cloud` model or a remote `TEXTFLOWKIT_OLLAMA_HOST`
+  sends transcript text to that host. Local media and a local translation model
+  keep transcripts on the machine.
+
+### One owner per database
+
+The UI runs startup recovery and the worker pool, so a store is owned by one UI
+process. It takes an **operating-system file lock** (`msvcrt` on Windows, `flock`
+on POSIX) on a persistent sibling of the database, keyed by the *resolved* path,
+*before* recovery runs. The kernel holds the lock for the live holder and releases
+it on exit **or crash**, so a killed run never blocks the next launch. A second
+launch discovers the running instance's loopback URL from a small record beside
+the lock and opens that instead of starting a competing server. Ownership is
+proved by the held lock plus a matching record - never by signalling or inspecting
+a pid. The same rule as every door still applies: **do not point two processes at
+one database file.** See the [architecture guide](architecture.md#one-owner-per-database).
+
+### Uploads and downloads
+
+A dropped file is streamed as the **raw request body** to a fresh, server-named
+file under the per-user work directory (default cap 2 GiB,
+`TEXTFLOWKIT_UI_MAX_UPLOAD_BYTES` overrides it); the size is capped both by the
+declared length and while streaming, and a refused, aborted, or oversized upload
+leaves no partial file. The staged path is generated by the server, never taken
+from the request, and a `mode: "upload"` submission names only an `upload_id`
+that is resolved back inside the uploads directory. Downloads come from a **fixed
+format allowlist** (TXT, Markdown, SRT, VTT, JSON, DOCX, PDF) rendered through the
+same `render` layer the other doors use; the filename is built from the job id,
+never from caller input.
+
+The UI adds **no new storage variable**: it fills in `TEXTFLOWKIT_DB`,
+`TEXTFLOWKIT_WORK_ROOT`, and `TEXTFLOWKIT_OUTPUT_ROOT` with per-user defaults
+(`%LOCALAPPDATA%\TextFlowKit\ui` on Windows) only when they are unset, so an
+explicit environment override is honoured unchanged.
 
 ## Durable job state
 

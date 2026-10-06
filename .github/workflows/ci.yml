@@ -90,6 +90,6 @@ jobs:
           python -m pip install "setuptools>=83" "build>=1.2"
           python -m build --wheel
           python -m build --wheel --outdir dist packages/textflowkit-fonts
-      - name: Smoke all three installed entry points
+      - name: Smoke all four installed entry points (CLI, MCP, HTTP, served UI)
         shell: bash
         run: python scripts/smoke_installed_wheel.py dist/textflowkit-*.whl dist/textflowkit_fonts-*.whl

@@ -8,7 +8,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
 [Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.9](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9).**
+**Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -69,10 +69,11 @@ DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
 
-![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.9/docs/assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.10/docs/assets/architecture-overview.svg)
 
-The design principle is **one engine, three doors**. Everything of substance lives in
-the core; the interfaces are thin.
+The design principle is **one shared core, thin doors**. Everything of substance
+lives in the core; the interfaces are thin — the local browser UI is a fifth door
+that adds only transport over the existing HTTP app and shared job store.
 
 | Layer | Path | Responsibility |
 |---|---|---|
@@ -82,6 +83,7 @@ the core; the interfaces are thin.
 | **CLI** | `src/textflowkit/cli.py` | Reference interface (subprocess-friendly) |
 | **MCP** | `src/textflowkit/adapters/mcp_server.py` | stdio + Streamable HTTP, for AI harnesses |
 | **HTTP** | `src/textflowkit/adapters/http_server.py` | JSON API, for software products and web frontends |
+| **Local UI** | `src/textflowkit/ui` | Loopback-only browser workspace over the same HTTP app and job store |
 
 Because the core owns the pipeline, adding a door is cheap — and adding a platform
 means writing one source adapter, not another tool.
@@ -235,7 +237,7 @@ textflowkit export ./transcript.json --format vtt
 needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
 torch; `openai-whisper` is an explicitly selectable opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.9/docs/assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.10/docs/assets/whistle-resume.svg)
 
 - **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
   model on first use. Naming a GPU device is refused rather than silently
@@ -338,6 +340,66 @@ contract checks cover it, and running an actual build is deliberately out of
 scope here, so no image is claimed to build or start. See
 [the container example](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md#container-example-dockerfile-and-compose).
 
+## Local browser interface
+
+For point-and-click use there is a local browser workspace that runs on **this
+machine only**, reuses the same pipeline and job store, and adds no dependency of
+its own beyond the `http` extra. It ships with the core package as of v0.1.10:
+a regular install of the current release carries it.
+
+```bash
+python -m pip install 'textflowkit[http,export]==0.1.10'
+textflowkit-ui
+```
+
+On Windows you can create a desktop shortcut when you want one:
+
+```powershell
+textflowkit-ui --create-shortcut                 # Start Menu entry (pythonw, no console)
+textflowkit-ui --create-shortcut --shortcut-dir 'C:\path\to\folder'
+```
+
+The shortcut is created only on request and needs no `pywin32`. Under `pythonw`
+there is no console, so a startup failure is written to a log file under the
+per-user data directory and shown in a message box rather than failing silently.
+The normal operator path is to launch from that shortcut; the console command
+above is equivalent.
+
+**This is a local app, not a public website.** The [landing page](https://www.textflowkit.org/)
+is static documentation served by Cloudflare Pages; it does **not** run the
+transcription engine and offers no upload form. The browser workspace exists only
+on the machine that installed it.
+
+- **Loopback only.** It binds `127.0.0.1` (never off the machine, whatever
+  `TEXTFLOWKIT_ALLOW_REMOTE` is set to) and opens a browser once it is serving.
+- **One owner per database.** A second launch against the same database opens the
+  UI already running rather than starting a competing server. **Stop server** in
+  the workspace shuts the local server down without a terminal, waiting for the
+  current jobs to finish rather than interrupting them. Shutdown **drains** — it
+  lets in-flight jobs complete; it does **not** auto-cancel them. Cancel a job
+  first to stop it early.
+- **Durable jobs with cancel and resume.** Jobs and checkpoints are stored
+  durably under the per-user data directory unless you set `TEXTFLOWKIT_DB` /
+  `TEXTFLOWKIT_WORK_ROOT` / `TEXTFLOWKIT_OUTPUT_ROOT`. A dropped file is capped
+  at **2 GiB** by default (`TEXTFLOWKIT_UI_MAX_UPLOAD_BYTES` overrides it).
+  In-workspace playback uses the browser's native player on the **currently
+  selected** media, so it depends on what that browser can decode; it is a
+  convenience preview, not a format guarantee.
+- **No UI analytics.** The page loads no CDN asset and no analytics, and the
+  session token lives only in the page — never in a URL, cookie, or log line.
+- **What uses the network.** The page itself loads nothing remote. A **URL
+  source** is downloaded from the internet; an engine's **model** may be
+  downloaded on first use; and **remote or cloud translation** (an advanced
+  option) sends transcript text to that backend. With local media and a local
+  translation model, no transcript leaves the machine.
+- `--port`, `--no-browser`, and `--version` are available.
+
+The other doors are unchanged: the CLI, Python API, MCP, and HTTP adapters keep
+their existing behavior, and the optional engines, diarization, and translation
+retain their documented dependency requirements. See the
+[user manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md#7-local-browser-interface)
+and [architecture guide](https://github.com/scottconverse/textflowkit/blob/main/docs/architecture.md#one-owner-per-database).
+
 ## Durable, bounded, cancellable
 
 ```bash
@@ -352,23 +414,38 @@ boundary. See [docs/adapters.md](https://github.com/scottconverse/textflowkit/bl
 
 The MCP and HTTP adapters are **job-based**: submission returns a job id
 immediately and clients poll for completion. The CLI uses the same core but
-waits for the result. This lets AI harnesses, software products, and a future
-web frontend share the job contract without blocking a request.
+waits for the result. This lets AI harnesses, software products, and the local
+browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.9 release.** Core, CLI, MCP, and HTTP have automated
-coverage. This release makes **Whistle the default engine** — a native CPU-only
-transcriber that needs no PyTorch — and moves `openai-whisper` to the optional
-`whisper` extra, selected explicitly with `--engine whisper` or
+**v0.1.10 release.** Core, CLI, MCP, HTTP, and the local browser interface have
+automated coverage. This release **ships the local browser interface**
+(`textflowkit-ui`) in the core package: a loopback-only workspace that reuses the
+same pipeline, submission contract, and job store, with a durable store, cancel
+and resume, and a Windows desktop shortcut (`textflowkit-ui --create-shortcut`).
+It adds **no new dependency** beyond the existing `http` extra, so a regular
+`pip install 'textflowkit[http,export]==0.1.10'` carries it. The engine, CLI,
+Python, MCP, and HTTP surfaces are unchanged and there is **no endpoint-breaking
+change**. It builds on v0.1.9, which made **Whistle the default engine** — a
+native CPU-only transcriber that needs no PyTorch — and moved `openai-whisper` to
+the optional `whisper` extra, selected explicitly with `--engine whisper` or
 `engine="whisper"`. Legacy engine aliases are preserved, so older saved jobs and
 `transcribe()` calls still decode. Whistle refuses an unsupported platform,
-language, or GPU request instead of silently falling back. Its engine's
+language, or GPU request instead of silently falling back; its engine's
 verification boundary is in [Whistle (default engine)](#whistle-default-engine)
-above. Release publication uses the tag workflow, which requires successful
-exact-commit main CI before PyPI uploads and creates the public GitHub release
-only afterward. Check the linked release for artifacts and workflow status; local
-source verification is not a fresh PyPI-install or individual-harness receipt.
+above.
+
+**Verification limit.** The local browser interface is covered by an automated
+suite, and the UI's behavior was proved on a **native Windows** machine in a real
+browser. No live optional-backend (translation/diarization) run through the UI is
+claimed, and **no live Linux or macOS UI run was performed here** — those
+platforms are covered by automated tests only, and CI across Windows, Linux, and
+macOS is the coordinator's separate step. Release publication uses the tag
+workflow, which requires successful exact-commit main CI before PyPI uploads and
+creates the public GitHub release only afterward. Check the linked release for
+artifacts and workflow status; local source verification is not a fresh
+PyPI-install or individual-harness receipt.
 
 The v0.1.8 release carried four fixes for the 2026-10-01 post-release audit-lite
 (findings AL-001 – AL-004): CLI owning-process startup recovery so an interrupted
@@ -380,8 +457,8 @@ that precede it. The v0.1.7 source candidate was verified with real CLI, HTTP an
 MCP speech, seven-format exports and completed resume; the v0.1.8 runtime fixes
 were independently checked through fresh-process CLI restart probes, real SQLite
 setup-failure tests, and the full Windows test suite. Those checks are not new
-individual-harness receipts. That is the previous release's record, not evidence
-for v0.1.9.
+individual-harness receipts. That is the previous releases' record, not evidence
+for v0.1.10.
 
 The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
@@ -400,7 +477,7 @@ and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
 live — that is the v0.1.6 release's evidence, not a receipt for a later release.
 Everything from here to the end of this section is the v0.1.6 release's
-historical record as published: it is not re-verified for v0.1.9, whose separate release evidence is not supplied by these historical paragraphs.
+historical record as published: it is not re-verified for v0.1.10, whose separate release evidence is not supplied by these historical paragraphs.
 Merged-main CI passed 16/16 on the tagged commit; the published wheel and
 sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
 Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI

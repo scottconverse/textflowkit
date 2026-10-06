@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.9
+# TextFlowKit user manual — v0.1.10
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -6,13 +6,18 @@ transcription website. The same core is available through the CLI, Python,
 MCP, and a JSON HTTP adapter. It runs on native Windows (no WSL), macOS, and
 Linux. The software is Apache-2.0 and provided **as is, without warranty**.
 
-**v0.1.9 makes Whistle the default engine.** It is a CPU-only native CLI that
-needs no PyTorch, so a fresh install stays small; `openai-whisper` moves to an
-optional extra selected explicitly with `--engine whisper`. See
+**v0.1.10 ships the local browser interface** (`textflowkit-ui`) in the core
+package — a loopback-only workspace that reuses the same pipeline and job store
+and adds no dependency beyond the `http` extra; on Windows a desktop shortcut is
+available. See [section 7](#7-local-browser-interface). The engine, CLI, Python,
+MCP, and HTTP surfaces are unchanged and there is no endpoint-breaking change.
+**v0.1.9 made Whistle the default engine.** It is a CPU-only native CLI that needs
+no PyTorch, so a fresh install stays small; `openai-whisper` moves to an optional
+extra selected explicitly with `--engine whisper`. See
 [section 2](#2-transcribe-one-file-or-url) and
-[section 7](#7-whistle-the-default-engine).
+[section 8](#8-whistle-the-default-engine).
 
-![TextFlowKit shared-core architecture: four thin entry points (CLI, Python, MCP, HTTP) feed one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 ## 1. Install and check the machine
 
@@ -20,7 +25,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.9'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.10'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -279,7 +284,86 @@ reach of that root. The `ffprobe` duration check is restricted the same way.
 See the [adapter guide](adapters.md#input-paths-unconfined-by-default) and
 [SECURITY.md](../SECURITY.md) for the exact guarantee and its limits.
 
-## 7. Whistle, the default engine
+## 7. Local browser interface
+
+For point-and-click use there is a browser workspace that runs on this machine
+only. It **ships in the core package as of v0.1.10** — a regular install of the
+current release carries the `textflowkit-ui` command. It is a separate entry
+point from the developer HTTP API, reuses the same pipeline and job store, and is
+served on loopback only.
+
+```bash
+python -m pip install 'textflowkit[http,export]==0.1.10'
+textflowkit-ui
+```
+
+It needs the `http` extra (which supplies FastAPI and uvicorn) and adds **no new
+dependency of its own**. The `export` extra above is only for the DOCX/PDF
+download formats; omit it if you do not need them.
+
+**This is a local app, not a public website.** The [landing page](https://www.textflowkit.org/)
+is static documentation served by Cloudflare Pages; it does **not** run the
+transcription engine and offers no upload form. This workspace exists only on the
+machine that installed it.
+
+![TextFlowKit local browser interface request flow: the operator opens the workspace from a desktop shortcut or the textflowkit-ui command, which launches a loopback-only server on 127.0.0.1 that holds an exclusive owner lock on the durable SQLite database; the operator drops a file or pastes a URL, a file is streamed to a per-user upload folder capped at 2 GiB by default; both become a submission through the same shared submission contract the CLI, MCP, and HTTP doors use, writing a durable job that runs through the shared core (Whistle by default or an explicit optional engine) decoding with ffmpeg and transcribing on this machine; a finished transcript is searchable, copyable, downloadable in a fixed format list, and playable with the browser's native player on the currently selected media.](assets/local-ui-flow.svg)
+
+`textflowkit-ui` binds `127.0.0.1` (never off the machine, regardless of
+`TEXTFLOWKIT_ALLOW_REMOTE`), opens your browser once the server is actually
+serving, and stops with Ctrl+C. Options: `--port` (a free port is chosen and
+reserved if the preferred one is taken), `--no-browser`, and `--version`.
+
+On Windows the normal operator path is the desktop shortcut, created only when
+you ask for it and only by you:
+
+```powershell
+textflowkit-ui --create-shortcut                 # Start Menu entry (pythonw, no console)
+textflowkit-ui --create-shortcut --shortcut-dir 'C:\path\to\folder'
+```
+
+The shortcut uses Windows PowerShell and needs no `pywin32`. Under `pythonw`
+there is no console, so a startup failure is written to a log file under the
+per-user data directory and shown in a message box rather than failing silently.
+
+- **Drop a file or paste a URL**, then press Transcribe. Files are streamed to a
+  per-user durable folder, capped at 2 GiB by default
+  (`TEXTFLOWKIT_UI_MAX_UPLOAD_BYTES` overrides it); the workspace shows the limit
+  and refuses a larger file before uploading.
+- **Durable by default, with cancel and resume.** Jobs and checkpoints live under
+  `%LOCALAPPDATA%\TextFlowKit\ui` on Windows (the conventional per-user data
+  directory elsewhere). An explicit `TEXTFLOWKIT_DB` / `TEXTFLOWKIT_WORK_ROOT` /
+  `TEXTFLOWKIT_OUTPUT_ROOT` already in your environment is honoured unchanged.
+  You can cancel a running job from the workspace, and a durable job can be
+  resumed later.
+- **One process per database.** A second UI launched against the same database
+  opens the UI already running instead of starting a competing server. To stop a
+  running UI you started from a shortcut, use **Stop server** in the footer: it
+  **drains** — it waits for the current jobs to finish, then stops (saved progress
+  is kept and resumable). It does **not** auto-cancel a running job; cancel that
+  job first if you want to stop it early. **Do not point two processes at one
+  database file.**
+- **Download** a finished transcript as TXT, Markdown, SRT, VTT, JSON, DOCX, or
+  PDF from a fixed list (DOCX/PDF need the `export` extra). The browser workspace
+  never sets a cookie, never loads a CDN asset, and sends no telemetry; the
+  session token lives only in the page.
+- **Playback** uses the browser's native player on the **currently selected**
+  media, so which files play depends on what that browser can decode. It is a
+  convenience preview, not a format guarantee, and it does not transcode.
+- **What does and does not leave the machine.** The page itself loads no external
+  asset and no analytics, and transcription runs locally by default. Network is
+  used in a few cases: a **URL source** is downloaded from the internet, an
+  engine's **model** may be downloaded on first use, and **remote or cloud
+  translation** (see the advanced options) sends the transcript text to that
+  backend. With local media and a local translation model, no transcript leaves
+  the machine.
+
+**Verification limit.** The browser workspace is covered by an automated suite,
+and its behavior was proved on a native **Windows** machine in a real browser. No
+live optional-backend (translation/diarization) run through the UI is claimed,
+and no live Linux or macOS UI run was performed here — those platforms are
+covered by automated tests only.
+
+## 8. Whistle, the default engine
 
 Whistle is the default engine in v0.1.9. It is a native CPU-only CLI that needs
 no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
@@ -335,18 +419,26 @@ not a promise of universal performance, and not a claim that its accuracy equals
 Whisper's. No human-scored word-error rate is claimed. The bundled self-test
 passes with Whistle's own real speech output.
 
-## 8. Release and help
+## 9. Release and help
 
-- [v0.1.9 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.9)
-- [Core package 0.1.9 on PyPI](https://pypi.org/project/textflowkit/0.1.9/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.10 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10)
+- [Core package 0.1.10 on PyPI](https://pypi.org/project/textflowkit/0.1.10/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The v0.1.9 release makes Whistle the default engine and moves `openai-whisper` to
-the optional `whisper` extra. Whistle's own verification boundary is in
-[section 7](#7-whistle-the-default-engine). Release artifacts and workflow
+The v0.1.10 release **ships the local browser interface** in the core package;
+the v0.1.9 engine change (Whistle default, `openai-whisper` opt-in) is unchanged.
+The local browser interface's own verification boundary is in
+[section 7](#7-local-browser-interface); Whistle's is in
+[section 8](#8-whistle-the-default-engine). Release artifacts and workflow
 results are the publication evidence. The paragraphs below retain historical
-evidence for v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish v0.1.9
-installed-package or harness verification.
+evidence for v0.1.9, v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish
+v0.1.10 installed-package or harness verification.
+
+The v0.1.9 release made Whistle the default engine and moved `openai-whisper` to
+the optional `whisper` extra. Its own evidence is the local 4-hour CPU run and the
+two-process durable-resume run recorded in
+[section 8](#8-whistle-the-default-engine); that is first local test evidence, not
+an installed-package or harness receipt.
 
 The v0.1.8 release carried the four audit-lite fixes for the 2026-10-01
 post-release audit, and the preceding v0.1.7 source-candidate verification
