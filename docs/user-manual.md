@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.10
+# TextFlowKit user manual — v0.1.11
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -25,7 +25,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.10'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.11'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -293,7 +293,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.10'
+python -m pip install 'textflowkit[http,export]==0.1.11'
 textflowkit-ui
 ```
 
@@ -363,6 +363,40 @@ live optional-backend (translation/diarization) run through the UI is claimed,
 and no live Linux or macOS UI run was performed here — those platforms are
 covered by automated tests only.
 
+### 7.1 Live microphone streaming (opt-in, v0.1.11)
+
+![Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams.](assets/live-streaming-flow.svg)
+
+This separate live path bypasses durable job submission; the file/URL job
+diagrams describe the existing standalone workflow.
+
+On **Windows x86_64 only**, the workspace can also transcribe a **live microphone**: set
+`TEXTFLOWKIT_STREAMING=1` before launching, then open the example the launcher
+prints at `http://127.0.0.1:<port>/api/streaming-example` and press **Start
+microphone**. Nothing connects and no microphone is requested until you click;
+**Stop and finish** stops the microphone at once and asks the worklet for its last
+partial audio in a single atomic step, waits for the worklet to confirm it, sends
+it, and only then finalizes — so no audio is sent after the session is told to
+finish. If the worklet does not confirm in time the stop is reported as an error
+and the session is cancelled, never shown as a clean finish. **Cancel** releases
+the microphone and closes the session at once. The page is served by
+this process only — no CDN, no analytics — and the audio goes to the local server
+and nowhere else.
+
+It is **off by default**: with the switch unset the endpoint
+does not exist. It needs the `streaming` extra
+(`python -m pip install "textflowkit[streaming]==0.1.11"`). This is a capability of the
+**servers**, not the command-line `textflowkit` tool — the CLI never opens a
+microphone. See [streaming.md](streaming.md) for the full contract and the
+programmatic API.
+
+Local native English PCM streams ran for 65 s and 300 s, and a separate 12 s UI
+WebSocket run used prerecorded PCM fed at real time. Browser lifecycle and
+resampling checks used fake audio; **physical microphone capture was not verified**.
+Live Linux/macOS and six non-English native languages were not exercised. Existing
+standalone defaults and platform support are unchanged; the public site is static
+documentation and does not accept streams.
+
 ## 8. Whistle, the default engine
 
 Whistle is the default engine in v0.1.9. It is a native CPU-only CLI that needs
@@ -384,7 +418,7 @@ no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
   30-second limit. A word belongs to the clip whose core contains its midpoint, so
   every word is emitted once and repeated phrases are kept; per-clip words are
   shifted to absolute time.
-- **Streaming is not used.** The native `--audio-stream` mode failed its coverage
+- **Standalone streaming is not used.** The native `--audio-stream` mode failed its coverage
   and is never passed; only the standalone committed JSON output is read.
 - **Resume.** With `TEXTFLOWKIT_DB` set, a long run writes a partial checkpoint
   after each clip. A resume checks the source and decoded-WAV hashes and the
@@ -421,18 +455,19 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.10 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10)
-- [Core package 0.1.10 on PyPI](https://pypi.org/project/textflowkit/0.1.10/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.11 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11)
+- [Core package 0.1.11 on PyPI](https://pypi.org/project/textflowkit/0.1.11/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The v0.1.10 release **ships the local browser interface** in the core package;
+The v0.1.11 release adds optional Windows x86_64 live streaming; the local browser
+interface introduced in v0.1.10 remains in the core package, and
 the v0.1.9 engine change (Whistle default, `openai-whisper` opt-in) is unchanged.
 The local browser interface's own verification boundary is in
 [section 7](#7-local-browser-interface); Whistle's is in
 [section 8](#8-whistle-the-default-engine). Release artifacts and workflow
 results are the publication evidence. The paragraphs below retain historical
 evidence for v0.1.9, v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish
-v0.1.10 installed-package or harness verification.
+v0.1.11 installed-package or harness verification.
 
 The v0.1.9 release made Whistle the default engine and moved `openai-whisper` to
 the optional `whisper` extra. Its own evidence is the local 4-hour CPU run and the

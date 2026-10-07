@@ -8,7 +8,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
 [Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).**
+**Current release: [v0.1.11](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -69,7 +69,7 @@ DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.10/docs/assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.11/docs/assets/architecture-overview.svg)
 
 The design principle is **one shared core, thin doors**. Everything of substance
 lives in the core; the interfaces are thin — the local browser UI is a fifth door
@@ -90,6 +90,32 @@ means writing one source adapter, not another tool.
 
 For the job lifecycle, process ownership, checkpoints, and output publication,
 see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/main/docs/architecture.md).
+
+## Live microphone streaming (opt-in)
+
+In v0.1.11, live streaming supports **Windows x86_64 only**. When
+`TEXTFLOWKIT_STREAMING=1` is set, the developer HTTP app serves a `/stream`
+WebSocket and the local UI serves `/api/stream`, both transcribing a live microphone
+as you speak. A **runnable, self-hosted browser example** ships at
+`/streaming-example` (and `/api/streaming-example` under the UI): it captures with an
+`AudioWorklet`, resamples any device rate to 16 kHz mono, and shows the transcript.
+No CDN, no analytics, no external fetch. Requires the `streaming` extra:
+
+```bash
+python -m pip install "textflowkit[streaming]==0.1.11"
+```
+
+It is **off by default** — with the switch unset the endpoint does not exist — and
+**loopback-only**: auth is fail-closed, so the UI accepts only its own origin and
+capability, the standalone API requires `TEXTFLOWKIT_API_TOKEN` (even in developer
+mode), and a separate origin — including the standalone browser example's own origin —
+may stream only if listed in `TEXTFLOWKIT_STREAMING_ORIGINS`. The standalone
+`textflowkit` CLI is unaffected: it does not open a microphone or a streaming socket.
+**Bounded live runs are verified on the native engine here** — 65 s and 300 s
+end-to-end on Windows x86_64; the transport and the browser resampler are covered by
+tests, and a physical browser microphone has not yet been captured (the browser proof
+drives the page against a fake audio device). See
+[docs/streaming.md](https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md).
 
 ## Recognized sources
 
@@ -237,7 +263,7 @@ textflowkit export ./transcript.json --format vtt
 needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
 torch; `openai-whisper` is an explicitly selectable opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.10/docs/assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.11/docs/assets/whistle-resume.svg)
 
 - **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
   model on first use. Naming a GPU device is refused rather than silently
@@ -254,7 +280,7 @@ torch; `openai-whisper` is an explicitly selectable opt-in engine.
   of context on each side, so every standalone clip is ≤ 30 seconds (the native
   CLI's limit). Overlap words are selected by core midpoint rather than text
   deduplication, so repeated spoken phrases are preserved.
-- **Streaming is not used.** The native `--audio-stream` mode failed its
+- **Standalone streaming is not used.** The native `--audio-stream` mode failed its
   coverage and is never passed; only the committed standalone output is parsed.
 - **Durable block resume.** With `TEXTFLOWKIT_DB` set, a long run writes partial
   per-block checkpoints; a resume checks the source and decoded-WAV hashes and the
@@ -348,7 +374,7 @@ its own beyond the `http` extra. It ships with the core package as of v0.1.10:
 a regular install of the current release carries it.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.10'
+python -m pip install 'textflowkit[http,export]==0.1.11'
 textflowkit-ui
 ```
 
@@ -419,29 +445,34 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.10 release.** Core, CLI, MCP, HTTP, and the local browser interface have
-automated coverage. This release **ships the local browser interface**
-(`textflowkit-ui`) in the core package: a loopback-only workspace that reuses the
-same pipeline, submission contract, and job store, with a durable store, cancel
-and resume, and a Windows desktop shortcut (`textflowkit-ui --create-shortcut`).
-It adds **no new dependency** beyond the existing `http` extra, so a regular
-`pip install 'textflowkit[http,export]==0.1.10'` carries it. The engine, CLI,
-Python, MCP, and HTTP surfaces are unchanged and there is **no endpoint-breaking
-change**. It builds on v0.1.9, which made **Whistle the default engine** — a
-native CPU-only transcriber that needs no PyTorch — and moved `openai-whisper` to
-the optional `whisper` extra, selected explicitly with `--engine whisper` or
-`engine="whisper"`. Legacy engine aliases are preserved, so older saved jobs and
-`transcribe()` calls still decode. Whistle refuses an unsupported platform,
-language, or GPU request instead of silently falling back; its engine's
-verification boundary is in [Whistle (default engine)](#whistle-default-engine)
-above.
+**v0.1.11 release.** Optional live streaming adds a transport-neutral
+`StreamingSession` Python API, incremental transcript events, and authenticated
+loopback WebSockets (`/stream` on the developer HTTP API and `/api/stream` on the
+local UI), with a packaged browser microphone example. The native live capability
+supports **Windows x86_64 only** and uses one owned child with a separately pinned
+`libneedle3.dll`. The `streaming` extra supplies the WebSocket dependency;
+`TEXTFLOWKIT_STREAMING=1` enables the server routes. Streaming is off by default.
+
+Existing file and URL transcription, CLI, MCP, durable jobs, and local browser
+workspace defaults remain unchanged. Whistle stays the CPU-only standalone default;
+`openai-whisper` remains an explicit opt-in engine. The local browser workspace
+introduced in v0.1.10 still needs only the `http` extra for its ordinary job flow.
+Fonts remain 0.1.6. Live sessions are ephemeral and have no durable resume.
+
+**Streaming evidence.** Local English PCM runs exercised the native core for 65 s
+and 300 s; a separate assembled UI WebSocket run fed prerecorded PCM at real time
+for 12 s and returned incremental events and a final transcript. Browser lifecycle
+and resampling checks used fake audio. Physical browser microphone capture, live
+Linux/macOS, and the six other accepted languages were not verified. The public
+website remains static documentation and serves no streaming endpoint. Local source
+validation does not establish published-package or exact-commit CI results.
 
 **Verification limit.** The local browser interface is covered by an automated
 suite, and the UI's behavior was proved on a **native Windows** machine in a real
 browser. No live optional-backend (translation/diarization) run through the UI is
 claimed, and **no live Linux or macOS UI run was performed here** — those
 platforms are covered by automated tests only, and CI across Windows, Linux, and
-macOS is the coordinator's separate step. Release publication uses the tag
+macOS is a separate release gate. Release publication uses the tag
 workflow, which requires successful exact-commit main CI before PyPI uploads and
 creates the public GitHub release only afterward. Check the linked release for
 artifacts and workflow status; local source verification is not a fresh
@@ -458,7 +489,7 @@ MCP speech, seven-format exports and completed resume; the v0.1.8 runtime fixes
 were independently checked through fresh-process CLI restart probes, real SQLite
 setup-failure tests, and the full Windows test suite. Those checks are not new
 individual-harness receipts. That is the previous releases' record, not evidence
-for v0.1.10.
+for v0.1.11.
 
 The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
@@ -477,7 +508,7 @@ and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
 live — that is the v0.1.6 release's evidence, not a receipt for a later release.
 Everything from here to the end of this section is the v0.1.6 release's
-historical record as published: it is not re-verified for v0.1.10, whose separate release evidence is not supplied by these historical paragraphs.
+historical record as published: it is not re-verified for v0.1.11, whose separate release evidence is not supplied by these historical paragraphs.
 Merged-main CI passed 16/16 on the tagged commit; the published wheel and
 sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
 Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI

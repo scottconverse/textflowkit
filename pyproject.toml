@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "textflowkit"
-version = "0.1.10"
+version = "0.1.11"
 description = "Cross-platform media transcription toolkit: URL or file in, timestamped transcripts and subtitle files out."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,6 +34,12 @@ dependencies = [
 dev = ["pytest>=8", "ruff>=0.6", "typing-extensions>=4.8; python_version < '3.11'", "pypdf>=5", "build>=1.2", "hatchling>=1.25"]
 mcp = ["mcp>=2.0"]
 http = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7"]
+# Live microphone streaming over a WebSocket (opt-in: TEXTFLOWKIT_STREAMING=1).
+# It rides on the `http` extra's app and adds the WebSocket implementation the
+# ASGI server needs - bare uvicorn ships without one, so without this extra a
+# streamed handshake cannot complete. Bounded to the 15.x line the transport was
+# verified against; nothing else is pulled in.
+streaming = ["textflowkit[http]", "websockets>=15,<16"]
 # 4.x is required: 3.4.x imports torchaudio.AudioMetaData, which torchaudio 2.11
 # no longer provides. See docs/install.md before installing - pyannote pulls
 # torch open-endedly, so pin your torch stack or you lose GPU acceleration.
@@ -56,7 +62,7 @@ whisper = ["openai-whisper>=20240930"]
 # native Windows CPU); releases below it are not claimed compatible.
 faster-whisper = ["faster-whisper>=1.2.1,<2"]
 export = ["python-docx>=1.1", "reportlab>=4.0", "textflowkit-fonts>=0.1.5,<0.2"]
-all = ["textflowkit[mcp,http,diarize,export,whisper]"]
+all = ["textflowkit[mcp,http,streaming,diarize,export,whisper]"]
 
 [project.scripts]
 textflowkit = "textflowkit.cli:main"

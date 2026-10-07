@@ -30,6 +30,7 @@ existing HTTP contract and its tests are unaffected.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -46,9 +47,14 @@ from fastapi.responses import (
 
 from textflowkit import __version__
 from textflowkit.adapters import http_server
+from textflowkit.adapters.streaming_ws import (
+    StreamingConfig,
+    streaming_enabled,
+)
 from textflowkit.core.executor import shutdown_default_executor
 from textflowkit.core.jobs import JobState, get_default_store, validate_list_limit
 from textflowkit.core.runner import transcript_for
+from textflowkit.core.service import ENV_API_TOKEN, production_enabled
 from textflowkit.core.startup import recover_startup
 from textflowkit.core.submission import SubmissionRequest, item_source, submit_batch, submit_request
 from textflowkit.render import SUPPORTED_FORMATS, render_bytes
@@ -129,6 +135,78 @@ def _session_html(token: str, origin: str) -> str:
     return text
 
 
+def _quote_attr(value: str) -> str:
+    """Escape a string for a double-quoted HTML attribute.
+
+    This value lands in ``content="..."`` in the page source, so the escaping must
+    be *HTML* escaping, not JSON string escaping: a JSON ``\\"`` would terminate the
+    attribute and let the rest parse as markup. Every character that can end the
+    attribute or open a tag is escaped, ``&`` first so it is not double-escaped.
+    """
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def render_streaming_example(
+    *, capability: str = "", origin: str = "", require_token: bool = True
+) -> str | None:
+    """Render the packaged browser streaming example with its placeholders filled.
+
+    The page is the *same* packaged asset in both places it is served - the
+    standalone developer app (at ``/streaming-example``, where ``capability`` is
+    empty, ``require_token`` is true, and the operator types the API token) and the
+    local UI (at ``/api/streaming-example``, where ``capability`` is this process's UI
+    token and ``require_token`` follows the UI's own profile). In the UI the token
+    reaches the page the same way it reaches the shell: a ``<meta>`` attribute, never
+    a URL, a cookie, or a log line. ``require_token`` only tells the page *whether* to
+    ask for the token; the value itself is typed by the operator and never embedded.
+    Returns ``None`` if the asset is not packaged, so the caller can 404.
+    """
+    data = _read_static("streaming-example.html")
+    if data is None:
+        return None
+    text = data.decode("utf-8")
+    text = text.replace("__TFK_CAPABILITY__", _quote_attr(capability))
+    text = text.replace("__TFK_ORIGIN__", _quote_attr(origin))
+    text = text.replace("__TFK_REQUIRE_TOKEN__", "1" if require_token else "0")
+    text = text.replace("__TFK_VERSION__", __version__)
+    return text
+
+
+def read_static_asset(relative: str) -> bytes | None:
+    """Read one packaged static asset by name (a thin public alias for tests)."""
+    return _read_static(relative)
+
+
+def ui_streaming_config(*, ui_token: str, expected_origin: str) -> StreamingConfig:
+    """The streaming policy for the UI-mounted stream.
+
+    A browser served by this UI proves itself with the UI capability *and*, in the
+    production profile, the API token as well - the same gate the UI's own HTTP
+    surface applies, never a weaker one. ``own_origin`` is this UI's exact origin,
+    so a browser on any other origin is refused at the handshake before a session
+    is allocated, even if it somehow holds a valid capability.
+
+    The cross-app allowlist is deliberately **empty** here. The UI's stream serves
+    exactly one origin - this UI - and nothing about the generic cross-app
+    allowlist widens the UI. A "God Eye View" dashboard that wants a stream uses
+    the standalone API's allowlist instead, and authenticates with the API token,
+    not the UI capability.
+    """
+    return StreamingConfig(
+        own_origin=expected_origin,
+        allowed_origins=(),
+        ui_token=ui_token,
+        require_api_token=production_enabled(),
+        api_token=os.environ.get(ENV_API_TOKEN),
+    )
+
+
 def _capability_ok(supplied: str | None, token: str) -> bool:
     import hmac
 
@@ -205,6 +283,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # A live stream owns a native child process; cancel before the job workers
+        # drain so no stream outlives the server. The mounted app's own lifespan
+        # does not run when this app mounts it, so this app must do it here.
+        from textflowkit.core.streaming import cancel_all_sessions
+
+        cancel_all_sessions()
         shutdown_default_executor(wait=True)
 
 
@@ -233,8 +317,16 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
         path = request.url.path
         # The shell and its assets are GETs the browser issues before any script
         # runs; they carry no capability header by design but are still gated on
-        # loopback host/peer/origin below.
-        is_asset = path == "/" or path.startswith("/assets/")
+        # loopback host/peer/origin below. The streaming example page is one of
+        # these: reading it is an asset fetch, so it is exempt from the capability
+        # header *only*, and only when streaming is opted into. Steps 1 and 2 of
+        # the refusal (loopback host/peer, exact UI origin) still apply to it, so a
+        # cross-origin or off-box read is still refused.
+        is_asset = (
+            path == "/"
+            or path.startswith("/assets/")
+            or (path == "/api/streaming-example" and streaming_enabled())
+        )
         refusal = request_refusal(
             host=request.headers.get("host"),
             origin=request.headers.get("origin"),
@@ -265,6 +357,25 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
     @app.get("/favicon.ico")
     def favicon() -> Response:
         return Response(status_code=204)
+
+    @app.get("/api/streaming-example", response_class=HTMLResponse)
+    def streaming_example() -> Response:
+        """The runnable live-microphone example, served only when opted in.
+
+        The exact same packaged page the standalone app serves, but with this UI's
+        capability token embedded so its script authenticates as this UI's origin
+        - never by reading a token from a URL. With streaming off it is a 404.
+        """
+        if not streaming_enabled():
+            return PlainTextResponse("not found", status_code=404)
+        html = render_streaming_example(
+            capability=token,
+            origin=expected_origin,
+            require_token=production_enabled(),
+        )
+        if html is None:  # pragma: no cover - packaged asset must exist
+            return PlainTextResponse("not found", status_code=404)
+        return HTMLResponse(html)
 
     # --- capability and metadata ------------------------------------------
 
@@ -462,6 +573,27 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
 
     # Mounted *last* and under /api, so no UI route can be shadowed by it, and
     # so the existing app's own routes, middleware, and guards are untouched.
+    #
+    # When live streaming is opted into, the guarded stream route is installed on
+    # **this UI app's own router**, before the ``/api`` mount, carrying the full
+    # outer path ``/api/stream``. Installing it here - rather than on the mounted
+    # ``http_server.app`` - is what keeps two UI servers in one process isolated:
+    # ``http_server.app`` is a process-global, so mutating its router would let a
+    # second ``create_app`` rewrite the first app's origin and capability. Its
+    # pure-ASGI guard sees the raw WebSocket handshake - which the UI's own
+    # ``session_guard`` (an ``@app.middleware("http")``) never does - and enforces
+    # this UI's exact origin and capability token. Starlette matches routes in
+    # order, and a `Mount` does not rewrite ``scope["path"]``, so the route claims
+    # the outer ``/api/stream`` scope before the mount is reached. The UI's own
+    # cross-app allowlist stays empty - the UI's origin is never widened - while
+    # extra origins from ``TEXTFLOWKIT_STREAMING_ORIGINS`` remain a
+    # token-authenticated cross-origin path.
+    if streaming_enabled():
+        http_server.install_streaming_route(
+            app,
+            path="/api/stream",
+            config=ui_streaming_config(ui_token=token, expected_origin=expected_origin),
+        )
     app.mount("/api", http_server.app)
 
     # Let the launcher hand the running server to the shutdown controller.

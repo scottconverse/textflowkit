@@ -1,5 +1,29 @@
 # Release verification checklist
 
+## v0.1.11 release preparation
+
+Core is 0.1.11; fonts remain 0.1.6. Run the existing guards from the candidate root:
+
+```powershell
+python scripts/verify_release_versions.py --tag v0.1.11
+python scripts/verify_readme_release.py --version v0.1.11
+python -m pytest tests/test_release_surfaces.py
+```
+
+Optional live streaming is Windows x86_64 only and off by default. Check its
+public Python API, packaged browser assets, and `streaming` extra in the release
+artifacts during release packaging verification. Preserve ordinary
+standalone defaults. Distinguish local 65 s/300 s native core runs and the 12 s UI
+WebSocket run (prerecorded PCM fed at real time) from browser lifecycle checks
+using fake audio. No physical microphone, live Linux/macOS, non-English native
+run, or public website streaming verification is claimed. The public site
+remains static documentation.
+
+Version/docs guard results do not replace packaging, exact-commit CI, or
+publication checks. The gates below still apply before committing the candidate,
+pushing, merging, tagging, and publishing.
+
+
 Deterministic GitHub CI and live YouTube evidence are **different gates**. The
 live check runs on a Windows maintainer machine, not a GitHub-hosted runner.
 The [hosted attempt on 2026-09-23](https://github.com/scottconverse/textflowkit/actions/runs/35805762808)
@@ -102,7 +126,7 @@ packaging and launch are part of the release:
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.10` for a future release) on that verified
+version tag (for example `v0.1.11` for this release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

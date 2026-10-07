@@ -47,6 +47,7 @@ import webbrowser
 from pathlib import Path
 
 from textflowkit import __version__
+from textflowkit.adapters.streaming_ws import streaming_enabled
 from textflowkit.core.bind import is_loopback_host
 
 DEFAULT_HOST = "127.0.0.1"
@@ -514,6 +515,18 @@ def _serve(
         )
         return 1
 
+    # If live streaming is opted into, the WebSocket extra must be present, or the
+    # UI would advertise a stream endpoint it cannot complete a handshake on. Fail
+    # clearly here rather than serving a broken route.
+    if streaming_enabled():
+        from textflowkit.adapters.http_server import streaming_dependency_problem
+
+        problem = streaming_dependency_problem()
+        if problem is not None:
+            reserved.close()
+            _report_startup_failure(f"error: {problem}", log_stream=log_stream)
+            return 2
+
     url = f"http://{args.host}:{port}/"
     lines = [
         f"textflowkit {__version__} local UI",
@@ -523,6 +536,8 @@ def _serve(
         f"  work    : {os.environ.get('TEXTFLOWKIT_WORK_ROOT')}",
     ]
     lines += [f"  default {name}={value}" for name, value in applied.items()]
+    if streaming_enabled():
+        lines.append(f"  stream  : {url.rstrip('/')}/api/streaming-example")
     lines += [
         "  stop    : press Ctrl+C, or use 'Stop server' in the workspace",
         "  note    : do not point a second process at this same database file",
@@ -577,6 +592,16 @@ def _run_server(
         "host": args.host,
         "port": port,
         "proxy_headers": False,
+        # WebSocket bounds, applied whether or not live streaming is opted into (so
+        # they also cover the mounted app's own ws surface and cost nothing when
+        # idle). ``ws_max_size`` sits just above the one-second audio frame the
+        # streaming protocol allows, so an oversize frame is refused at the
+        # transport before the handler sees it; ``ws_max_queue`` is small so a peer
+        # cannot queue frames without bound while the handler is busy. Per-message
+        # deflate is off: the live payload is already-compact PCM.
+        "ws_max_size": 32768,
+        "ws_max_queue": 5,
+        "ws_per_message_deflate": False,
     }
     if consoleless:
         # Under pythonw there is no stdout/stderr for uvicorn's default handlers

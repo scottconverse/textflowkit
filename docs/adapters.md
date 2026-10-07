@@ -1,6 +1,6 @@
 # Developer and integration manual
 
-Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).
+Current release: [v0.1.11](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
@@ -8,7 +8,8 @@ the version of TextFlowKit currently published.
 textflowkit has one core and several thin doors. Nothing is duplicated between
 them: the CLI, the MCP server, the HTTP API, and the local browser
 interface (`textflowkit-ui`) all call `textflowkit.core.submission` and share one
-job model.
+job model for file and URL transcription. The optional live `StreamingSession`
+API and WebSockets are ephemeral and bypass durable job submission.
 
 ![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
@@ -506,6 +507,47 @@ agree. So if you do leave it on, put it behind a proxy that appends its own
 observation rather than forwarding the caller's header, and keep
 `FORWARDED_ALLOW_IPS` narrow.
 
+## Live microphone streaming (`/stream`, opt-in)
+
+In v0.1.11, native live streaming supports **Windows x86_64 only**. Other live
+platforms are unsupported; existing standalone defaults and platform support are
+unchanged. Physical browser microphone capture was not verified. The public site
+is static documentation and serves no streams. Both local server surfaces can
+carry a live microphone stream when
+`TEXTFLOWKIT_STREAMING=1` is set: the developer HTTP app at `/stream`, and the UI at
+`/api/stream`. It is **off by default** - with the switch unset the route does not
+exist and a connection is refused before any session is allocated - and it needs the
+`streaming` extra (`websockets`).
+
+```powershell
+python -m pip install "textflowkit[streaming]==0.1.11"
+# Native Windows PowerShell:
+$env:TEXTFLOWKIT_API_TOKEN="choose-a-long-random-token"
+$env:TEXTFLOWKIT_STREAMING="1"
+textflowkit-http --streaming          # ws://127.0.0.1:8767/stream
+# or the documented import target directly - the WS bounds are NOT automatic here,
+# the plain uvicorn line above would keep uvicorn's larger defaults and deflate on:
+uvicorn textflowkit.adapters.http_server:app --host 127.0.0.1 --port 8767 `
+  --ws-max-size 32768 --ws-max-queue 5 --ws-per-message-deflate false --no-proxy-headers
+```
+
+The launcher (`textflowkit-http --streaming`) applies those bounds for you; a direct
+ASGI invocation only has them when the flags are passed. `--no-proxy-headers` keeps
+a proxy header from rewriting the peer address the loopback check reads (the same
+switch the proxy-identity section above discusses).
+
+The endpoint is a plain version-1 JSON + PCM WebSocket: one `start`, binary audio
+(16 kHz mono s16le, ≤ 32000 bytes/frame), then `finish` or `cancel`; the server sends
+`ready`, `event`s, and exactly one terminal `final` or `error`. Sessions are
+ephemeral - no job row, no resume, no reconnect. Auth is fail-closed and there is no
+anonymous path: a non-browser client sends `Authorization: Bearer` (or `token` in the
+start JSON); a browser the UI served sends the UI capability. The standalone
+`/stream` may additionally admit exact extra origins from
+`TEXTFLOWKIT_STREAMING_ORIGINS` (token-authenticated); the UI's own origin is never
+widened by that list. Streaming is loopback-only even under
+`TEXTFLOWKIT_ALLOW_REMOTE`. The full contract, lifecycle, limits, and a generic
+integration recipe are in [streaming.md](streaming.md).
+
 ## Local browser interface (`textflowkit-ui`)
 
 `textflowkit-ui` is a fourth thin door beside the CLI, MCP, and HTTP entry
@@ -518,7 +560,7 @@ supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
 of its own: it is a local app, not a hosted service.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.10'
+python -m pip install 'textflowkit[http,export]==0.1.11'
 textflowkit-ui                 # serve on 127.0.0.1 and open a browser
 textflowkit-ui --no-browser --port 8901
 ```

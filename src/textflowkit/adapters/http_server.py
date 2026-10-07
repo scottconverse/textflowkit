@@ -57,6 +57,7 @@ from textflowkit.core.service import (
     validate_production_config,
 )
 from textflowkit.core.startup import recover_startup
+from textflowkit.core.streaming import cancel_all_sessions
 from textflowkit.core.submission import (
     SubmissionRequest,
     item_source,
@@ -77,7 +78,7 @@ from textflowkit.render import (
 
 try:  # optional extra
     from fastapi import FastAPI, HTTPException, Query, Request
-    from fastapi.responses import JSONResponse, PlainTextResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
     from pydantic import BaseModel, Field, ValidationError
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
@@ -101,6 +102,10 @@ async def _lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Stop live streams first. Each owns a native child process, and a stream
+        # left running while the job workers drain would hold its child open past
+        # the point the server is supposed to be gone.
+        cancel_all_sessions()
         # Drain the workers this process owns. Never creates an executor: a
         # server that ran no job has nothing to stop.
         shutdown_default_executor(wait=True)
@@ -612,6 +617,216 @@ def export(
     return {"job_id": job.id, "written": written}
 
 
+# --- live streaming (opt-in) ----------------------------------------------
+#
+# Live microphone streaming is added to this app only when opted in, and only
+# as a wrapper the launcher serves: the WebSocket handshake is not seen by the
+# ``production_guard`` HTTP middleware above (that runs for ``http`` scopes
+# only), so the stream is guarded by its own pure-ASGI middleware in
+# ``adapters.streaming_ws``. The rules it applies are the same ones this app's
+# HTTP guard applies and more: loopback Host and a provably-loopback peer,
+# always, and then either the configured API token (a non-browser client) or the
+# UI capability (a browser the UI served the page to). None of it is enabled
+# unless the operator asks for it.
+
+from textflowkit.adapters.streaming_ws import (
+    ENV_STREAMING as _STREAMING_ENV,
+)
+from textflowkit.adapters.streaming_ws import (
+    StreamingConfig,
+    StreamingRoute,
+    WebSocketScopeGuard,
+    streaming_enabled,
+)
+
+#: Just above the one-second audio frame the wire protocol allows (32000 bytes),
+#: so an oversize frame is refused at the transport. See ``main``.
+_WS_MAX_SIZE = 32768
+#: A peer may have at most this many frames queued while the handler is busy.
+_WS_MAX_QUEUE = 5
+
+
+def streaming_origins_env() -> tuple[str, ...]:
+    """Extra exact cross-origin allowances for streams, validated."""
+    from textflowkit.adapters.streaming_ws import streaming_origins
+
+    return streaming_origins()
+
+
+def streaming_config(*, path: str = "/stream") -> StreamingConfig:
+    """The streaming policy for this app.
+
+    The standalone developer app is accessed by programmatic clients and - when a
+    page is served from it - by a same-origin browser page, but it has no UI
+    capability of its own. So a stream there is authenticated by the API Bearer
+    token. In **developer mode** the token is the loopback developer sentinel
+    (:data:`textflowkit.core.service.ENV_API_TOKEN` is not required in dev for
+    other routes, but streaming always requires one, so the operator running a
+    stream is explicit about who may open it): a stream is only ever served with a
+    token configured, even in developer mode. In **production** the same
+    ``validate_production_config`` rules already enforced on HTTP apply, and the
+    stream refuses without a valid token exactly as HTTP does - there is no bypass.
+    """
+    token = os.environ.get(ENV_API_TOKEN)
+    return StreamingConfig(
+        own_origin=None,
+        allowed_origins=streaming_origins_env(),
+        require_api_token=True,
+        api_token=token,
+    )
+
+
+def streaming_dependency_problem() -> str | None:
+    """A human reason the streaming extra is missing, or ``None`` if it is present.
+
+    Streaming rides on the WebSocket support of the ASGI server. This app ships
+    uvicorn without a WebSocket implementation unless the ``streaming`` extra is
+    installed, so a server started with streaming opted in but the extra absent
+    would advertise an endpoint it cannot complete a handshake on. The launcher
+    checks here and fails clearly rather than serving a broken route.
+    """
+    try:
+        import websockets  # noqa: F401
+    except ImportError:
+        return (
+            "live streaming requires the 'streaming' extra (websockets). "
+            "Install with: pip install 'textflowkit[streaming]'"
+        )
+    return None
+
+
+@app.get("/streaming-example")
+def streaming_example() -> Response:
+    """The runnable browser example, served only when streaming is on.
+
+    A self-hosted page and its inline script; no CDN, no analytics, no external
+    fetch. It is a GET asset the browser loads before any script runs, so it
+    carries no capability header; the ``production_guard`` above still requires a
+    loopback Host/Origin/peer. With streaming off this route is not registered at
+    all, so it 404s like any unknown path.
+    """
+    if not streaming_enabled():
+        return PlainTextResponse("not found", status_code=404)
+    from textflowkit.ui.app import render_streaming_example
+
+    # Standalone: no UI capability. The page falls back to the API-token field,
+    # which the operator fills in with the same token the server was started with.
+    html = render_streaming_example(capability="", origin="")
+    if html is None:  # pragma: no cover - packaged asset must exist
+        return PlainTextResponse("not found", status_code=404)
+    return HTMLResponse(html)
+
+
+@app.get("/assets/streaming-capture-worklet.js")
+def streaming_capture_worklet() -> Response:
+    """The packaged AudioWorklet the example loads, served same-origin.
+
+    The page fetches this module with ``audioWorklet.addModule``. It is the
+    packaged file itself (the same one the project tests with Node), served with
+    a JavaScript content type and only when streaming is on, so the example
+    needs no CDN and no synthesised blob module.
+    """
+    if not streaming_enabled():
+        return PlainTextResponse("not found", status_code=404)
+    from textflowkit.ui.app import read_static_asset
+
+    asset = read_static_asset("streaming-capture-worklet.js")
+    if asset is None:  # pragma: no cover - packaged asset must exist
+        return PlainTextResponse("not found", status_code=404)
+    return Response(asset, media_type="text/javascript; charset=utf-8")
+
+
+class _StreamingWebSocketRoute:
+    """A Starlette-shaped route serving one guarded stream path.
+
+    Registered on the app's own router (not as a wrapper around the app) so that
+    **any** ASGI server that serves the documented import target
+    ``uvicorn textflowkit.adapters.http_server:app`` - not just the packaged
+    ``textflowkit-http`` launcher - reaches the stream. ``matches`` claims only a
+    websocket scope on this exact path and nothing else, so every HTTP route, its
+    middleware, and its guards are untouched. ``handle`` runs the pure-ASGI guard,
+    which validates loopback peer/Host and origin *before* the route allocates a
+    session.
+    """
+
+    def __init__(self, *, path: str, config: StreamingConfig):
+        self.path = path
+        self._guarded = WebSocketScopeGuard(StreamingRoute(config), path=path, config=config)
+
+    def matches(self, scope: dict) -> tuple[Any, dict]:
+        from starlette.routing import Match
+
+        if scope.get("type") == "websocket" and scope.get("path") == self.path:
+            return Match.FULL, {}
+        return Match.NONE, {}
+
+    async def handle(self, scope: dict, receive: Any, send: Any) -> None:
+        await self._guarded(scope, receive, send)
+
+
+def install_streaming_route(
+    host_app: Any = None, *, path: str = "/stream", config: StreamingConfig | None = None
+) -> bool:
+    """Add the guarded stream route to ``host_app`` (default: this module's app).
+
+    Returns whether a route was installed. A second call for the *same* path on the
+    same app replaces the earlier one, so the most recent config wins: this module's
+    ``app`` is a process-global, and a host that builds two streaming front ends in
+    one process (two UI servers, or a test suite) must not leave a stale route whose
+    config carries a previous session's capability serving the newer path. Called at
+    import time when streaming is opted into - so a directly-served
+    ``uvicorn textflowkit.adapters.http_server:app`` carries the stream - and by the
+    UI and the packaged launcher to add or refresh their own path.
+    """
+    target = app if host_app is None else host_app
+    router = getattr(target, "router", None)
+    if router is None:  # pragma: no cover - a non-Starlette host cannot take the route
+        return False
+    if config is None:
+        config = streaming_config(path=path)
+    replacement = _StreamingWebSocketRoute(path=path, config=config)
+    router.routes[:] = [
+        existing
+        for existing in router.routes
+        if not (isinstance(existing, _StreamingWebSocketRoute) and existing.path == path)
+    ]
+    router.routes.append(replacement)
+    return True
+
+
+def remove_streaming_route(host_app: Any = None, *, path: str | None = None) -> int:
+    """Drop stream route(s) from ``host_app`` (default: this module's app).
+
+    Returns how many were removed. Needed because ``app`` is a process-global: a
+    host that opts streaming *off* after it was on must not leave a live,
+    guard-passing route behind for the next server built in the same process. With
+    ``path`` ``None`` every stream route is removed.
+    """
+    target = app if host_app is None else host_app
+    router = getattr(target, "router", None)
+    if router is None:  # pragma: no cover - a non-Starlette host cannot hold the route
+        return 0
+    before = len(router.routes)
+    router.routes[:] = [
+        existing
+        for existing in router.routes
+        if not (
+            isinstance(existing, _StreamingWebSocketRoute)
+            and (path is None or existing.path == path)
+        )
+    ]
+    return before - len(router.routes)
+
+
+# Opt in at import time: an operator who serves the documented target
+# `uvicorn textflowkit.adapters.http_server:app` (or any ASGI server pointed at
+# `textflowkit.adapters.http_server:app`) with TEXTFLOWKIT_STREAMING=1 gets the
+# stream route without the packaged launcher. The packaged launchers call the
+# installer explicitly as well, and it is idempotent.
+if streaming_enabled():
+    install_streaming_route()
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -631,6 +846,16 @@ def main(argv: list[str] | None = None) -> int:
             f"({ENV_ALLOW_REMOTE}=1 also works)"
         ),
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help=(
+            "also serve the live-microphone /stream WebSocket and the "
+            "/streaming-example browser page (opt-in; also TEXTFLOWKIT_STREAMING=1). "
+            "Streaming is loopback-only and never widened by --allow-remote. "
+            "Requires the 'streaming' extra (websockets)."
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"textflowkit-http {__version__}")
     args = parser.parse_args(argv)
 
@@ -641,6 +866,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    if args.streaming and not os.environ.get(_STREAMING_ENV):
+        # Honor the CLI flag by setting the switch the app and launcher read, so a
+        # server started this way is identical to one started with the env var.
+        os.environ[_STREAMING_ENV] = "1"
+
+    if streaming_enabled():
+        problem = streaming_dependency_problem()
+        if problem is not None:
+            print(f"error: {problem}", file=sys.stderr)
+            return 2
+        # Idempotent: the route was likely already added at import time. Calling it
+        # again after the flag is set makes `--streaming` add the route even though
+        # the module was imported before the switch was flipped.
+        install_streaming_route(path="/stream", config=streaming_config())
+
     # uvicorn's own proxy-header middleware applies a *second* trust set of its
     # own - 127.0.0.1/::1 by default, or FORWARDED_ALLOW_IPS - and can rewrite the
     # peer before this app sees it. It is off so the app gets the raw peer and
@@ -650,7 +890,23 @@ def main(argv: list[str] | None = None) -> int:
     # configured to trust everything (--forwarded-allow-ips=*), or when every hop
     # in the chain is already trusted. Start the ASGI app directly and you own
     # that choice; see docs/adapters.md.
-    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
+    #
+    # The WebSocket bounds below apply whether or not streaming is on: they also
+    # cap any future ws use and cost nothing when idle. ``ws_max_size`` is just
+    # above the one-second audio frame the protocol allows, so an oversize frame
+    # is refused at the transport before it reaches the handler; ``ws_max_queue``
+    # is small so a peer cannot queue unbounded frames while backpressured. No
+    # permessage compression: the payload is already-compact PCM and compressing
+    # it would only spend CPU and open a decompression-bomb surface.
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        proxy_headers=False,
+        ws_max_size=_WS_MAX_SIZE,
+        ws_max_queue=_WS_MAX_QUEUE,
+        ws_per_message_deflate=False,
+    )
     return 0
 
 

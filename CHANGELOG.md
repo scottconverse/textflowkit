@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.1.11 — 2026-10-06
+
+Optional native live streaming supports **Windows x86_64 only**. Core version:
+0.1.11; unchanged optional fonts: 0.1.6. Existing standalone Whistle defaults,
+file/URL jobs, CLI, and MCP behavior are unchanged. The public site remains static
+documentation and serves no streams. Local source validation does not establish
+published-package verification or cross-platform live support.
+
+
+### Added
+
+- **Public `StreamingSession` API.** Bounded PCM feed, typed incremental events,
+  flush/finish, cancellation, canonical final `Transcript`, and context-manager
+  cleanup. One owned native child per session binds directly to the separately
+  pinned `libneedle3.dll`; no upstream Python SDK or telemetry module is loaded.
+  Live sessions are ephemeral, with no replay or durable resume.
+- **Live microphone streaming (opt-in, loopback-only).** When
+  `TEXTFLOWKIT_STREAMING=1` is set, the developer HTTP app serves a `/stream`
+  WebSocket and the local UI serves `/api/stream`, both transcribing audio as it
+  arrives. A runnable, self-hosted browser example is at `/streaming-example`
+  (and `/api/streaming-example` under the UI); its `AudioWorklet` resamples any
+  device rate to 16 kHz mono with continuous phase. Off by default: with the
+  switch unset the endpoint does not exist. The standalone `textflowkit` CLI is
+  unaffected — it does not open a microphone or a streaming socket. Requires the
+  new `streaming` extra (`pip install "textflowkit[streaming]"`), which adds the
+  `websockets` dependency. Auth is fail-closed: the UI accepts only its own origin
+  and capability, the standalone API requires the API token (even in developer
+  mode), and a separate origin may stream only if the operator lists it in
+  `TEXTFLOWKIT_STREAMING_ORIGINS` (a browser needs its own origin listed, including
+  the standalone example's). See [docs/streaming.md](docs/streaming.md).
+  **Bounded live runs verified on this machine's native engine** — 65 s and 300 s
+  through the product core on Windows x86_64. A separate assembled UI WebSocket
+  run fed prerecorded PCM at real time for 12 s. Browser lifecycle and resampling
+  checks used fake audio; **physical microphone capture was not verified**. Only
+  English was measured natively; the other six accepted languages and live
+  Linux/macOS were not exercised. No public remote streaming is provided.
+
 ## v0.1.10 — 2026-10-06
 
 **The local browser interface ships.** The loopback-only browser workspace
@@ -51,7 +88,7 @@ security boundaries. A **native Windows** machine, in a real browser, proved the
 workspace end to end (drop a file, submit, download, stop). That is one platform's
 browser proof, **not** a live Linux or macOS UI run — those platforms are covered
 by automated tests only, and cross-platform CI (Windows/Linux/macOS) is a separate
-step run by the coordinator. **No live optional-backend (translation or
+release gate. **No live optional-backend (translation or
 diarization) run through the UI is claimed.** The engine and packaging changes of
 v0.1.9 are unchanged by this release.
 

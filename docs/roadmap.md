@@ -188,11 +188,26 @@ verification/deployment boundaries, not claims of complete platform coverage.
   change**. Verification is an automated suite plus a **native Windows**
   real-browser proof; **no live Linux or macOS UI run is claimed here** — those
   platforms are covered by automated tests and by CI (Windows/Linux/macOS), which
-  the coordinator runs separately. No live optional-backend
+  runs separately. No live optional-backend
   (translation/diarization) run through the UI is claimed. Publication and its
   exact-commit CI are tracked by the
   [release workflow](https://github.com/scottconverse/textflowkit/actions/workflows/publish-pypi.yml).
   Fonts remain 0.1.6 and are reused without republishing.
+
+## v0.1.11 — optional live streaming
+
+- [x] Ship v0.1.11 review follow-ups: prepare the completed local live streaming
+  implementation and release documentation. Public `StreamingSession` API,
+  incremental events, bounded PCM, finish/cancel, and guarded loopback WebSockets
+  use one owned native child with a separately pinned `libneedle3.dll`. The
+  browser example is packaged; server routes are opt-in and off by default.
+  Native live support is Windows x86_64 only. Standalone defaults and platform
+  support are unchanged; fonts remain 0.1.6. Local English 65 s/300 s core runs
+  and a separate 12 s UI WebSocket run used paced prerecorded PCM. Physical
+  microphone capture, other live platforms, and non-English native runs remain
+  unverified. This completion records local implementation and release
+  preparation; packaging, exact-commit CI, and publication remain
+  separate gates. The public site is static documentation, not a stream server.
 
 ## Design constraints
 

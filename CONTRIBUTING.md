@@ -14,8 +14,14 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # POSIX:   source .venv/bin/activate
 pip install ./packages/textflowkit-fonts  # local optional PDF font companion
-pip install -e ".[dev,mcp,http,export]"
+pip install -e ".[dev,mcp,http,streaming,export,whisper]"
 ```
+
+The full suite needs both `streaming` (WebSocket transport) and `whisper`
+(optional standalone engine) dependencies. Use a development environment; for
+an existing AMD ROCm torch stack, follow [the install guide](docs/install.md)
+to preserve that stack. Native live streaming supports Windows x86_64 only;
+ordinary standalone platform support and defaults remain unchanged.
 
 ## Test and lint — the commands CI runs
 

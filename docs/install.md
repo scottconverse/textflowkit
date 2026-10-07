@@ -1,6 +1,6 @@
 # Install notes
 
-Current release: [v0.1.10](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10).
+Current release: [v0.1.11](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11).
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -16,7 +16,7 @@ The local browser workspace **ships in the core package as of v0.1.10**. A
 regular install of the current release carries the `textflowkit-ui` command:
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.10'
+python -m pip install 'textflowkit[http,export]==0.1.11'
 textflowkit-ui
 ```
 
@@ -42,6 +42,25 @@ workspace drains — it waits for current jobs to finish rather than interruptin
 them; cancel a job first to stop it early. See the
 [user manual](user-manual.md#7-local-browser-interface) and the
 [developer manual](adapters.md#local-browser-interface-textflowkit-ui).
+
+## Live microphone streaming
+
+Live streaming in v0.1.11 is **Windows x86_64 only, opt-in and off by default**.
+Other live platforms are unsupported; existing standalone platform support and
+Whistle defaults are unchanged. Physical browser microphone capture has not been
+verified; the public website is static documentation and does not accept streams. It needs one extra dependency
+(the WebSocket implementation for the ASGI server):
+
+```bash
+python -m pip install "textflowkit[streaming]==0.1.11"
+```
+
+Set `TEXTFLOWKIT_STREAMING=1` to serve it, then open the shipped browser example.
+It is **loopback-only** and fail-closed: the HTTP API's `/stream` requires
+`TEXTFLOWKIT_API_TOKEN` (even in developer mode), and the UI's `/api/stream` accepts
+only the UI's own origin and capability. This is a capability of the two servers,
+**not** the standalone `textflowkit` CLI, which never opens a microphone. See
+[streaming.md](streaming.md).
 
 ## Requirements
 
