@@ -145,9 +145,20 @@ def test_declared_version_matches_runtime_version():
 
 
 def test_static_assets_have_no_build_step():
-    """The UI is plain HTML/CSS/JS: no bundler config, no node_modules."""
+    """The UI is plain HTML/CSS/JS: no bundler config, no node_modules.
+
+    The live-streaming example and its AudioWorklet are the same kind of asset -
+    hand-written HTML and a plain JS module the browser loads directly - so they
+    are expected here, not a build output.
+    """
     static = ROOT / "src" / "textflowkit" / "ui" / "static"
     files = {p.name for p in static.iterdir()}
-    assert files == {"index.html", "app.css", "app.js"}
+    assert files == {
+        "index.html",
+        "app.css",
+        "app.js",
+        "streaming-example.html",
+        "streaming-capture-worklet.js",
+    }
     for stray in ("package.json", "webpack.config.js", "vite.config.js", "tsconfig.json"):
         assert not (static / stray).exists()

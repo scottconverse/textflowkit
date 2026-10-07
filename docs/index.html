@@ -194,7 +194,7 @@
   <main id="main">
     <div class="wrap hero">
       <div>
-        <span class="eyebrow">Open source · Apache 2.0 · v0.1.10</span>
+        <span class="eyebrow">Open source · Apache 2.0 · v0.1.11</span>
         <h1>Media in.<br><em>Useful text</em> out.</h1>
         <p class="lead">Transcribe video and audio into timestamped, searchable text. One shared core for your command line, AI harness, and application.</p>
         <div class="actions">
@@ -202,7 +202,7 @@
           <a class="button secondary" href="https://pypi.org/project/textflowkit/">Install from PyPI <span aria-hidden="true">&nbsp;↗</span></a>
         </div>
         <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
-        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.10">v0.1.10</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
+        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11">v0.1.11</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
       </div>
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
@@ -277,6 +277,10 @@
           <figcaption>A Whistle run is 26-second cores with up to 2 seconds of context per side, so each clip handed to the native CLI stays at or under its 30-second limit. Every core is one owned child process with forced telemetry-off flags — those flags are set, not physically stripped from the binary. Durable resume needs a SQLite store configured with <code>TEXTFLOWKIT_DB</code>, because a checkpoint cannot outlive a process that kept it in memory; a resume then re-runs only the cores that never finished.</figcaption>
         </figure>
         <figure class="figure">
+          <img src="assets/live-streaming-flow.svg" alt="Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams." loading="lazy" width="1180" height="490">
+          <figcaption>Optional live path in v0.1.11: authenticated loopback WebSockets feed an ephemeral <code>StreamingSession</code> and one owned native child. Windows x86_64 only, off by default; no durable job or resume. Existing file/URL jobs follow the separate diagrams. Physical microphone capture has not been verified; this public site serves no streams.</figcaption>
+        </figure>
+        <figure class="figure">
           <img src="assets/local-ui-flow.svg" alt="TextFlowKit local browser interface request flow: the operator opens the workspace from a desktop shortcut or the textflowkit-ui command, which launches a loopback-only server on 127.0.0.1 that holds an exclusive owner lock on the durable SQLite database; the operator drops a file or pastes a URL, a file is streamed to a per-user upload folder capped at 2 GiB by default; both become a submission through the same shared submission contract the CLI, MCP, and HTTP doors use, writing a durable job that runs through the shared core (Whistle by default or an explicit optional engine) decoding with ffmpeg and transcribing on this machine; a finished transcript is searchable, copyable, downloadable in a fixed format list, and playable with the browser's native player on the currently selected media." loading="lazy" width="1180" height="660">
           <figcaption>The local browser interface runs on your machine only. It reuses the same shared submission contract and job store as the other doors, so it is transport over the existing pipeline — not a second engine. Stop server drains: it waits for current jobs to finish rather than cancelling them.</figcaption>
         </figure>
@@ -285,27 +289,28 @@
 
     <section class="wrap" id="local-ui" aria-labelledby="local-ui-title">
       <div class="section-head">
-        <span class="kicker">New in v0.1.10 · runs on your machine</span>
+        <span class="kicker">Local workspace since v0.1.10 · optional streaming in v0.1.11</span>
         <h2 id="local-ui-title">A local browser workspace, not a hosted service.</h2>
         <p>The core now ships a point-and-click workspace. It is a <strong>local app</strong> you install and run yourself — this page is static documentation and offers no upload form, runs no transcription, and hosts nothing.</p>
       </div>
       <div class="install-grid">
         <div>
           <ul>
-            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.10"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
+            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.11"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
             <li><strong>Desktop shortcut (Windows):</strong> <code>textflowkit-ui --create-shortcut</code> makes a Start Menu entry that launches with <code>pythonw</code> (no console) and needs no <code>pywin32</code>. That shortcut is the normal way to open it.</li>
             <li><strong>Loopback only:</strong> it binds <code>127.0.0.1</code> and is never reachable off the machine, whatever <code>TEXTFLOWKIT_ALLOW_REMOTE</code> is set to.</li>
             <li><strong>Durable jobs, cancel, and resume:</strong> jobs and checkpoints are stored durably; you can cancel a running job and resume a saved one. Shutdown <em>drains</em> — it waits for current jobs to finish rather than cancelling them.</li>
             <li><strong>Uploads and downloads:</strong> dropped files are streamed and capped at 2 GiB by default; results download as TXT, Markdown, SRT, VTT, JSON, DOCX, or PDF. Playback uses the browser's native player on the currently selected media.</li>
             <li><strong>No UI analytics:</strong> the page loads no CDN asset and no analytics. A URL source, a first-use model download, and an optional remote/cloud translation backend are the only things that use the network.</li>
+            <li><strong>Live microphone streaming is optional in v0.1.11 and Windows x86_64 only.</strong> The standalone <code>textflowkit</code> CLI does <em>not</em> open a microphone or a streaming socket — its native audio-stream path stays disabled. Live transcription is a distinct capability of the two <em>servers</em> (the HTTP API's <code>/stream</code> and the UI's <code>/api/stream</code>), off unless <code>TEXTFLOWKIT_STREAMING=1</code> is set, loopback-only, and verified with paced PCM through the native core (65 s and 300 s), plus a separate 12 s UI WebSocket PCM run; physical browser microphone capture has not been verified. It ships in the same wheel; see <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md">the streaming guide</a>.</li>
           </ul>
           <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md#7-local-browser-interface">Read the local UI guide ↗</a>
         </div>
         <div>
-          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.10"
+          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.11"
 <span class="prompt">$ </span>textflowkit-ui --create-shortcut
 <span class="comment"># then open it from the Start Menu shortcut</span></pre>
-          <p class="note"><strong>Public page vs. local app.</strong> This landing page is the public, static site. The browser workspace is a separate, local program: it never runs here and is not reachable from the internet. The engine, CLI, MCP, and HTTP surfaces are unchanged in v0.1.10, with no endpoint-breaking change.</p>
+          <p class="note"><strong>Public page vs. local app.</strong> This landing page is the public, static site. The browser workspace is a separate, local program: it never runs here and is not reachable from the internet. v0.1.11 adds opt-in local streaming; existing standalone defaults, file/URL jobs, CLI, and MCP behavior remain unchanged. This public site serves no streaming endpoint.</p>
         </div>
       </div>
     </section>
@@ -321,7 +326,7 @@
           <li>Find the right setup for AMD ROCm in the install guide before installing dependencies — this applies to the optional <code>openai-whisper</code> engine and to diarization.</li>
         </ul>
         <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">Read install guide ↗</a>
-        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.10 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
+        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.11 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
       </div>
       <div>
         <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[mcp,http]"

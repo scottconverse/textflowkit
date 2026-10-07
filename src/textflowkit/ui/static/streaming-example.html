@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="textflowkit-capability" content="__TFK_CAPABILITY__">
+<meta name="textflowkit-origin" content="__TFK_ORIGIN__">
+<meta name="textflowkit-require-token" content="__TFK_REQUIRE_TOKEN__">
+<title>TextFlowKit live streaming example</title>
+<!--
+  A runnable, self-contained live-microphone example. It is served from this
+  process only: no CDN, no external script, no analytics, no font fetch. The
+  microphone is captured with the packaged `streaming-capture-worklet.js`
+  (fetched from this same origin), resampled in the worklet to 16 kHz mono
+  signed-16 little-endian, and streamed as binary WebSocket frames to the same
+  origin it was served from.
+
+  How this page authenticates is set by two <meta> tags the server fills:
+
+  - `textflowkit-capability` is present only when the page is served by the local
+    UI (at /api/streaming-example). This page reads it and sends it in the `start`
+    message. It never appears in a URL, a cookie, or a log line.
+  - `textflowkit-require-token` is "1" when the server requires the API Bearer
+    token *in addition*. That is the production UI profile and every standalone
+    server; the operator types the token into the field and it is sent in the
+    `start` message, never in a URL. When it is "0" (a developer UI with no token
+    configured) the field is hidden and the capability alone authenticates.
+
+  Audio capture requires an explicit user gesture: nothing is connected and no
+  microphone is requested until the operator presses "Start microphone".
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 52rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.subtitle { margin: 0 0 1.25rem; opacity: .75; }
+  fieldset { border: 1px solid #8884; border-radius: .5rem; margin: 0 0 1rem; padding: .75rem 1rem; }
+  legend { padding: 0 .35rem; font-weight: 600; }
+  label { display: block; margin: .35rem 0; }
+  input[type=password], input[type=text] { width: 100%; padding: .4rem; box-sizing: border-box; }
+  button { padding: .5rem 1rem; font-size: 1rem; border-radius: .4rem; cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: .5; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+  #status { min-height: 1.4rem; margin: .75rem 0; font-variant-numeric: tabular-nums; }
+  #status.error { color: #b3261e; }
+  #transcript { white-space: pre-wrap; line-height: 1.5; min-height: 6rem;
+                border: 1px solid #8884; border-radius: .5rem; padding: .75rem; }
+  #transcript .pending { opacity: .55; font-style: italic; }
+  .hint { font-size: .85rem; opacity: .7; }
+  .meter { height: .5rem; background: #8883; border-radius: .25rem; overflow: hidden; margin-top: .4rem; }
+  .meter > span { display: block; height: 100%; width: 0; background: #2e7d32; transition: width .1s; }
+  #secret-note { font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>TextFlowKit live streaming</h1>
+<p class="subtitle">Speak, and text appears as it is recognised. This page runs on
+this machine only; audio is sent to the local server and never leaves it.</p>
+
+<fieldset id="auth-fieldset">
+  <legend>Access</legend>
+  <div id="capability-note" hidden>
+    <p class="hint">This page was served by the local UI; it is already
+      authorised for this origin.</p>
+  </div>
+  <div id="token-block">
+    <label for="api-token">API token (standalone mode)
+      <input id="api-token" type="password" autocomplete="off"
+             placeholder="paste the server's API token">
+    </label>
+    <p id="secret-note" class="hint">Held only in this page's memory for the
+      duration of the stream. It is sent in the first WebSocket message, never in
+      a URL, a cookie, or a log.</p>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Microphone</legend>
+  <label for="language">Language</label>
+  <input id="language" type="text" value="en" autocomplete="off">
+  <div class="row">
+    <button id="start" type="button">Start microphone</button>
+    <button id="stop" type="button" disabled>Stop and finish</button>
+    <button id="cancel" type="button" disabled>Cancel</button>
+  </div>
+  <div class="meter" aria-hidden="true"><span id="level"></span></div>
+</fieldset>
+
+<fieldset>
+  <legend>Transcript</legend>
+  <p id="status" role="status" aria-live="polite">Idle.</p>
+  <div id="transcript" aria-live="polite"></div>
+</fieldset>
+
+<script>
+"use strict";
+(function () {
+  // --- configuration from the served page ---------------------------------
+  var meta = function (name) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    return el ? el.getAttribute("content") : "";
+  };
+  var CAPABILITY = meta("textflowkit-capability");
+  var ORIGIN = meta("textflowkit-origin");
+  var IN_UI = Boolean(CAPABILITY);
+  // The server asks for the API token when its profile requires it - the production
+  // UI and every standalone server. The field is shown and the token sent whenever
+  // the server requires one, even inside the UI: the UI capability is an *extra*
+  // check on the same origin, never a replacement for the token.
+  var REQUIRE_TOKEN = meta("textflowkit-require-token") === "1";
+
+  // When served by the UI, the endpoint is under the same /api mount the UI
+  // uses; standalone, it is the app's own /stream. Both are same-origin, so a
+  // relative URL is correct and no cross-origin request is ever made.
+  var STREAM_PATH = IN_UI ? "stream" : "stream";
+  var WS_SCHEME = location.protocol === "https:" ? "wss:" : "ws:";
+  var ENDPOINT = WS_SCHEME + "//" + location.host + location.pathname.replace(
+    /[^/]*$/, "") + STREAM_PATH;
+
+  var TARGET_RATE = 16000;
+  var MAX_FRAME_BYTES = 32000;      // 1 s of s16le mono at 16 kHz
+  var BUFFERED_HIGH_WATER = 1 << 18; // 256 KiB of queued socket bytes: stop, do not drop
+
+  var els = {
+    apiToken: document.getElementById("api-token"),
+    tokenBlock: document.getElementById("token-block"),
+    capabilityNote: document.getElementById("capability-note"),
+    language: document.getElementById("language"),
+    start: document.getElementById("start"),
+    stop: document.getElementById("stop"),
+    cancel: document.getElementById("cancel"),
+    status: document.getElementById("status"),
+    transcript: document.getElementById("transcript"),
+    level: document.getElementById("level")
+  };
+
+  if (IN_UI) {
+    els.capabilityNote.hidden = false;
+  }
+  // Show the token field exactly when the server requires a token. Inside the UI
+  // this is the production profile (both capability and token); standalone it is
+  // always shown. When no token is needed the field is hidden.
+  els.tokenBlock.hidden = !REQUIRE_TOKEN;
+  if (REQUIRE_TOKEN) {
+    var tokenLabel = document.querySelector('label[for="api-token"]');
+    if (tokenLabel) {
+      tokenLabel.childNodes[0].nodeValue = IN_UI
+        ? "API token (required with the UI capability)"
+        : "API token";
+    }
+  }
+
+  // --- session state ------------------------------------------------------
+  // `gen` is a generation counter. Every asynchronous step (a permission grant,
+  // a socket that opens, a worklet module that loads) captures the generation it
+  // began in, and continues only if that generation is still the current one.
+  // Cancelling, stopping or starting afresh bumps the generation, which
+  // invalidates every in-flight continuation at once: a late-arriving microphone
+  // stream, a socket opened by an abandoned attempt, or a worklet that loads
+  // after cancel all see a stale generation and release themselves instead of
+  // touching the live session.
+  var state = makeState();
+
+  function makeState() {
+    return {
+      gen: 0,
+      ws: null,
+      audioCtx: null,
+      mediaStream: null,
+      sourceNode: null,
+      workletNode: null,
+      committed: "",     // committed text, appended delta by delta, exactly once
+      pending: "",       // the live (uncommitted) tail, replaced on every event
+      running: false,
+      starting: false,   // Start clicked, waiting on permission/ready: guards re-entry
+      stopping: false,   // Stop pressed; capture is already stopped, flush in flight
+      seq: -1,
+      eventCount: 0,     // how many events this client actually received
+      // Set while a socket handshake is in flight. Calling it clears the ready
+      // timer and settles the pending "ready" promise, so a Cancel never leaves
+      // a timer armed or a promise pending forever.
+      abortHandshake: null,
+      // The Stop flush-ack timer, owned by this generation. releaseResources()
+      // clears it, so Cancel (or any terminal cleanup) leaves no timer armed.
+      stopTimer: null
+    };
+  }
+
+  // True while this generation is the live one. Every async continuation checks
+  // it before it acts.
+  function live(gen) { return gen === state.gen; }
+
+  function setStatus(text, isError) {
+    els.status.textContent = text;
+    els.status.className = isError ? "error" : "";
+  }
+
+  // --- transcript rendering (text nodes only, never parsed as markup) -----
+  // Committed text is appended once; pending is a *replacement*, shown but never
+  // folded into the committed text. textContent only - no HTML is ever parsed
+  // from transcript text.
+  function renderTranscript() {
+    els.transcript.textContent = "";
+    els.transcript.appendChild(document.createTextNode(state.committed));
+    if (state.pending) {
+      var span = document.createElement("span");
+      span.className = "pending";
+      span.textContent = (state.committed ? " " : "") + state.pending;
+      els.transcript.appendChild(span);
+    }
+  }
+
+  function applyEvent(evt) {
+    if (typeof evt.committed_delta === "string" && evt.committed_delta) {
+      // A delta: appended exactly once, joined by a single space.
+      state.committed = state.committed
+        ? state.committed + " " + evt.committed_delta
+        : evt.committed_delta;
+    }
+    state.pending = typeof evt.pending === "string" ? evt.pending : "";
+    if (typeof evt.seq === "number") {
+      state.seq = evt.seq;
+    }
+    state.eventCount += 1;
+    renderTranscript();
+  }
+
+  // --- lifecycle ----------------------------------------------------------
+  function resetControls() {
+    els.start.disabled = false;
+    els.stop.disabled = true;
+    els.cancel.disabled = true;
+    els.level.style.width = "0%";
+  }
+
+  // Detach every callback from a socket so its late events can never act on a
+  // newer session, then close it. Called while releasing resources.
+  function detachSocket(ws) {
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+    try {
+      if (ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    } catch (e) {}
+  }
+
+  // Stop producing audio now, without closing the audio context: used at the
+  // Stop click so the microphone is released immediately, while the worklet
+  // stays alive long enough to run its atomic stop-and-flush.
+  function stopCaptureNow() {
+    if (state.mediaStream) {
+      state.mediaStream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+      state.mediaStream = null;
+    }
+    if (state.sourceNode) {
+      try { state.sourceNode.disconnect(); } catch (e) {}
+      state.sourceNode = null;
+    }
+    if (state.workletNode) {
+      try { state.workletNode.disconnect(); } catch (e) {}
+    }
+  }
+
+  // Close the audio context and detach the worklet port. Used once the flush is
+  // acknowledged: nothing more will be read from the worklet. The socket is NOT
+  // touched here - it is retained to receive the server's final transcript.
+  function closeAudioContext() {
+    if (state.workletNode) {
+      try { state.workletNode.port.onmessage = null; } catch (e) {}
+      try { state.workletNode.disconnect(); } catch (e) {}
+      state.workletNode = null;
+    }
+    if (state.sourceNode) {
+      try { state.sourceNode.disconnect(); } catch (e) {}
+      state.sourceNode = null;
+    }
+    if (state.audioCtx) {
+      try { state.audioCtx.close(); } catch (e) {}
+      state.audioCtx = null;
+    }
+  }
+
+  // Release every resource this session owns, in the order that stops producing
+  // audio first, and invalidate the generation so no in-flight continuation can
+  // act on what it released. Safe to call more than once.
+  function releaseResources() {
+    state.gen++;  // any pending continuation is now stale
+    state.starting = false;
+    stopCaptureNow();
+    detachSocket(state.ws);
+    state.ws = null;
+    closeAudioContext();
+    // Clear the Stop flush-ack timer this generation owns, if any.
+    if (state.stopTimer !== null) { clearTimeout(state.stopTimer); state.stopTimer = null; }
+    // Settle any in-flight handshake: clear its ready timer and reject its
+    // promise, so a Cancel leaves no timer armed and no promise pending.
+    if (state.abortHandshake) {
+      var abort = state.abortHandshake;
+      state.abortHandshake = null;
+      try { abort(); } catch (e) {}
+    }
+    state.running = false;
+    state.stopping = false;
+    resetControls();
+  }
+
+  // --- connection ---------------------------------------------------------
+  function buildStartMessage() {
+    var msg = {
+      type: "start", version: 1, format: "pcm_s16le",
+      sample_rate: TARGET_RATE, channels: 1,
+      language: (els.language.value || "").trim() || null
+    };
+    // The capability is bound to the UI's own origin; it is sent whenever this page
+    // was served by the UI. The API token is sent whenever the server requires one -
+    // in the production UI that is *both*, and the token field is visible then.
+    if (IN_UI) {
+      msg.capability = CAPABILITY;
+    }
+    if (REQUIRE_TOKEN) {
+      msg.token = els.apiToken.value;
+    }
+    return msg;
+  }
+
+  // The AudioWorklet processor name, defined once and shared with the packaged
+  // worklet: the page and the worklet must register/instantiate the same name or
+  // a real browser throws and the example never starts. It is exercised end to
+  // end by the registry-based browser test.
+  var WORKLET_PROCESSOR_NAME = "textflowkit-capture";
+
+  // How long to wait for the server's "ready". This must be generous: the server
+  // may load its native model on first use.
+  var READY_TIMEOUT_MS = 45000;
+  var FLUSH_ACK_TIMEOUT_MS = 2000; // how long to wait for the worklet's "flushed"
+
+  // Send `finish` on the socket this generation owns. Returns false if it could
+  // not be sent - the socket is gone/closed or the send threw - so the caller
+  // treats it as an explicit failure instead of a silent success. Uses the
+  // captured socket, never the mutable global, so a stale ack/timer can never
+  // finish a different session.
+  function sendFinishOnce(ws) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(JSON.stringify({ type: "finish" }));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Stop: stop capture immediately, hand the worklet a single atomic
+  // "stop-and-flush", and - only once the worklet has acknowledged that the last
+  // partial PCM has been posted on the same port - send `finish`. Then close the
+  // audio context and the worklet port, and retain the socket to receive the
+  // server's final. An unacknowledged flush is a *failure*: the session is
+  // cancelled and cleaned up, never finished as if it had succeeded.
+  function stopAndFinish() {
+    if (!state.running || state.stopping) return;
+    state.stopping = true;
+    var gen = state.gen;
+    var ws = state.ws;          // the socket this generation owns
+    els.stop.disabled = true;
+    setStatus("Finishing…");
+
+    // Release the microphone, source and worklet connection at once. The audio
+    // context stays alive briefly so the worklet can run its flush.
+    stopCaptureNow();
+
+    var node = state.workletNode;
+    if (!node) {
+      // No worklet: nothing to flush, but the capture is already stopped.
+      finishNow();
+      return;
+    }
+
+    var settled = false;
+
+    function clearTimer() {
+      if (state.stopTimer !== null) { clearTimeout(state.stopTimer); state.stopTimer = null; }
+    }
+
+    // The worklet never acknowledged. This is not a clean stop: surface it as an
+    // error, cancel the session on the server, and release everything. Never
+    // send `finish` - an incomplete flush must not look like success.
+    function failStop() {
+      if (settled) return;
+      settled = true;
+      clearTimer();
+      if (!live(gen)) return;   // a stale generation's timeout must not act
+      setStatus("Stop failed: the worklet did not confirm its final audio.", true);
+      try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "cancel" }));
+        }
+      } catch (e) {}
+      releaseResources();
+    }
+
+    function finishNow() {
+      if (!live(gen)) return;   // an OLD ack/timer must never finish a NEW session
+      // The flush succeeded, but if the socket is already gone (CLOSED) or the
+      // send throws, the session is over: that is a failure, not a promise of a
+      // final transcript. Close every owned resource and say so explicitly.
+      if (!sendFinishOnce(ws)) {
+        setStatus("Could not finish the stream: the connection was lost.", true);
+        closeAudioContext();
+        releaseResources();
+        return;
+      }
+      closeAudioContext();
+      setStatus("Waiting for the final transcript…");
+    }
+
+    state.stopTimer = setTimeout(failStop, FLUSH_ACK_TIMEOUT_MS);
+
+    node.port.onmessage = function (event) {
+      if (!live(gen)) return;
+      var data = event.data;
+      if (data && typeof data === "object" && data.type === "flushed") {
+        if (settled) return;
+        settled = true;
+        clearTimer();
+        finishNow();
+        return;
+      }
+      // Any PCM that arrives before the ack is the final partial audio. It is
+      // sent on the captured socket for this same generation. If the socket is
+      // gone (CLOSED) or the send throws, that is an explicit failure - never a
+      // silent skip of the last audio followed by a false finish.
+      if (data instanceof ArrayBuffer || (data && data.byteLength)) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) { failStop(); return; }
+        try { ws.send(data); } catch (e) { failStop(); }
+      }
+    };
+
+    // The single atomic command: it stops production and posts the last PCM
+    // followed by the ack, with no gap a process() call could slip a frame into.
+    try {
+      node.port.postMessage("stop-and-flush");
+    } catch (e) {
+      failStop();
+    }
+  }
+
+  function start() {
+    // `starting` is an independent guard set *before* any await. Disabling the
+    // button is not enough: a programmatic second invocation, or a click racing
+    // the disable, would otherwise reach getUserMedia twice.
+    if (state.running || state.starting || state.stopping) return;
+    if (REQUIRE_TOKEN && !els.apiToken.value) {
+      setStatus("Enter the API token first.", true);
+      return;
+    }
+    state.starting = true;
+    // Disable Start and enable Cancel immediately, before the permission prompt
+    // resolves: a second click must not request a second microphone, and Cancel
+    // must be able to abandon the pending attempt.
+    els.start.disabled = true;
+    els.cancel.disabled = false;
+    setStatus("Requesting microphone…");
+    var gen = state.gen;
+
+    // Do not connect before the microphone is authorised: a denied permission
+    // must leave the button usable and no socket open.
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      if (!live(gen)) {
+        // Cancelled while the prompt was open: stop the late stream at once.
+        stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+        return;
+      }
+      state.mediaStream = stream;
+      return connectAndCapture(stream, gen);
+    }).catch(function (err) {
+      if (!live(gen)) return;
+      state.starting = false;   // terminal: the attempt failed, Start is usable again
+      setStatus("Microphone permission denied or unavailable: " + err.message, true);
+      releaseResources();
+    });
+  }
+
+  function connectAndCapture(stream, gen) {
+    var ws = new WebSocket(ENDPOINT);
+    ws.binaryType = "arraybuffer";
+    state.ws = ws;
+
+    // Two independent flags. `handshakeDone` guards only the wait for the
+    // server's "ready" - it must not gate later lifecycle handling. `terminal`
+    // guards cleanup, so an error/final is handled once whether it arrives
+    // before or after the handshake. Conflating the two is the old bug: a
+    // post-ready `error` (or `onerror`) was dropped because the handshake had
+    // already settled.
+    var handshakeDone = false;
+    var terminal = false;
+    var readyTimer = null;
+
+    // Called by releaseResources() (Cancel, beforeunload) to settle a pending
+    // handshake: clear the ready timer and reject the promise. The rejection is
+    // caught below; because releaseResources() has already bumped the
+    // generation, nothing the cancellation triggers acts on a newer session.
+    function abortHandshake() {
+      if (readyTimer !== null) { clearTimeout(readyTimer); readyTimer = null; }
+      if (!handshakeDone) {
+        handshakeDone = true;
+        rejectReady(new Error("Cancelled before the stream was ready."));
+      }
+    }
+    state.abortHandshake = abortHandshake;
+
+    function settleReadyError(message) {
+      // A failure before "ready": reject the wait with the specific reason
+      // *first* (so the rejection carries it, not the generic canceller), then
+      // surface it and tear the session down.
+      if (!handshakeDone) rejectReady(new Error(message));
+      if (live(gen)) {
+        setStatus(message, true);
+        releaseResources();
+      }
+    }
+
+    // Set below by the Promise executor; declared here so the socket handlers can
+    // reach it.
+    var rejectReady = function () {};
+
+    var ready = new Promise(function (resolve, reject) {
+      rejectReady = reject;
+      readyTimer = setTimeout(function () {
+        settleReadyError("The server did not become ready in time.");
+      }, READY_TIMEOUT_MS);
+
+      function finishHandshake() {
+        if (handshakeDone) return;
+        handshakeDone = true;
+        if (readyTimer !== null) { clearTimeout(readyTimer); readyTimer = null; }
+        // The handshake is settled; no cancellation needs to abort it now.
+        if (state.abortHandshake === abortHandshake) state.abortHandshake = null;
+      }
+
+      // Terminal cleanup shared by every lifecycle end (error, final, close).
+      function endSession(statusText, isError) {
+        if (terminal) return;
+        terminal = true;
+        finishHandshake();
+        if (!live(gen)) return;
+        setStatus(statusText, isError);
+        releaseResources();
+      }
+
+      ws.onmessage = function (event) {
+        if (!live(gen)) return;
+        var msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        if (msg.type === "ready") {
+          if (handshakeDone) return;
+          finishHandshake();
+          // `state.starting` is cleared once the session is live; from here the
+          // start guard is `running`.
+          state.starting = false;
+          setStatus("Listening… (session " + msg.session + ")");
+          resolve(msg);
+        } else if (msg.type === "event") {
+          applyEvent(msg.event);
+        } else if (msg.type === "final") {
+          if (msg.event) applyEvent(msg.event);
+          endSession("Finished. " + state.eventCount + " event(s) received.", false);
+        } else if (msg.type === "error") {
+          // A server error is handled whenever it arrives - before OR after the
+          // handshake. It is never masked just because "ready" was seen.
+          endSession("Server error: " + msg.code + " " + msg.message, true);
+          if (!handshakeDone) rejectReady(new Error(msg.message));
+        }
+      };
+      ws.onerror = function () {
+        if (!live(gen)) return;
+        // A connection error is a lifecycle failure at any point, not only
+        // before the handshake. The old code let `onerror` call the handshake's
+        // `finish`, which returned early once settled - swallowing the error.
+        endSession("Connection error.", true);
+        if (!handshakeDone) rejectReady(new Error("Connection error."));
+      };
+      ws.onclose = function () {
+        if (!live(gen)) return;
+        if (terminal) return;
+        // A close before "ready" must reject the wait, not leave it pending.
+        var beforeReady = !handshakeDone;
+        endSession(beforeReady
+          ? "Connection closed before the stream was ready."
+          : "Connection closed.", true);
+        if (beforeReady) rejectReady(new Error("Connection closed before the stream was ready."));
+      };
+      ws.onopen = function () {
+        if (!live(gen)) return;
+        try {
+          ws.send(JSON.stringify(buildStartMessage()));
+        } catch (e) {
+          // A send failure is not swallowed: it fails the handshake visibly.
+          settleReadyError("Could not send the start message: " + e.message);
+        }
+      };
+    });
+
+    return ready.then(function () {
+      if (!live(gen)) return;
+      return startCapture(stream, gen, ws);
+    }).catch(function () {
+      // A rejection above already released resources in the error paths; a
+      // rejection from a stale generation must not touch the live session.
+      if (live(gen)) releaseResources();
+    });
+  }
+
+  function startCapture(stream, gen, ws) {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ctx = new Ctx();
+    state.audioCtx = ctx;
+    return ctx.audioWorklet.addModule(workletModuleUrl()).then(function () {
+      // The module may have finished loading after a cancel: attach nothing.
+      if (!live(gen)) {
+        try { ctx.close(); } catch (e) {}
+        return null;
+      }
+      // The processor name must match registerProcessor() in the packaged
+      // worklet exactly: a real browser rejects a name that was never
+      // registered. The fake harness used to ignore the name, so this mismatch
+      // ("tfk-capture" here vs "textflowkit-capture" in the worklet) went
+      // unnoticed and the example could not start in a real browser.
+      var node = new AudioWorkletNode(ctx, WORKLET_PROCESSOR_NAME, {
+        numberOfInputs: 1, numberOfOutputs: 0,
+        processorOptions: { targetRate: TARGET_RATE, maxFrameBytes: MAX_FRAME_BYTES }
+      });
+      state.workletNode = node;
+      var source = ctx.createMediaStreamSource(stream);
+      state.sourceNode = source;
+      node.port.onmessage = function (event) {
+        // No audio leaves once Stop has begun; the flush/ack handler owns the
+        // port from that point.
+        if (!state.running || state.stopping) return;
+        if (!live(gen) || !ws || ws.readyState !== WebSocket.OPEN) return;
+        // Backpressure: if the socket is backed up, fail the stream rather than
+        // queue audio without bound - a live transcript must not silently lag.
+        if (ws.bufferedAmount > BUFFERED_HIGH_WATER) {
+          setStatus("The connection is too slow to keep up; stopping.", true);
+          stopAndFinish();
+          return;
+        }
+        try {
+          ws.send(event.data);
+        } catch (e) {
+          // A send failure is surfaced and the session is torn down, never
+          // swallowed while the page keeps claiming to stream.
+          setStatus("Audio send failed: " + e.message, true);
+          releaseResources();
+          return;
+        }
+        els.level.style.width = Math.min(100, ws.bufferedAmount / 1024) + "%";
+      };
+      source.connect(node);
+      state.running = true;
+      els.stop.disabled = false;
+      ctx.resume();
+      return node;
+    });
+  }
+
+  // --- the AudioWorklet, served from this same origin ----------------------
+  // The resampler (any device rate -> 16 kHz mono signed-16, <=1 s frames) is
+  // the packaged asset `streaming-capture-worklet.js`, fetched from this same
+  // origin. Nothing is pulled from a CDN and no blob module is synthesised, so
+  // the exact code the project tests with Node is the code the browser runs.
+  function workletModuleUrl() {
+    // The packaged asset is served from the absolute /assets/ mount, so this
+    // resolves correctly whether the page was fetched at /streaming-example or
+    // /api/streaming-example, and no blob URL is ever created.
+    return "/assets/streaming-capture-worklet.js";
+  }
+
+  function cancel() {
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      try { state.ws.send(JSON.stringify({ type: "cancel" })); } catch (e) {}
+    }
+    setStatus("Cancelled.");
+    releaseResources();
+  }
+
+  els.start.addEventListener("click", start);
+  els.stop.addEventListener("click", stopAndFinish);
+  els.cancel.addEventListener("click", cancel);
+  window.addEventListener("beforeunload", function () {
+    // A page unload is a disconnect: cancel so no server session is left running.
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      try { state.ws.send(JSON.stringify({ type: "cancel" })); } catch (e) {}
+    }
+  });
+})();
+</script>
+</body>
+</html>

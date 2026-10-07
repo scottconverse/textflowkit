@@ -1,4 +1,4 @@
-# Architecture and job lifecycle
+# Architecture and job lifecycle — v0.1.11
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -25,6 +25,20 @@ CLI, MCP, and HTTP entry points. It mounts the existing developer HTTP app under
 a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
+
+Live streaming added in v0.1.11 is an optional **Windows x86_64 only** path:
+`StreamingSession` drives one owned native child through direct `ctypes` bindings
+to a separately pinned `libneedle3.dll`. Authenticated loopback WebSockets and a
+packaged browser example sit above that core; no job row or resume is created.
+Server routes are off unless `TEXTFLOWKIT_STREAMING=1` is set and need the
+`streaming` extra. The existing standalone Whistle default and ordinary file/URL
+job paths are unchanged. Physical microphone capture and live Linux/macOS were
+not verified; the static public site does not run this path.
+
+![Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams.](assets/live-streaming-flow.svg)
+
+This separate live path bypasses durable job submission; the file/URL job
+diagrams describe the existing standalone workflow.
 
 ### One owner per database
 
@@ -88,7 +102,18 @@ flowchart LR
     TR --> RENDER[Render and publish files]
     RUN --> STORE
     STORE --> READ[Shared paging and search]
+    MIC[Browser mic or programmatic client] -. opt-in .-> WS[WebSocket /stream or /api/stream]
+    WS --> SESSION[core.streaming StreamingSession]
+    SESSION --> WPROC[Owned stream_worker child, libneedle3]
+    WPROC --> SESSION
+    SESSION -. events .-> WS
 ```
+
+Streaming is the one path that does **not** go through `core.submission`: a live
+session is ephemeral, owns no job row, and is driven by its own transport-neutral
+`StreamingSession`. It is off unless `TEXTFLOWKIT_STREAMING=1`. The dotted edges are
+that opt-in, loopback-only path, running in parallel with the batch pipeline above
+and sharing only the native engine library, never a job row.
 
 ## Components
 
@@ -106,6 +131,7 @@ flowchart LR
 | Postprocessing | `core/diarize.py`, `core/translate.py` | Optional speaker assignment and translation |
 | Output | `render/` | Human-readable formats and canonical JSON; atomic file publication |
 | Retrieval | `core/retrieval.py` | Hidden filtering, time selection, paging, substring search |
+| Live streaming | `core/streaming.py`, `core/stream_worker.py`, `adapters/streaming_ws.py` | Opt-in, loopback-only microphone stream: a transport-neutral session drives one owned native child over line JSON, fed by a guarded WebSocket. No job row, no resume. See [streaming.md](streaming.md). |
 
 ## Job lifecycle
 
