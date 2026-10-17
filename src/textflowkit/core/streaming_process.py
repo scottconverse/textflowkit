@@ -27,13 +27,13 @@ import contextlib
 import json
 import queue
 import subprocess
-import sys
 import threading
 import time
 from typing import Any
 
 from textflowkit.core.stream_worker import WORKER_MODULE
 from textflowkit.core.streaming_events import WorkerProcessError
+from textflowkit.core.windows_process import hidden_process_kwargs, streaming_python
 
 #: How long ``start`` waits for the child to report ``started``.
 START_DEADLINE_S = 30.0
@@ -91,7 +91,7 @@ class SubprocessWorker:
     ):
         self._language = language
         self._weights_path = weights_path
-        self._python = python or sys.executable
+        self._python = python if python is not None else streaming_python()
         self._env = env
         self._module = module
         self._start_deadline = start_deadline
@@ -118,7 +118,7 @@ class SubprocessWorker:
 
     def start(self) -> None:
         env = _child_env(self._env)
-        argv = [self._python, "-u", "-m", self._module]
+        argv = [self._python, "-B", "-u", "-m", self._module]
         try:
             self._proc = subprocess.Popen(
                 argv,
@@ -127,6 +127,7 @@ class SubprocessWorker:
                 stderr=subprocess.PIPE,
                 env=env,
                 bufsize=0,
+                **hidden_process_kwargs(),
             )
         except OSError as exc:
             raise WorkerProcessError(f"could not launch the streaming worker: {exc}") from exc

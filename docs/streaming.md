@@ -1,4 +1,4 @@
-# Live microphone streaming — v0.1.11
+# Live microphone streaming — v0.1.12
 
 TextFlowKit can transcribe a **live microphone** as you speak: audio is captured in
 the browser, resampled to 16 kHz mono, and streamed to a local WebSocket, and the
@@ -9,7 +9,7 @@ commands, and the limits.
 The capability is **opt-in, loopback-only, and verified on this machine's native
 engine for bounded live runs** — 65 s and 300 s end-to-end native streams ran
 locally on Windows x86_64 (see *Limits and known constraints*). Native live support is **Windows x86_64 only**; other live platforms are
-unsupported. This v0.1.11 release surface is gated behind an environment switch
+unsupported. This v0.1.12 release surface is gated behind an environment switch
 so a default install never serves it. The public website is static documentation,
 not a streaming service. Publication and remote CI are separate release gates.
 
@@ -45,7 +45,7 @@ audio buffer is allocated.
 ### Option A — the local browser UI (point and click)
 
 ```bat
-python -m pip install "textflowkit[streaming]==0.1.11"
+python -m pip install "textflowkit[streaming]==0.1.12"
 set TEXTFLOWKIT_STREAMING=1
 textflowkit-ui
 ```
@@ -61,7 +61,7 @@ first WebSocket message; it is never written into the page, its JavaScript, or a
 ### Option B — the developer HTTP API (programmatic clients)
 
 ```bat
-python -m pip install "textflowkit[streaming]==0.1.11"
+python -m pip install "textflowkit[streaming]==0.1.12"
 set TEXTFLOWKIT_STREAMING=1
 set TEXTFLOWKIT_API_TOKEN=choose-a-long-random-token
 textflowkit-http --streaming

@@ -49,6 +49,7 @@ from textflowkit.core.whistle_assets import (
     ensure_assets,
     whistle_child_env,
 )
+from textflowkit.core.windows_process import hidden_process_kwargs
 
 #: The single logical model name Whistle exposes. The native CLI reads whichever
 #: ``.cact`` it is given, so there is exactly one correct answer here.
@@ -462,6 +463,7 @@ def _kill_owned_tree(proc: subprocess.Popen) -> None:
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                 capture_output=True, timeout=10, check=False,
+                **hidden_process_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -517,6 +519,7 @@ def _run_native(
             stderr=subprocess.PIPE,
             env=env,
             cwd=str(Path(tempfile.gettempdir())),
+            **hidden_process_kwargs(),
         )
     except OSError as exc:
         raise WhistleError(f"Whistle runtime could not start: {exc}") from exc

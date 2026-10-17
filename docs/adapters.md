@@ -1,6 +1,6 @@
 # Developer and integration manual
 
-Current release: [v0.1.11](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11).
+Current release: [v0.1.12](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
@@ -21,6 +21,48 @@ API and WebSockets are ephemeral and bypass durable job submission.
                     │                      │
    HTTP ───────────►└──────────────────────┘
 ```
+
+## Windows desktop installer (v0.1.12; public EXE pending)
+
+The Windows x86_64 installer packages the existing browser interface for core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
+
+The setup installs per user, adds a Start Menu entry, and offers an
+optional desktop shortcut. Launching it will start the local server and open the
+existing UI at localhost. Administrator rights are not normally required; the
+installer is designed not to change global `PATH` or auto-update. The prebundled
+Whistle assets and media binaries mean local file jobs need no first-use asset
+download; URL media still needs network access. The default Whistle engine
+supports only these seven advertised languages: `en`, `de`, `fr`, `es`, `it`,
+`nl`, and `pl`.
+
+UI data is designed to stay outside the install directory and be preserved on
+upgrade and uninstall. Before either operation, stop the UI server with **Stop
+server** and wait for it to exit. The candidate will block while that server is
+running rather than force-kill it; the stop action drains active jobs, so cancel a
+job first if it should not finish. The installer does not bundle optional
+`openai-whisper` or diarization dependencies; those documented optional features
+remain available to Python package users who install and configure the required
+dependencies separately. Streaming dependencies are bundled, but streaming
+remains opt-in, and physical browser microphone capture has not been verified.
+The installer bundle includes third-party license and notice files,
+including FFmpeg's LGPL notices and corresponding-source information. The exact
+notices and source-distribution details must be checked against the final binaries
+before publication. The candidate is unsigned, so Windows may show a SmartScreen
+warning.
+
+```mermaid
+flowchart LR
+    Setup[Per-user Windows x86_64 installer candidate] --> Runtime[Private embeddable CPython and bundled components]
+    Shortcut[Start Menu or optional desktop shortcut] --> Server[Local server at 127.0.0.1]
+    Runtime --> Server
+    Server <--> Browser[Existing browser UI at localhost]
+    Server --> Core[Existing HTTP adapter and shared TextFlowKit core]
+    Core --> Data[Per-user jobs, uploads, transcripts, and outputs outside install folder]
+```
+
+This is a locally built and tested packaging path for the local UI; it does not turn the public
+static website into a hosted transcription service or change the developer API
+contracts.
 
 ## Resuming and batching
 
@@ -509,7 +551,7 @@ observation rather than forwarding the caller's header, and keep
 
 ## Live microphone streaming (`/stream`, opt-in)
 
-In v0.1.11, native live streaming supports **Windows x86_64 only**. Other live
+In v0.1.12, native live streaming supports **Windows x86_64 only**. Other live
 platforms are unsupported; existing standalone defaults and platform support are
 unchanged. Physical browser microphone capture was not verified. The public site
 is static documentation and serves no streams. Both local server surfaces can
@@ -520,7 +562,7 @@ exist and a connection is refused before any session is allocated - and it needs
 `streaming` extra (`websockets`).
 
 ```powershell
-python -m pip install "textflowkit[streaming]==0.1.11"
+python -m pip install "textflowkit[streaming]==0.1.12"
 # Native Windows PowerShell:
 $env:TEXTFLOWKIT_API_TOKEN="choose-a-long-random-token"
 $env:TEXTFLOWKIT_STREAMING="1"
@@ -560,7 +602,7 @@ supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
 of its own: it is a local app, not a hosted service.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.11'
+python -m pip install 'textflowkit[http,export]==0.1.12'
 textflowkit-ui                 # serve on 127.0.0.1 and open a browser
 textflowkit-ui --no-browser --port 8901
 ```
@@ -943,3 +985,27 @@ job id immediately means:
 By default the job store is in-memory and bounded (`max_jobs=200`, terminal
 jobs evicted first). Set `TEXTFLOWKIT_DB` to use the durable SQLite store for
 restart-safe jobs and checkpoints. The SQLite store assumes one owning process.
+
+## UI-only proofreading routes (v0.1.12)
+
+These routes belong to the local UI session gate, not the developer HTTP or MCP
+API. POST requires the existing `x-textflowkit-ui-capability` header. Host, peer
+and Origin remain subject to the existing UI restrictions.
+
+| Route | Behavior |
+|---|---|
+| `GET /ui/cleanup/models` | Installed local tags only; selected preference only if installed; never pulls models |
+| `POST /ui/jobs/{id}/cleanup` | Body `{"model":"installed-local-tag"}` (max 4 KiB); completed jobs only; 202 admitted, 409 busy/not complete, 422 model/config/input error |
+| `GET /ui/jobs/{id}/cleanup` | `none`, `running`, `done`, `error` or `stale`; fully validated separate variant and provenance when available |
+| `GET /ui/jobs/{id}/cleanup/download` | Valid current variant as plain TXT attachment; 409 if none/stale |
+
+Cleanup does not modify existing `/api` routes, original job JSON or original
+downloads. Polling is background and job-scoped. There is no cancel endpoint.
+See the user manual for time/token/output limits, crash lease expiry, local-only
+endpoint rules and human review requirements.
+
+A cold local full-UI verification (model unloaded before start) completed 39
+segments in three chunks; four segments changed. The original JSON and segment
+IDs/timestamps were preserved, and visible comparison plus corrected TXT save
+were verified. This validates one workflow run, not accuracy. Review against
+audio; AI guesses are not audio-verified.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "textflowkit"
-version = "0.1.11"
+version = "0.1.12"
 description = "Cross-platform media transcription toolkit: URL or file in, timestamped transcripts and subtitle files out."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -108,6 +108,7 @@ include = [
   "/tests",
   "/docs",
   "/scripts",
+  "/packaging",
   "/.github",
   "/pyproject.toml",
   "/README.md",

@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "python_version": "3.13.13",
+  "node_version": "22.23.3",
+  "platform": "windows-x86_64",
+  "assets": {
+    "python": {
+      "filename": "python-3.13.13-embed-amd64.zip",
+      "url": "https://www.python.org/ftp/python/3.13.13/python-3.13.13-embed-amd64.zip",
+      "sha256": "8766a8775746235e23cf5aee5027ab1060bb981d93110577adcf3508aa0cbd55",
+      "size": 10950201
+    },
+    "node": {
+      "filename": "node-v22.23.3-win-x64.zip",
+      "url": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip",
+      "sha256": "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71",
+      "size": 35574076
+    },
+    "ffmpeg": {
+      "filename": "ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0.zip",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-14-13-03/ffmpeg-n9.0.2-27-g7e93014c5b-win64-lgpl-shared-9.0.zip",
+      "sha256": "75943dd3bb603e49ffe01360ac683e2f17d13c0c4193d68cbd1d11448fa32891",
+      "size": 77230784
+    },
+    "engine": {
+      "filename": "needle.exe",
+      "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/windows-x86_64/needle.exe",
+      "sha256": "e8863ca0c06a47d406777077f1ba728b58e57d77fedff252dbe6827d588acc8c",
+      "size": 1563136
+    },
+    "model": {
+      "filename": "whistle.cact",
+      "url": "https://huggingface.co/Cactus-Compute/whistle/resolve/b358ddadd89b7a713b5aa131f23032d3cca1b251/whistle.cact",
+      "sha256": "b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb",
+      "size": 16919407
+    },
+    "engine_license": {
+      "filename": "needle-LICENSE",
+      "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "size": 11358
+    },
+    "model_license": {
+      "filename": "whistle-LICENSE",
+      "url": "https://huggingface.co/Cactus-Compute/whistle/resolve/b358ddadd89b7a713b5aa131f23032d3cca1b251/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "size": 11358
+    },
+    "streaming": {
+      "filename": "cactus_needle-3.2.0-py3-none-win_amd64.whl",
+      "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/python/cactus_needle-3.2.0-py3-none-win_amd64.whl",
+      "size": 696277,
+      "sha256": "0bd41dc812a4b7e504f6ba294de65a363a51b031f154d24aac748b07249dc952"
+    }
+  }
+}

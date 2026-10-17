@@ -321,6 +321,9 @@
   function watchJob(jobId) {
     state.jobId = jobId;
     state.transcript = null;
+    window.dispatchEvent(new CustomEvent("textflowkit-transcript", {
+      detail: { jobId, transcript: null }
+    }));
     stopPolling();
     // The blob URL belongs to the file the operator just selected. Keep it only
     // while we are watching the job that file produced; watching any other job
@@ -484,6 +487,9 @@
     }
     state.transcript = { ...(meta?.transcript || {}), segments };
     renderTranscript();
+    window.dispatchEvent(new CustomEvent("textflowkit-transcript", {
+      detail: { jobId, transcript: state.transcript }
+    }));
     setStatus($("results-status"), `${segments.length} segments loaded.`);
   }
 

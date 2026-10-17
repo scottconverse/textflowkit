@@ -133,6 +133,16 @@
     .figure img { display: block; width: 100%; height: auto; min-width: 720px; }
     .figure figcaption { margin-top: .85rem; color: var(--muted); font-size: .85rem; }
 
+    .installer-candidate { margin-top: 2.5rem; padding: 1.6rem; border: 1px solid var(--line); border-radius: 11px; background: linear-gradient(145deg, #1c3041, var(--panel)); }
+    .installer-candidate h3 { margin-block: .5rem; font-size: 1.45rem; }
+    .installer-candidate p, .installer-candidate li { color: var(--muted); }
+    .installer-flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin: 1.5rem 0; padding: 0; list-style: none; }
+    .installer-step { position: relative; min-height: 155px; padding: 1rem; border: 1px solid #92f2ce55; border-radius: 8px; background: #07121d; }
+    .installer-step:not(:last-child)::after { content: "→"; position: absolute; right: -.8rem; top: 1rem; z-index: 1; color: var(--mint); }
+    .installer-step b { display: block; margin-bottom: .6rem; color: var(--mint); font: 700 .75rem var(--mono); }
+    .installer-step strong { display: block; margin-bottom: .4rem; }
+    .installer-step span { color: var(--muted); font-size: .8rem; }
+
     .truth { padding-block: 3.1rem; border-top: 1px solid #ffffff22; }
     .truth-inner { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; }
     .truth h2 { margin: 0; font-size: 1.65rem; letter-spacing: -.03em; }
@@ -154,6 +164,8 @@
       .cards { grid-template-columns: 1fr; }
       .card { min-height: 0; }
       .card-tag { margin-bottom: 1.6rem; }
+      .installer-flow { grid-template-columns: repeat(2, 1fr); }
+      .installer-step:not(:last-child)::after { display: none; }
       .truth-inner { display: block; }
       .truth h2 { margin-bottom: .8rem; }
     }
@@ -194,7 +206,7 @@
   <main id="main">
     <div class="wrap hero">
       <div>
-        <span class="eyebrow">Open source · Apache 2.0 · v0.1.11</span>
+        <span class="eyebrow">Open source · Apache 2.0 · v0.1.12</span>
         <h1>Media in.<br><em>Useful text</em> out.</h1>
         <p class="lead">Transcribe video and audio into timestamped, searchable text. One shared core for your command line, AI harness, and application.</p>
         <div class="actions">
@@ -202,7 +214,7 @@
           <a class="button secondary" href="https://pypi.org/project/textflowkit/">Install from PyPI <span aria-hidden="true">&nbsp;↗</span></a>
         </div>
         <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
-        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11">v0.1.11</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
+        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12">v0.1.12</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
       </div>
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
@@ -278,7 +290,7 @@
         </figure>
         <figure class="figure">
           <img src="assets/live-streaming-flow.svg" alt="Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams." loading="lazy" width="1180" height="490">
-          <figcaption>Optional live path in v0.1.11: authenticated loopback WebSockets feed an ephemeral <code>StreamingSession</code> and one owned native child. Windows x86_64 only, off by default; no durable job or resume. Existing file/URL jobs follow the separate diagrams. Physical microphone capture has not been verified; this public site serves no streams.</figcaption>
+          <figcaption>Optional live path in v0.1.12: authenticated loopback WebSockets feed an ephemeral <code>StreamingSession</code> and one owned native child. Windows x86_64 only, off by default; no durable job or resume. Existing file/URL jobs follow the separate diagrams. Physical microphone capture has not been verified; this public site serves no streams.</figcaption>
         </figure>
         <figure class="figure">
           <img src="assets/local-ui-flow.svg" alt="TextFlowKit local browser interface request flow: the operator opens the workspace from a desktop shortcut or the textflowkit-ui command, which launches a loopback-only server on 127.0.0.1 that holds an exclusive owner lock on the durable SQLite database; the operator drops a file or pastes a URL, a file is streamed to a per-user upload folder capped at 2 GiB by default; both become a submission through the same shared submission contract the CLI, MCP, and HTTP doors use, writing a durable job that runs through the shared core (Whistle by default or an explicit optional engine) decoding with ffmpeg and transcribing on this machine; a finished transcript is searchable, copyable, downloadable in a fixed format list, and playable with the browser's native player on the currently selected media." loading="lazy" width="1180" height="660">
@@ -289,30 +301,78 @@
 
     <section class="wrap" id="local-ui" aria-labelledby="local-ui-title">
       <div class="section-head">
-        <span class="kicker">Local workspace since v0.1.10 · optional streaming in v0.1.11</span>
+        <span class="kicker">Local workspace since v0.1.10 · streaming since v0.1.11</span>
         <h2 id="local-ui-title">A local browser workspace, not a hosted service.</h2>
         <p>The core now ships a point-and-click workspace. It is a <strong>local app</strong> you install and run yourself — this page is static documentation and offers no upload form, runs no transcription, and hosts nothing.</p>
       </div>
       <div class="install-grid">
         <div>
           <ul>
-            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.11"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
+            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.12"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
             <li><strong>Desktop shortcut (Windows):</strong> <code>textflowkit-ui --create-shortcut</code> makes a Start Menu entry that launches with <code>pythonw</code> (no console) and needs no <code>pywin32</code>. That shortcut is the normal way to open it.</li>
             <li><strong>Loopback only:</strong> it binds <code>127.0.0.1</code> and is never reachable off the machine, whatever <code>TEXTFLOWKIT_ALLOW_REMOTE</code> is set to.</li>
             <li><strong>Durable jobs, cancel, and resume:</strong> jobs and checkpoints are stored durably; you can cancel a running job and resume a saved one. Shutdown <em>drains</em> — it waits for current jobs to finish rather than cancelling them.</li>
             <li><strong>Uploads and downloads:</strong> dropped files are streamed and capped at 2 GiB by default; results download as TXT, Markdown, SRT, VTT, JSON, DOCX, or PDF. Playback uses the browser's native player on the currently selected media.</li>
-            <li><strong>No UI analytics:</strong> the page loads no CDN asset and no analytics. A URL source, a first-use model download, and an optional remote/cloud translation backend are the only things that use the network.</li>
-            <li><strong>Live microphone streaming is optional in v0.1.11 and Windows x86_64 only.</strong> The standalone <code>textflowkit</code> CLI does <em>not</em> open a microphone or a streaming socket — its native audio-stream path stays disabled. Live transcription is a distinct capability of the two <em>servers</em> (the HTTP API's <code>/stream</code> and the UI's <code>/api/stream</code>), off unless <code>TEXTFLOWKIT_STREAMING=1</code> is set, loopback-only, and verified with paced PCM through the native core (65 s and 300 s), plus a separate 12 s UI WebSocket PCM run; physical browser microphone capture has not been verified. It ships in the same wheel; see <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md">the streaming guide</a>.</li>
+            <li><strong>No UI analytics:</strong> the page loads no CDN asset and no analytics. URL acquisition, first-use transcription model downloads, optional translation, and explicitly requested loopback Ollama cleanup use the network.</li>
+            <li><strong>Live microphone streaming is optional in v0.1.12 and Windows x86_64 only.</strong> The standalone <code>textflowkit</code> CLI does <em>not</em> open a microphone or a streaming socket — its native audio-stream path stays disabled. Live transcription is a distinct capability of the two <em>servers</em> (the HTTP API's <code>/stream</code> and the UI's <code>/api/stream</code>), off unless <code>TEXTFLOWKIT_STREAMING=1</code> is set, loopback-only, and verified with paced PCM through the native core (65 s and 300 s), plus a separate 12 s UI WebSocket PCM run; physical browser microphone capture has not been verified. It ships in the same wheel; see <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md">the streaming guide</a>.</li>
           </ul>
           <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md#7-local-browser-interface">Read the local UI guide ↗</a>
         </div>
         <div>
-          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.11"
+          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.12"
 <span class="prompt">$ </span>textflowkit-ui --create-shortcut
 <span class="comment"># then open it from the Start Menu shortcut</span></pre>
-          <p class="note"><strong>Public page vs. local app.</strong> This landing page is the public, static site. The browser workspace is a separate, local program: it never runs here and is not reachable from the internet. v0.1.11 adds opt-in local streaming; existing standalone defaults, file/URL jobs, CLI, and MCP behavior remain unchanged. This public site serves no streaming endpoint.</p>
+          <p class="note"><strong>Public page vs. local app.</strong> This landing page is the public, static site. The browser workspace is a separate, local program: it never runs here and is not reachable from the internet. v0.1.12 adds optional UI-only local Ollama cleanup and native Windows packaging; existing standalone defaults, file/URL jobs, CLI, and MCP behavior remain unchanged. This public site serves no streaming endpoint.</p>
         </div>
       </div>
+      <div class="installer-candidate" aria-labelledby="installer-candidate-title">
+        <span class="kicker">Windows x86_64 · public EXE pending</span>
+        <h3 id="installer-candidate-title">The same local workspace, packaged for Windows.</h3>
+        <p>The native Windows installer packages core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. It requires no separately installed Python, WSL, or Docker.</p>
+        <ol class="installer-flow" aria-label="Windows installer architecture">
+          <li class="installer-step"><b>01 / SETUP</b><strong>Per-user installer</strong><span>Locally tested x86_64 installer</span></li>
+          <li class="installer-step"><b>02 / RUNTIME</b><strong>Private local runtime</strong><span>CPython, UI/HTTP, exports, streaming dependencies, pinned Whistle assets, ffmpeg, ffprobe, Node</span></li>
+          <li class="installer-step"><b>03 / SERVER</b><strong>Loopback service</strong><span>Start Menu entry or optional desktop shortcut starts the local server</span></li>
+          <li class="installer-step"><b>04 / WORKSPACE</b><strong>Browser and core</strong><span>Existing UI talks to the shared pipeline at localhost</span></li>
+          <li class="installer-step"><b>05 / STORAGE</b><strong>Per-user data</strong><span>Jobs, uploads, and outputs stay outside the app install folder</span></li>
+        </ol>
+        <ul>
+          <li>The pinned Whistle model/runtime and media binaries are prebundled, so local file jobs need no first-use asset download; URL media still needs network access. The default Whistle engine supports only these seven advertised languages: <code>en</code>, <code>de</code>, <code>fr</code>, <code>es</code>, <code>it</code>, <code>nl</code>, and <code>pl</code>.</li>
+          <li>Normally no administrator rights, no global <code>PATH</code> changes, and no automatic updates. Data is designed to survive upgrades and uninstall.</li>
+          <li>Before upgrade or uninstall, stop the UI with <strong>Stop server</strong> and wait. The candidate will block while it is running rather than force-kill jobs; Stop server drains work, so cancel a job first if it should not finish.</li>
+          <li>Optional <code>openai-whisper</code> and diarization dependencies are not bundled; those documented features remain available through the Python package with their required dependencies. Streaming remains opt-in, and physical browser microphone capture has not been verified.</li>
+          <li>The installer bundle includes third-party license and notice files, including FFmpeg LGPL notices and corresponding-source information; check the exact notices and source-distribution details against the final binaries before publication. The unsigned candidate may show a Windows SmartScreen warning.</li>
+        </ul>
+        <p class="note">The Python package remains supported for developers and integrations. Docker is a separate operator deployment option.</p>
+      </div>
+    </section>
+
+
+    <section class="wrap" id="ai-cleanup" aria-labelledby="ai-cleanup-title">
+      <span class="kicker">v0.1.12 · Optional local AI proofreading</span>
+      <h2 id="ai-cleanup-title">Keep the original. Review a separate correction.</h2>
+      <p>After transcription, explicitly choose an installed local Ollama model and
+      proofread source speech. Compare timestamp-anchored original and AI-corrected
+      rows, return to original-only view, or copy/save separate corrected TXT.
+      Original transcripts and existing exports stay unchanged.</p>
+      <p>The optional default preference <code>qwen3.5:9b</code> is used only if
+      installed; its size/performance fit is unverified. Otherwise choose an installed
+      local tag, such as <code>qwen3.8:27b-q4_K_M</code>.
+      Ollama and cleanup models are not bundled or auto-downloaded. Cleanup uses
+      loopback Ollama only, with no cloud tags, paid providers or telemetry.</p>
+      <p class="note">AI can introduce plausible errors in names and facts. Review
+      against the original and audio. Source timestamps are preserved; corrected
+      word timing is not verified. A separate persisted variant records provider,
+      requested/returned model, time and original hash. Bounded background work
+      publishes no partial correction. Optional UI-only cleanup ships in core v0.1.12.</p>
+      <p class="note">Validation history: the first cold full-UI attempt ended in a
+      generic error; a later hot full run returned zero edits despite clear spelling
+      errors. The final cold run, started with the model unloaded, completed all 39
+      segments in three chunks and changed four segments (2026-10-16 17:39:52 UTC).
+      Original data and segment IDs/timestamps were preserved; the visible comparison
+      and corrected TXT save were verified. This proves workflow completion for one
+      run, not accuracy: “fundamental” and “victims” were plausible guesses not
+      audio-verified. Review against audio. AI guesses are not audio-verified.</p>
     </section>
 
     <section class="wrap install-grid" id="install" aria-labelledby="install-title">
@@ -326,7 +386,7 @@
           <li>Find the right setup for AMD ROCm in the install guide before installing dependencies — this applies to the optional <code>openai-whisper</code> engine and to diarization.</li>
         </ul>
         <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">Read install guide ↗</a>
-        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.11 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
+        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.12 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
       </div>
       <div>
         <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[mcp,http]"

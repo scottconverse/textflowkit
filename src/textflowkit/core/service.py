@@ -7,6 +7,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from textflowkit.core.windows_process import hidden_process_kwargs
+
 ENV_PROFILE = "TEXTFLOWKIT_PROFILE"
 ENV_API_TOKEN = "TEXTFLOWKIT_API_TOKEN"
 ENV_WORK_ROOT = "TEXTFLOWKIT_WORK_ROOT"
@@ -146,6 +148,7 @@ def _probe_duration(media: Path, *, confined: bool = False) -> float | None:
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=30, check=False,
+            **hidden_process_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise ServiceConfigurationError("ffprobe timed out before decode") from exc

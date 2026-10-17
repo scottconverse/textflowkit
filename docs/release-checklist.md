@@ -1,14 +1,20 @@
 # Release verification checklist
 
-## v0.1.11 release preparation
+## v0.1.12 release preparation
 
-Core is 0.1.11; fonts remain 0.1.6. Run the existing guards from the candidate root:
+Core is 0.1.12; fonts remain 0.1.6. Run the existing guards from the candidate root:
 
 ```powershell
-python scripts/verify_release_versions.py --tag v0.1.11
-python scripts/verify_readme_release.py --version v0.1.11
+python scripts/verify_release_versions.py --tag v0.1.12
+python scripts/verify_readme_release.py --version v0.1.12
 python -m pytest tests/test_release_surfaces.py
 ```
+
+The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.
+
+Optional UI-only local Ollama cleanup preserves originals and saves separate variants.
+The recorded real run completed 39 segments with four changes; AI guesses were not
+audio-verified. Ollama and cleanup models are optional and are not bundled.
 
 Optional live streaming is Windows x86_64 only and off by default. Check its
 public Python API, packaged browser assets, and `streaming` extra in the release
@@ -126,7 +132,7 @@ packaging and launch are part of the release:
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.11` for this release) on that verified
+version tag (for example `v0.1.12` for this release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

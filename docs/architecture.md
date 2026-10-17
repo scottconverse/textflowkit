@@ -1,4 +1,4 @@
-# Architecture and job lifecycle — v0.1.11
+# Architecture and job lifecycle — v0.1.12
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -25,6 +25,40 @@ CLI, MCP, and HTTP entry points. It mounts the existing developer HTTP app under
 a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
+
+### Windows desktop installer (v0.1.12; public EXE pending)
+
+The Windows x86_64 installer for core v0.1.12 provisions this same browser door without adding a second pipeline or hosted service. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+
+```mermaid
+flowchart LR
+    Installer[Locally tested per-user x86_64 setup] --> Runtime[Private CPython and bundled UI/runtime dependencies]
+    Shortcut[Start Menu or optional desktop shortcut] --> Server[Local HTTP server at 127.0.0.1]
+    Runtime --> Server
+    Browser[Browser on localhost] <--> Server
+    Server --> Core[Existing HTTP UI adapter and shared core]
+    Core --> Data[Per-user UI data outside install directory]
+```
+
+The prebundled Whistle assets and media binaries mean local file jobs need no
+first-use asset download; URL media still needs network access. The default
+Whistle engine supports only these seven advertised languages: `en`, `de`, `fr`,
+`es`, `it`, `nl`, and `pl`. The installer does
+not bundle optional `openai-whisper` or diarization dependencies; those documented
+features remain available to Python package users who install and configure them
+separately. Streaming dependencies are bundled, but streaming remains opt-in, and
+physical browser microphone capture has not been verified.
+
+The candidate is designed to keep per-user data outside the installation
+directory and preserve it across upgrades and uninstall. Stop the server from the
+UI and wait before either operation; the candidate will block while it is running
+rather than force-kill it. Stop server drains active jobs, so cancel one first if
+it should not finish. The installer bundle includes third-party license
+and notice files, including FFmpeg's LGPL notices and corresponding-source
+information; verify the exact notices and source-distribution details against the
+final binaries before publication. The candidate is unsigned, so Windows may show
+a SmartScreen warning. The Python package remains the supported
+developer and integration path, and Docker remains a separate operator option.
 
 Live streaming added in v0.1.11 is an optional **Windows x86_64 only** path:
 `StreamingSession` drives one owned native child through direct `ctypes` bindings
@@ -442,3 +476,31 @@ and `core/submission.py`, `core/runner.py`, `core/pipeline.py`,
 an isolated environment and inspect a real local job's status and outputs. Live
 gated providers, ROCm execution, and platform URLs each need separate evidence;
 see the [release checklist](release-checklist.md) for those boundaries.
+
+## Local UI cleanup sidecar (v0.1.12)
+
+`ui.cleanup` owns the optional proofreading worker and separate SQLite sidecar
+next to the effective job database. The UI shell's existing loopback peer/Host,
+exact-origin and capability-header gate protects cleanup routes. No shared HTTP,
+MCP, CLI or canonical transcript/job contract changes. Only completed jobs can
+start cleanup. A process lock and SQLite transaction admit one active cleanup;
+the persisted bounded lease also prevents another process using that sidecar
+from admitting concurrent cleanup. A normal lifespan exit drains the owned
+worker; crash recovery waits for lease expiry and exposes a retryable error.
+
+The worker snapshots the original, chunks only source `text` with adjacent
+read-only context, calls loopback Ollama with proxies/redirects disabled, and
+requires complete ordered segment coverage and a successful stop reason/model
+identity. It publishes the entire variant atomically after all chunks pass.
+The original job is never updated. Hash checks on every variant read/export
+invalidate stale corrections. Corrected segments drop word alignment and
+translated text; timestamps remain source anchors, not verified corrected timing.
+`cleanup.js` renders model text through `textContent`/text nodes and provides
+separate corrected TXT/copy. See the user manual for limits and local configuration.
+
+A measured cold full-UI run with the model unloaded completed all 39 segments in
+three chunks at 2026-10-16 17:39:52 UTC, with four changed segments. The canonical
+SQLite JSON/source and segment IDs/timestamps matched, and the browser comparison
+and TXT save were verified. This confirms the local persistence/export path for
+that run only, not correction accuracy; human audio review remains required.
+The optional UI-only cleanup ships with core v0.1.12; models are not bundled.

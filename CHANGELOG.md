@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.1.12 — 2026-10-17
+
+Core: 0.1.12; unchanged optional fonts: 0.1.6. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.
+
+### Optional local UI proofreading (v0.1.12)
+
+- Add explicit post-transcription local Ollama proofreading with an installed-tag
+  picker; prefer `qwen3.5:9b` only when installed (size/performance fit unverified),
+  otherwise require selection.
+  No model downloads, cloud tags, paid provider, telemetry or new package dependency.
+- Preserve original jobs and exports; persist a separate original-hash-bound AI
+  variant with provider/model/time provenance, source segment IDs/timestamps, no
+  inherited word alignment, comparison/original-only views and corrected TXT/copy.
+- Bound background work and validate complete JSON/segment coverage atomically.
+  One cleanup at a time; fail without partial output. Normal shutdown drains work;
+  interrupted leases expire. AI corrections require human review.
+
+- Validation history: the first cold full-UI attempt ended in a generic error; a
+  later hot 39-segment run returned zero edits despite clear spelling errors.
+  Final cold run (model explicitly unloaded first) completed all 39 segments in
+  three chunks with four changed segments at 2026-10-16 17:39:52 UTC. The original
+  SQLite JSON/source and IDs/timestamps matched; visible side-by-side review and
+  corrected TXT save were verified, with the saved file hash matching the variant.
+  This proves workflow completion for one run, not accuracy; “fundamental” and
+  “victims” were plausible guesses not verified against audio. Review against audio.
+
+### Native Windows installer
+
+- Package the existing local browser UI in a native per-user installer for core
+  v0.1.12. Built and tested locally; public EXE publication remains gated on
+  corresponding-source compliance review. No public installer link is available.
+- Bundle: private embeddable CPython, the UI and HTTP, export, and
+  streaming dependencies, the pinned Whistle model and runtime, and ffmpeg,
+  ffprobe, and Node. The installer is designed to need no separate Python, WSL,
+  or Docker installation.
+- Prebundled Whistle assets and media binaries mean local file jobs need no
+  first-use asset download. URL media still needs network access. The default
+  Whistle engine supports only these seven advertised languages: `en`, `de`,
+  `fr`, `es`, `it`, `nl`, and `pl`.
+- Per-user setup with a Start Menu entry and optional desktop shortcut; launch
+  starts the loopback server and opens the existing UI in the browser. It normally
+  needs no administrator rights, changes no global `PATH`, and has no automatic
+  updates.
+- Keep UI data outside the app install directory and preserve it on upgrade and
+  uninstall. Stop server and wait before upgrade or uninstall; the candidate will
+  block while it is running rather than force-kill active jobs. Stop server drains
+  jobs, so cancel one first if it should not finish.
+- Do not bundle optional `openai-whisper` or diarization dependencies; their
+  documented optional paths remain available through the Python package. Bundled
+  streaming dependencies do not change the opt-in default; physical browser
+  microphone capture remains unverified.
+- The installer bundle includes third-party license and notice files,
+  including FFmpeg LGPL notices and corresponding-source information. Verify
+  exact notices and source-distribution details against final binaries before
+  publication.
+- The candidate is unsigned, so Windows may show a SmartScreen warning.
+
 ## v0.1.11 — 2026-10-06
 
 Optional native live streaming supports **Windows x86_64 only**. Core version:

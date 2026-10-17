@@ -283,3 +283,10 @@ mark { background: var(--focus); color: #000; }
   font-size: 0.85rem;
   border-top: 1px solid var(--line);
 }
+
+/* Source timestamps anchor separate original/corrected text nodes. */
+#cleanup-panel { margin-block: 1rem; border-block: 1px solid var(--border); padding-block: 1rem; }
+.cleanup-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; padding-block: .5rem; border-bottom: 1px solid var(--border); }
+.cleanup-row > div { white-space: pre-wrap; overflow-wrap: anywhere; }
+#cleanup-provenance { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .cleanup-row { grid-template-columns: 1fr; } }

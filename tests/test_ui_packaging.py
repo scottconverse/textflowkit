@@ -61,14 +61,16 @@ def wheel_names() -> list[str]:
 def test_wheel_carries_ui_static_assets(wheel_names):
     for asset in ("textflowkit/ui/static/index.html",
                   "textflowkit/ui/static/app.css",
-                  "textflowkit/ui/static/app.js"):
+                  "textflowkit/ui/static/app.js",
+                  "textflowkit/ui/static/cleanup.js"):
         assert asset in wheel_names, f"{asset} missing from the wheel"
 
 
 def test_wheel_carries_ui_modules(wheel_names):
     for module in ("textflowkit/ui/app.py", "textflowkit/ui/launcher.py",
                    "textflowkit/ui/security.py", "textflowkit/ui/uploads.py",
-                   "textflowkit/ui/capabilities.py", "textflowkit/ui/paths.py"):
+                   "textflowkit/ui/capabilities.py", "textflowkit/ui/paths.py",
+                   "textflowkit/ui/cleanup.py"):
         assert module in wheel_names, f"{module} missing from the wheel"
 
 
@@ -157,6 +159,7 @@ def test_static_assets_have_no_build_step():
         "index.html",
         "app.css",
         "app.js",
+        "cleanup.js",
         "streaming-example.html",
         "streaming-capture-worklet.js",
     }

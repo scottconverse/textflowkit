@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.11
+# TextFlowKit user manual — v0.1.12
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -21,11 +21,63 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
+### Windows x86_64 installer (v0.1.12; public EXE pending)
+
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+
+The setup is per user. It will create a Start Menu entry and offer an
+optional desktop shortcut; opening either will start the local server and open the
+browser UI at localhost. It is designed to need no administrator rights in normal
+use, change no global `PATH`, and not auto-update. The prebundled Whistle assets
+and media binaries mean local file jobs need no first-use asset download; URL
+media still needs its normal network access. The default Whistle engine supports
+only these seven advertised languages: `en`, `de`, `fr`, `es`, `it`, `nl`, and
+`pl`.
+
+Optional `openai-whisper` and diarization dependencies are not bundled; those
+documented optional features remain available to Python package users who install
+and configure their dependencies separately. Streaming remains opt-in, and
+physical browser microphone capture has not been verified. The candidate is
+designed to keep user data outside the application install folder and preserve it
+on upgrade and uninstall. Before upgrading or uninstalling, use **Stop server**
+and wait for the server to exit. The candidate will block while it is running
+rather than force-kill it; Stop server drains active jobs, so cancel a job first
+if it should not finish.
+
+The installer bundle includes third-party license and notice files,
+including FFmpeg's LGPL notices and corresponding-source information. Check the
+exact notices and source-distribution details against the final bundled binaries
+before publication. The candidate is unsigned, so Windows may show a SmartScreen
+warning. See the [install notes](install.md#windows-desktop-installer-v0112-public-exe-pending)
+for its scope and status.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Setup as Per-user setup candidate
+    participant Runtime as Bundled private CPython
+    participant Server as Local server on 127.0.0.1
+    participant Browser as Browser UI
+    participant Core as Existing TextFlowKit core
+    participant Data as Per-user data outside install folder
+    User->>Setup: Install for this Windows user
+    Setup->>Runtime: Place private runtime and bundled components
+    User->>Runtime: Open Start Menu or optional desktop shortcut
+    Runtime->>Server: Start local UI server
+    Server-->>Browser: Open UI at localhost
+    Browser->>Server: Send UI requests over loopback
+    Server->>Core: Run the existing shared pipeline
+    Core->>Data: Store jobs, uploads, transcripts, and outputs
+```
+
+The existing Python install remains the documented route for development and
+integrations:
+
 Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.11'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.12'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -293,7 +345,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.11'
+python -m pip install 'textflowkit[http,export]==0.1.12'
 textflowkit-ui
 ```
 
@@ -363,7 +415,7 @@ live optional-backend (translation/diarization) run through the UI is claimed,
 and no live Linux or macOS UI run was performed here — those platforms are
 covered by automated tests only.
 
-### 7.1 Live microphone streaming (opt-in, v0.1.11)
+### 7.1 Live microphone streaming (opt-in, v0.1.12)
 
 ![Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams.](assets/live-streaming-flow.svg)
 
@@ -385,7 +437,7 @@ and nowhere else.
 
 It is **off by default**: with the switch unset the endpoint
 does not exist. It needs the `streaming` extra
-(`python -m pip install "textflowkit[streaming]==0.1.11"`). This is a capability of the
+(`python -m pip install "textflowkit[streaming]==0.1.12"`). This is a capability of the
 **servers**, not the command-line `textflowkit` tool — the CLI never opens a
 microphone. See [streaming.md](streaming.md) for the full contract and the
 programmatic API.
@@ -455,11 +507,12 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.11 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11)
-- [Core package 0.1.11 on PyPI](https://pypi.org/project/textflowkit/0.1.11/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.12 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12)
+- [Core package 0.1.12 on PyPI](https://pypi.org/project/textflowkit/0.1.12/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The v0.1.11 release adds optional Windows x86_64 live streaming; the local browser
+The v0.1.12 release adds optional UI-only local Ollama cleanup and native Windows
+installer packaging (public EXE pending corresponding-source compliance review); the local browser
 interface introduced in v0.1.10 remains in the core package, and
 the v0.1.9 engine change (Whistle default, `openai-whisper` opt-in) is unchanged.
 The local browser interface's own verification boundary is in
@@ -467,7 +520,7 @@ The local browser interface's own verification boundary is in
 [section 8](#8-whistle-the-default-engine). Release artifacts and workflow
 results are the publication evidence. The paragraphs below retain historical
 evidence for v0.1.9, v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish
-v0.1.11 installed-package or harness verification.
+v0.1.12 installed-package or harness verification.
 
 The v0.1.9 release made Whistle the default engine and moved `openai-whisper` to
 the optional `whisper` extra. Its own evidence is the local 4-hour CPU run and the
@@ -503,3 +556,90 @@ The uploaded wheel and source archive are version 0.1.5; their hashes match
 the GitHub v0.1.5 release. The current GitHub README and this manual correct
 the wording. PyPI's already-uploaded release metadata cannot be rewritten in
 place; a future package version will carry the corrected description.
+
+
+## Optional local AI transcript cleanup (v0.1.12)
+
+v0.1.12 adds **opt-in proofreading in the local browser UI only**. After a transcription finishes, choose an
+installed local Ollama model and click **Proofread with local AI**. Cleanup never
+runs automatically. Ollama and cleanup models are not bundled in the installer.
+The optional default preference is `qwen3.5:9b` only if already installed; its
+size/performance fit has not been verified. Otherwise choose an installed local
+model explicitly, such as `qwen3.8:27b-q4_K_M`. Larger models are never silently
+selected. Install a model yourself through Ollama when needed; TextFlowKit does
+not pull models, enable cloud tags, or use a paid provider.
+
+The original transcript, job JSON, original copy button, search, and all existing
+exports remain unchanged. Choose **Original only** or compare **source original
+(left) / AI corrected (right)** in timestamp-anchored rows. Use **Copy corrected
+text** or **Save corrected TXT** for the separate AI variant. The comparison
+proofreads original source speech, not an optional translation. AI can make
+plausible but wrong corrections, including names and facts: review against the
+original and audio before using it. Prompt instructions reduce errors but do not
+guarantee accuracy or resistance to instructions embedded in speech.
+
+Corrected segments retain source start/end timestamps and stable zero-based
+original segment indices. They have no inherited word alignment or translation;
+**corrected word timing is not verified**. A separate persisted variant records
+local provider, requested/returned model, UTC completion time, endpoint, successful
+`done_reason=stop`, policy version and original SHA-256. If original job JSON
+changes, its correction is invalidated. No partial replacement is published: bad,
+truncated, missing, duplicated, reordered or extra segments fail the entire attempt.
+A failed retry retains an earlier fully validated variant only if its original
+hash still matches.
+
+Cleanup uses a separate SQLite file named `<job database filename>.cleanup.sqlite3`
+beside `TEXTFLOWKIT_DB` (or the UI default database). Include it when backing up UI
+data; it contains transcript text and provenance. The canonical job store is never
+updated by cleanup. Reloading/reopening a completed job retrieves its saved variant,
+even if Ollama is offline. Model selection is per attempt; it is not a global
+transcription/translation model setting.
+
+Configuration is process-local environment, consistent with the existing UI:
+
+- `TEXTFLOWKIT_CLEANUP_OLLAMA_URL`: default `http://127.0.0.1:11434`; only HTTP on
+  a literal loopback IP and explicit port is accepted (IPv6 `[::1]` also works).
+  DNS names, credentials, other paths, remote hosts and redirects are refused;
+  proxy environment variables are ignored by the cleanup client.
+- `TEXTFLOWKIT_CLEANUP_MODEL`: optional preferred installed local tag; defaults
+  to `qwen3.5:9b`. If absent from installed tags, explicit selection is required.
+  Cloud tags and Ollama remote-model metadata are refused.
+
+One cleanup runs at a time; the browser polls a background worker and remains
+usable. Limits: 2,000 segments, 120,000 source characters, 60 chunks, at most
+1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. A small read-only
+neighboring context helps with sentences spanning segments without merging them.
+Generation requests use temperature 0, thinking disabled, context 8,192 and at
+most 4,096 generated tokens per chunk. Requests have a 180-second socket timeout,
+bounded response reads (1 MiB), and strict 64 KiB model JSON limits. The overall
+work budget remains 600 seconds, checked between requests and reads; a blocking
+socket operation can take up to its remaining request timeout before failure is
+observed. Oversize or timeout failures leave the original available.
+
+Normal UI shutdown drains an active cleanup (it can take several minutes); there
+is no cleanup cancellation button. Abrupt process exit leaves no partial variant;
+an interrupted running lease becomes retryable after at most 785 seconds from its
+start. Cleanup does not restart Ollama or stop/unload other models. Model text is
+rendered with DOM text nodes, never HTML. Cleanup adds no Python dependency,
+telemetry, cloud provider or network destination beyond the configured local
+Ollama service. Existing media acquisition/translation network behavior is separate.
+
+### Candidate validation status
+
+The first cold full-UI attempt ended with a generic error and produced no variant;
+the original remained intact. A subsequent hot 39-segment run returned zero text
+edits despite clear source spelling errors, so it was not useful cleanup-quality
+evidence. The final cold run began with the model explicitly unloaded and
+completed all 39 segments in three chunks at
+2026-10-16 17:39:52 UTC. It used matching requested/returned
+`qwen3.8:27b-q4_K_M` and changed four segments. The original SQLite JSON matched
+the source file, with segment IDs and timestamps preserved. The in-app-browser
+side-by-side comparison was visible, and **Save corrected TXT** produced a
+2,516-byte file whose SHA-256 matched the validated variant.
+
+Observed edits included “guardrails,” “precludes,” and punctuation. “Fundamental”
+and “victims” were plausible guesses, not verified against the audio. This is
+measured evidence that the local full workflow completed and saved its separate
+variant for this run; it does not establish transcription accuracy or general
+cleanup quality. Review every correction against the audio. This is local workflow evidence,
+not an audio-accuracy certification.
