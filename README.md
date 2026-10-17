@@ -8,7 +8,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
 [Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.11](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.11).**
+**Current release: [v0.1.12](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -69,7 +69,7 @@ DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.11/docs/assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.12/docs/assets/architecture-overview.svg)
 
 The design principle is **one shared core, thin doors**. Everything of substance
 lives in the core; the interfaces are thin — the local browser UI is a fifth door
@@ -93,7 +93,7 @@ see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/mai
 
 ## Live microphone streaming (opt-in)
 
-In v0.1.11, live streaming supports **Windows x86_64 only**. When
+In v0.1.12, live streaming supports **Windows x86_64 only**. When
 `TEXTFLOWKIT_STREAMING=1` is set, the developer HTTP app serves a `/stream`
 WebSocket and the local UI serves `/api/stream`, both transcribing a live microphone
 as you speak. A **runnable, self-hosted browser example** ships at
@@ -102,7 +102,7 @@ as you speak. A **runnable, self-hosted browser example** ships at
 No CDN, no analytics, no external fetch. Requires the `streaming` extra:
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.11"
+python -m pip install "textflowkit[streaming]==0.1.12"
 ```
 
 It is **off by default** — with the switch unset the endpoint does not exist — and
@@ -167,6 +167,38 @@ installs `textflowkit-fonts` for offline multilingual PDF rendering:
 ```bash
 python -m pip install 'textflowkit[export]'
 ```
+
+## Windows desktop installer (v0.1.12; public EXE pending)
+
+An installer for the existing local browser workspace accompanies core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. The Python package remains supported for developers and integrations.
+
+The candidate is designed to run without a separately installed Python, WSL, or
+Docker. Its bundle includes a private embeddable CPython runtime, the
+browser UI and HTTP, export, and streaming dependencies, the pinned Whistle model
+and runtime, and ffmpeg, ffprobe, and Node. The setup installs per user,
+creates a Start Menu shortcut, and offers an optional desktop shortcut. Opening
+the shortcut will start the local server and open the existing browser UI at
+localhost. It is designed to need no administrator rights in normal use, change
+no global `PATH`, and avoid automatic updates.
+
+The pinned Whistle assets and media binaries are prebundled, so local file jobs
+need no first-use asset download. URL sources still need their normal network
+access. The default Whistle engine supports only these seven advertised languages:
+`en`, `de`, `fr`, `es`, `it`, `nl`, and `pl`. Optional `openai-whisper` and diarization dependencies are not
+bundled; those features remain documented for the Python package when separately
+installed and configured. Streaming dependencies are bundled, but live streaming
+remains opt-in and physical browser microphone capture has not been verified.
+
+The candidate is designed to keep UI data outside the application install
+directory and preserve it on upgrades and uninstall. Stop the UI server with
+**Stop server** and wait for it to exit before upgrading or uninstalling; the
+installer will block while it is running rather than force-killing active jobs.
+Cancel a job first if it should not drain to completion. The bundle also
+includes third-party license and notice files, including FFmpeg's LGPL notices
+and corresponding-source information. Check exact notices and source-distribution
+details against the final bundled binaries before publication. The candidate is
+unsigned, so Windows may show a SmartScreen warning. See the [installer candidate
+notes](docs/install.md#windows-desktop-installer-v0112-public-exe-pending).
 
 ## Python API
 
@@ -263,7 +295,7 @@ textflowkit export ./transcript.json --format vtt
 needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
 torch; `openai-whisper` is an explicitly selectable opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.11/docs/assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.12/docs/assets/whistle-resume.svg)
 
 - **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
   model on first use. Naming a GPU device is refused rather than silently
@@ -374,7 +406,7 @@ its own beyond the `http` extra. It ships with the core package as of v0.1.10:
 a regular install of the current release carries it.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.11'
+python -m pip install 'textflowkit[http,export]==0.1.12'
 textflowkit-ui
 ```
 
@@ -445,7 +477,10 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.11 release.** Optional live streaming adds a transport-neutral
+**v0.1.12 release.** Adds optional UI-only local Ollama proofreading and native
+Windows installer packaging; public EXE distribution remains gated on unresolved
+corresponding-source compliance review, with no public installer download link.
+Existing optional live streaming provides a transport-neutral
 `StreamingSession` Python API, incremental transcript events, and authenticated
 loopback WebSockets (`/stream` on the developer HTTP API and `/api/stream` on the
 local UI), with a packaged browser microphone example. The native live capability
@@ -489,7 +524,7 @@ MCP speech, seven-format exports and completed resume; the v0.1.8 runtime fixes
 were independently checked through fresh-process CLI restart probes, real SQLite
 setup-failure tests, and the full Windows test suite. Those checks are not new
 individual-harness receipts. That is the previous releases' record, not evidence
-for v0.1.11.
+for v0.1.12.
 
 The v0.1.6 release was the post-v0.1.5 review repair set: security hardening
 for media acquisition and the HTTP and MCP adapters, safer subtitle wrapping and
@@ -508,7 +543,7 @@ and both [core](https://pypi.org/project/textflowkit/0.1.6/) and
 [fonts](https://pypi.org/project/textflowkit-fonts/0.1.6/) PyPI projects are
 live — that is the v0.1.6 release's evidence, not a receipt for a later release.
 Everything from here to the end of this section is the v0.1.6 release's
-historical record as published: it is not re-verified for v0.1.11, whose separate release evidence is not supplied by these historical paragraphs.
+historical record as published: it is not re-verified for v0.1.12, whose separate release evidence is not supplied by these historical paragraphs.
 Merged-main CI passed 16/16 on the tagged commit; the published wheel and
 sdist digests match the GitHub release assets and their SHA-256 list; and a fresh
 Windows Python 3.12 install of `textflowkit[export,mcp,http]==0.1.6` from PyPI
@@ -545,3 +580,90 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md) before adding a source
 adapter.
+
+
+## Optional local AI transcript cleanup (v0.1.12)
+
+v0.1.12 adds **opt-in proofreading in the local browser UI only**. After a transcription finishes, choose an
+installed local Ollama model and click **Proofread with local AI**. Cleanup never
+runs automatically. Ollama and cleanup models are not bundled in the installer.
+The optional default preference is `qwen3.5:9b` only if already installed; its
+size/performance fit has not been verified. Otherwise choose an installed local
+model explicitly, such as `qwen3.8:27b-q4_K_M`. Larger models are never silently
+selected. Install a model yourself through Ollama when needed; TextFlowKit does
+not pull models, enable cloud tags, or use a paid provider.
+
+The original transcript, job JSON, original copy button, search, and all existing
+exports remain unchanged. Choose **Original only** or compare **source original
+(left) / AI corrected (right)** in timestamp-anchored rows. Use **Copy corrected
+text** or **Save corrected TXT** for the separate AI variant. The comparison
+proofreads original source speech, not an optional translation. AI can make
+plausible but wrong corrections, including names and facts: review against the
+original and audio before using it. Prompt instructions reduce errors but do not
+guarantee accuracy or resistance to instructions embedded in speech.
+
+Corrected segments retain source start/end timestamps and stable zero-based
+original segment indices. They have no inherited word alignment or translation;
+**corrected word timing is not verified**. A separate persisted variant records
+local provider, requested/returned model, UTC completion time, endpoint, successful
+`done_reason=stop`, policy version and original SHA-256. If original job JSON
+changes, its correction is invalidated. No partial replacement is published: bad,
+truncated, missing, duplicated, reordered or extra segments fail the entire attempt.
+A failed retry retains an earlier fully validated variant only if its original
+hash still matches.
+
+Cleanup uses a separate SQLite file named `<job database filename>.cleanup.sqlite3`
+beside `TEXTFLOWKIT_DB` (or the UI default database). Include it when backing up UI
+data; it contains transcript text and provenance. The canonical job store is never
+updated by cleanup. Reloading/reopening a completed job retrieves its saved variant,
+even if Ollama is offline. Model selection is per attempt; it is not a global
+transcription/translation model setting.
+
+Configuration is process-local environment, consistent with the existing UI:
+
+- `TEXTFLOWKIT_CLEANUP_OLLAMA_URL`: default `http://127.0.0.1:11434`; only HTTP on
+  a literal loopback IP and explicit port is accepted (IPv6 `[::1]` also works).
+  DNS names, credentials, other paths, remote hosts and redirects are refused;
+  proxy environment variables are ignored by the cleanup client.
+- `TEXTFLOWKIT_CLEANUP_MODEL`: optional preferred installed local tag; defaults
+  to `qwen3.5:9b`. If absent from installed tags, explicit selection is required.
+  Cloud tags and Ollama remote-model metadata are refused.
+
+One cleanup runs at a time; the browser polls a background worker and remains
+usable. Limits: 2,000 segments, 120,000 source characters, 60 chunks, at most
+1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. A small read-only
+neighboring context helps with sentences spanning segments without merging them.
+Generation requests use temperature 0, thinking disabled, context 8,192 and at
+most 4,096 generated tokens per chunk. Requests have a 180-second socket timeout,
+bounded response reads (1 MiB), and strict 64 KiB model JSON limits. The overall
+work budget remains 600 seconds, checked between requests and reads; a blocking
+socket operation can take up to its remaining request timeout before failure is
+observed. Oversize or timeout failures leave the original available.
+
+Normal UI shutdown drains an active cleanup (it can take several minutes); there
+is no cleanup cancellation button. Abrupt process exit leaves no partial variant;
+an interrupted running lease becomes retryable after at most 785 seconds from its
+start. Cleanup does not restart Ollama or stop/unload other models. Model text is
+rendered with DOM text nodes, never HTML. Cleanup adds no Python dependency,
+telemetry, cloud provider or network destination beyond the configured local
+Ollama service. Existing media acquisition/translation network behavior is separate.
+
+### Candidate validation status
+
+The first cold full-UI attempt ended with a generic error and produced no variant;
+the original remained intact. A subsequent hot 39-segment run returned zero text
+edits despite clear source spelling errors, so it was not useful cleanup-quality
+evidence. The final cold run began with the model explicitly unloaded and
+completed all 39 segments in three chunks at
+2026-10-16 17:39:52 UTC. It used matching requested/returned
+`qwen3.8:27b-q4_K_M` and changed four segments. The original SQLite JSON matched
+the source file, with segment IDs and timestamps preserved. The in-app-browser
+side-by-side comparison was visible, and **Save corrected TXT** produced a
+2,516-byte file whose SHA-256 matched the validated variant.
+
+Observed edits included “guardrails,” “precludes,” and punctuation. “Fundamental”
+and “victims” were plausible guesses, not verified against the audio. This is
+measured evidence that the local full workflow completed and saved its separate
+variant for this run; it does not establish transcription accuracy or general
+cleanup quality. Review every correction against the audio. This is local workflow evidence,
+not an audio-accuracy certification.

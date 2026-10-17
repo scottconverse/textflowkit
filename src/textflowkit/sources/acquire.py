@@ -24,6 +24,7 @@ from textflowkit.core.service import (
     positive_limit,
     production_enabled,
 )
+from textflowkit.core.windows_process import hidden_process_kwargs
 from textflowkit.sources.detect import SourceRef, UnsafeUrlError, assert_url_is_fetchable
 from textflowkit.sources.scratch import ScratchPaths
 
@@ -553,7 +554,8 @@ def extract_audio(
     if check_cancel is not None:
         check_cancel()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                **hidden_process_kwargs())
     except OSError as exc:
         raise AcquisitionError(f"ffmpeg could not start: {exc}") from exc
 
@@ -626,6 +628,7 @@ def extract_audio(
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                     capture_output=True, timeout=10, check=False,
+                    **hidden_process_kwargs(),
                 )
             except (OSError, subprocess.TimeoutExpired):
                 pass

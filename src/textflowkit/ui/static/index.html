@@ -91,6 +91,28 @@
 
     <p id="results-status" class="hint" role="status" aria-live="polite"></p>
     <div id="search-results" class="search-results" hidden></div>
+
+    <section id="cleanup-panel" hidden aria-labelledby="cleanup-heading">
+      <h3 id="cleanup-heading">Optional local AI proofreading (Unreleased)</h3>
+      <p class="notice">AI may make plausible but incorrect corrections, including names and facts.
+        Review against the original and audio. Source segment timestamps are retained;
+        corrected word timing is not verified. Proofreads source speech, not translated text.</p>
+      <label for="cleanup-model">Installed local Ollama model</label>
+      <select id="cleanup-model"></select>
+      <button id="cleanup-start" type="button" class="secondary" disabled>Proofread with local AI</button>
+      <p id="cleanup-config" class="hint"></p>
+      <p id="cleanup-status" class="hint" role="status" aria-live="polite"></p>
+      <label for="cleanup-view">View
+        <select id="cleanup-view">
+          <option value="original">Original only</option>
+          <option value="compare">Compare source original (left) and AI corrected (right)</option>
+        </select>
+      </label>
+      <button id="cleanup-copy" type="button" class="secondary" disabled>Copy corrected text</button>
+      <button id="cleanup-save" type="button" class="secondary" disabled>Save corrected TXT</button>
+      <p id="cleanup-provenance" class="hint"></p>
+      <div id="cleanup-comparison" hidden aria-label="Original and AI correction comparison"></div>
+    </section>
     <div id="transcript" class="transcript" aria-label="Transcript"></div>
   </section>
 
@@ -222,5 +244,6 @@
 </dialog>
 
 <script src="/assets/app.js" defer></script>
+<script src="/assets/cleanup.js" defer></script>
 </body>
 </html>

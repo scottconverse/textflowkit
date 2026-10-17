@@ -209,6 +209,15 @@ verification/deployment boundaries, not claims of complete platform coverage.
   preparation; packaging, exact-commit CI, and publication remain
   separate gates. The public site is static documentation, not a stream server.
 
+## v0.1.12 — Windows installer and optional local UI cleanup
+
+- [x] Ship v0.1.12 review follow-ups: prepare native Windows installer and
+  optional UI-only local Ollama cleanup release surfaces. Fonts remain 0.1.6.
+  The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.
+- [x] Record the real cleanup run: 39 segments, three chunks, four changed
+  segments, preserved original, side-by-side review and corrected TXT save.
+  AI guesses were not audio-verified; human review remains required.
+
 ## Design constraints
 
 - Platform differences stay in the source layer. The pipeline never branches on

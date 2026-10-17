@@ -289,6 +289,11 @@ async def lifespan(app: FastAPI):
         from textflowkit.core.streaming import cancel_all_sessions
 
         cancel_all_sessions()
+        cleanup_service = getattr(app.state, "cleanup_service", None)
+        if cleanup_service is not None:
+            from starlette.concurrency import run_in_threadpool
+
+            await run_in_threadpool(cleanup_service.wait)
         shutdown_default_executor(wait=True)
 
 
@@ -547,6 +552,102 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
             media_type=_CONTENT_TYPES[fmt],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    # --- opt-in, UI-only local proofreading --------------------------------
+    from textflowkit.ui.cleanup import (
+        DEFAULT_ENDPOINT,
+        DEFAULT_MODEL,
+        CleanupBusy,
+        CleanupService,
+        installed_models,
+        is_remote,
+        local_endpoint,
+        local_model,
+        ollama_request,
+        sidecar_path,
+    )
+    cleanup_service = CleanupService(sidecar_path())
+    app.state.cleanup_service = cleanup_service
+
+    def cleanup_endpoint():
+        return local_endpoint(os.environ.get("TEXTFLOWKIT_CLEANUP_OLLAMA_URL", DEFAULT_ENDPOINT))
+
+    def cleanup_job(job_id):
+        job = get_default_store().get(job_id)
+        if job is None:
+            return None, JSONResponse({"error": "Job not found"}, status_code=404)
+        if job.state is not JobState.DONE or job.transcript is None:
+            return None, JSONResponse({"error": "Finish transcription first"}, status_code=409)
+        return job, None
+
+    @app.get("/ui/cleanup/models")
+    def cleanup_models():
+        try:
+            models = installed_models(cleanup_endpoint())
+            configured = os.environ.get("TEXTFLOWKIT_CLEANUP_MODEL", DEFAULT_MODEL)
+            return {"models": models, "recommended": DEFAULT_MODEL,
+                    "selected": configured if configured in models else None,
+                    "message": "Select an installed local model. To use qwen3.5:9b, install it "
+                               "yourself in Ollama; TextFlowKit never downloads cleanup models."}
+        except Exception:  # noqa: BLE001 - sanitize backend/config failures
+            return JSONResponse({"error": "Local Ollama unavailable or configuration invalid. "
+                                 "Start/configure Ollama on a literal loopback IP and port; "
+                                 "install a local model yourself. No automatic downloads."},
+                                status_code=422)
+
+    @app.post("/ui/jobs/{job_id}/cleanup", status_code=202)
+    async def start_cleanup(job_id: str, request: Request):
+        job, refusal = cleanup_job(job_id)
+        if refusal is not None:
+            return refusal
+        body = bytearray()
+        async for block in request.stream():
+            if len(body) + len(block) > 4096:
+                return JSONResponse({"error": "Cleanup request too large"}, status_code=413)
+            body.extend(block)
+        try:
+            payload = json.loads(body)
+            if not isinstance(payload, dict) or set(payload) != {"model"}:
+                raise ValueError("Select a local cleanup model")
+            model = local_model(payload["model"])
+            endpoint = cleanup_endpoint()
+            # These short metadata calls run off the event loop, before any transcript is sent.
+            from starlette.concurrency import run_in_threadpool
+            models = await run_in_threadpool(installed_models, endpoint)
+            if model not in models:
+                raise ValueError("Model not installed. Select an installed local model or install "
+                                 "qwen3.5:9b yourself in Ollama. No automatic downloads.")
+            info = await run_in_threadpool(ollama_request, endpoint, "/api/show", {"model": model})
+            if is_remote(info):
+                raise ValueError("Cloud/remote models are refused; select a local model")
+            cleanup_service.start(job_id, job.transcript, model, endpoint)
+        except CleanupBusy as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        except (ValueError, TypeError, KeyError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+        except Exception:  # noqa: BLE001 - sanitize backend/config failures
+            return JSONResponse({"error": "Local Ollama unavailable. Configure/install a local "
+                                 "model yourself; original remains available."}, status_code=422)
+        return {"state": "running"}
+
+    @app.get("/ui/jobs/{job_id}/cleanup")
+    def cleanup_status(job_id: str):
+        job, refusal = cleanup_job(job_id)
+        if refusal is not None:
+            return refusal
+        return cleanup_service.status(job_id, job.transcript)
+
+    @app.get("/ui/jobs/{job_id}/cleanup/download")
+    def cleanup_download(job_id: str):
+        job, refusal = cleanup_job(job_id)
+        if refusal is not None:
+            return refusal
+        variant = cleanup_service.status(job_id, job.transcript).get("variant")
+        if not variant:
+            return JSONResponse({"error": "No validated correction available"}, status_code=409)
+        text = "\n".join(s["text"].strip() for s in variant["segments"] if not s.get("hidden"))
+        return Response(text, media_type="text/plain; charset=utf-8", headers={
+            "Content-Disposition": 'attachment; filename="transcript-ai-corrected.txt"'})
 
     # --- controlled shutdown ----------------------------------------------
 

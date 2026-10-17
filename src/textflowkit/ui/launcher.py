@@ -49,6 +49,7 @@ from pathlib import Path
 from textflowkit import __version__
 from textflowkit.adapters.streaming_ws import streaming_enabled
 from textflowkit.core.bind import is_loopback_host
+from textflowkit.core.windows_process import hidden_process_kwargs
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8756
@@ -216,6 +217,7 @@ def _show_message_box(title: str, message: str) -> None:
             timeout=120,
             check=False,
             env={**os.environ, "TFK_MSG_FILE": str(data_file)},
+            **hidden_process_kwargs(),
         )
     except (OSError, subprocess.SubprocessError):  # pragma: no cover
         pass
@@ -324,6 +326,7 @@ def _create_shortcut(*, host: str, port: int, destination: Path | None) -> Path:
             text=True,
             env={**os.environ, "TFK_SHORTCUT_DATA": str(data_file)},
             check=False,
+            **hidden_process_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise OSError(f"could not run PowerShell to create the shortcut: {exc}") from exc

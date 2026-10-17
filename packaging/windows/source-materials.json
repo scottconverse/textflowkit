@@ -1,0 +1,20 @@
+{
+  "ffmpeg_source": {
+    "filename": "ffmpeg-7e93014c5b-source.tar.gz",
+    "url": "https://github.com/FFmpeg/FFmpeg/archive/7e93014c5b.tar.gz",
+    "size": 17329484,
+    "sha256": "7170ea3611fca53a55f5e8f94b3f8eedd91e7253aae51608ffed1852654b93cb"
+  },
+  "ffmpeg_build_source": {
+    "filename": "ffmpeg-builds-63ac3265-source.tar.gz",
+    "url": "https://github.com/BtbN/FFmpeg-Builds/archive/63ac3265b0789ea16c7b1f8351cd2ad195a28722.tar.gz",
+    "size": 116749,
+    "sha256": "4fd8856d5b207fce5c870a690aefc9a72b9a1943cfc79df8d5d327ec4612c9d2"
+  },
+  "ffmpeg_gpl_license": {
+    "filename": "GPL-3.0.txt",
+    "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+    "size": 35149,
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  }
+}
