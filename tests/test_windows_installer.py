@@ -422,8 +422,18 @@ def test_sdist_includes_installer_recipe():
     assert '"/packaging"' in {line.strip().rstrip(",") for line in includes.splitlines()}
 
 
-def test_setup_presence_is_checked_after_app_presence_and_handle_released(monkeypatch):
+@pytest.mark.parametrize("missing_windll", [False, True])
+def test_setup_presence_is_checked_after_app_presence_and_handle_released(
+        monkeypatch, missing_windll):
     bootstrap = load(BOOTSTRAP)
+    # Exercise the Windows branch with isolated module views, even on Linux/macOS.
+    # Never remove WinDLL from the process-wide ctypes module on Windows.
+    monkeypatch.setattr(bootstrap, "os", SimpleNamespace(name="nt"))
+    if missing_windll:
+        monkeypatch.setattr(bootstrap, "ctypes", SimpleNamespace(**{
+            name: value for name, value in vars(bootstrap.ctypes).items()
+            if name != "WinDLL"
+        }))
     events = []
     class Function:
         def __init__(self, name, result):
@@ -434,7 +444,7 @@ def test_setup_presence_is_checked_after_app_presence_and_handle_released(monkey
     api = SimpleNamespace(CreateMutexW=Function("create", 101),
                           OpenMutexW=Function("open", 102),
                           CloseHandle=Function("close", True))
-    monkeypatch.setattr(bootstrap.ctypes, "WinDLL", lambda *a, **kw: api)
+    monkeypatch.setattr(bootstrap.ctypes, "WinDLL", lambda *a, **kw: api, raising=False)
     with pytest.raises(OSError, match="install|setup"), bootstrap.app_mutex():
         pytest.fail("Application must not run during setup")
     assert events[0] == ("create", (None, False, r"Local\TextFlowKit.Desktop"))

@@ -257,7 +257,31 @@ def test_http_transport_proxy_redirect_body_limits(monkeypatch):
 
 
 @pytest.fixture
-def route_client(tmp_path, monkeypatch):
+def no_route_network(monkeypatch):
+    """Block route sockets after TestClient's asyncio socket pair is initialized."""
+    import socket
+    from contextlib import contextmanager
+
+    @contextmanager
+    def guard():
+        attempts = []
+
+        def refuse(*args, **kwargs):
+            attempts.append((args, kwargs))
+            raise AssertionError("Cleanup route attempted real network access")
+
+        with monkeypatch.context() as network_patch:
+            network_patch.setattr(socket, "create_connection", refuse)
+            network_patch.setattr(socket.socket, "connect", refuse)
+            network_patch.setattr(socket.socket, "connect_ex", refuse)
+            yield attempts
+        assert attempts == [], "Cleanup route attempted real network access"
+
+    return guard
+
+
+@pytest.fixture
+def route_client(tmp_path, monkeypatch, no_route_network):
     from fastapi.testclient import TestClient
 
     from textflowkit.core.jobs import reset_default_store
@@ -265,11 +289,24 @@ def route_client(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTFLOWKIT_DB", str(tmp_path / "jobs.sqlite3"))
     monkeypatch.setenv("TEXTFLOWKIT_PROFILE", "developer")
     reset_default_store()
+    # create_app captures these functions in route closures: stub before binding.
+    requests = []
+
+    def request(endpoint, path, payload=None, **kwargs):
+        assert endpoint == c.DEFAULT_ENDPOINT
+        assert path == "/api/show"
+        requests.append((path, payload))
+        return {}
+
+    monkeypatch.setattr(c, "installed_models", lambda endpoint: ["qwen3.8:27b-q4_K_M"])
+    monkeypatch.setattr(c, "ollama_request", request)
     app = create_app()
+    app.state.cleanup_test_requests = requests
     with TestClient(app, base_url="http://127.0.0.1:8756", client=("127.0.0.1", 50000)) as client:
         import re
         token = re.search('name="textflowkit-capability" content="([^"]+)"', client.get("/").text)[1]
-        yield client, {"x-textflowkit-ui-capability": token}, app
+        with no_route_network():
+            yield client, {"x-textflowkit-ui-capability": token}, app
     reset_default_store()
 
 
@@ -285,9 +322,6 @@ def test_routes_gate_local_selection_download_and_preservation(route_client, mon
     original = transcript()
     store.update(job.id, state=JobState.DONE, transcript=original)
     before = copy.deepcopy(store.get(job.id).to_dict(include_transcript=True, include_checkpoint=True))
-    monkeypatch.setattr(c, "installed_models", lambda endpoint: ["qwen3.8:27b-q4_K_M"])
-    monkeypatch.setattr(c, "ollama_request", lambda endpoint, path, *a, **kw:
-        {"models": [{"name": "qwen3.8:27b-q4_K_M"}]} if path == "/api/tags" else {})
     models = client.get("/ui/cleanup/models").json()
     assert models["selected"] is None
     assert models["models"] == ["qwen3.8:27b-q4_K_M"]
@@ -298,6 +332,8 @@ def test_routes_gate_local_selection_download_and_preservation(route_client, mon
         "provenance": {"original_sha256": c.original_hash(original)}})
     assert client.post(f"/ui/jobs/{job.id}/cleanup", json={"model": "qwen3.8:27b-q4_K_M"},
                        headers=headers).status_code == 202
+    assert _app.state.cleanup_test_requests == [
+        ("/api/show", {"model": "qwen3.8:27b-q4_K_M"})]
     for _ in range(100):
         if client.get(f"/ui/jobs/{job.id}/cleanup").json()["state"] != "running":
             break

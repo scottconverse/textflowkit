@@ -296,6 +296,14 @@ def test_local_wheel_build_uses_exact_supported_pip_arguments(
         })
 
     monkeypatch.setattr(payload.subprocess, "run", run)
+    # This unit checks pip invocation and wheel validation, not TOML parsing.
+    # The real installer builder requires Python 3.13; the general CI matrix
+    # also runs this isolated unit on 3.10, which has no stdlib tomllib.
+    def project_version(root):
+        assert root == repo
+        return "0.1.11"
+
+    monkeypatch.setattr(payload, "_project_version", project_version)
 
     assert payload._build_local_wheel(repo, wheel_dir) == wheel.resolve()
     assert captured == [([
