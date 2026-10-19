@@ -78,6 +78,10 @@ REQUIRED = (
     "scripts/smoke_live_youtube.py",
     "scripts/verify_release_ci.py",
     "scripts/write_release_manifest.py",
+    # The delegated-worker policy document and the worker that reads it: both
+    # are required for a source archive to be a working checkout.
+    "AGENTS.md",
+    "scripts/run_deepseek_worker.py",
 )
 
 FONTS_PREFIX = "packages/textflowkit-fonts/"
