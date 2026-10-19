@@ -1,4 +1,4 @@
-# Native Windows installer (v0.1.12; public EXE pending)
+# Native Windows installer (v0.1.13; public EXE pending)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
@@ -46,18 +46,23 @@ The installer compiler wrapper validates that manifest before compiling.
 - No background update service, startup-at-login task, public HTTP listener, or
   Docker service is installed.
 
-## Local AI cleanup validation (v0.1.12)
+## Local AI cleanup validation (v0.1.12, carried forward to v0.1.13)
 
 A final cold full-UI run, begun with the local model explicitly unloaded, completed
 39 segments in three chunks with four changed segments. The in-app comparison and
 corrected TXT save were verified, and the saved file matched the validated variant.
 This is evidence of workflow completion for one run, not accuracy; plausible
 corrections must be reviewed against audio. Earlier cold failure and a hot zero-edit
-run are documented in the user manual. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.
+run are documented in the user manual. The v0.1.12 installer was built and tested locally; that historical build
+evidence is not relabelled for v0.1.13. The installer recipe is published, and a
+public EXE is pending issue #31: the coordinator will perform any installer
+rebuild. No v0.1.13 installer has been built or tested yet, and no public
+installer download link is available.
 
 ## Before public distribution
 
-Public EXE distribution remains gated on corresponding-source compliance review. The candidate is unsigned;
+Public EXE distribution remains gated on corresponding-source compliance review
+(issue #31, open). The candidate is unsigned;
 Windows may show a SmartScreen warning. Do not tell users to disable protections.
 
 Review THIRD-PARTY-NOTICES.txt and the exact source-materials.json provenance.

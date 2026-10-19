@@ -10,15 +10,13 @@ and refuses a longer file outright. Long audio is therefore cut into short,
 overlapping windows here and the results stitched back onto the recording's own
 timeline:
 
-- Each window owns a **26 s core**, with up to **2 s of context** taken from
-  either side. So every standalone call sees at most 30 s, and the core it is
-  responsible for is at most 26 s.
-- Words that fall in the overlap between two windows are assigned to exactly one
-  of them by a **midpoint rule**: a word belongs to the window whose core
-  contains the word's midpoint; the very last core also takes the final edge.
-  Adjacent windows thus contribute no duplicate word, and a repeated phrase in
-  the audio is preserved as many times as it is spoken - nothing here dedupes by
-  text.
+- Each window owns an **11 s core**, with up to **2 s of context** taken from
+  either side. So every standalone call sees at most 15 s, and the core it is
+  responsible for is at most 11 s. This avoids reproduced omissions on 30 s inputs.
+- Midpoints provide initial ownership. One-to-one shared-context alignment then
+  reconciles matched occurrences that both cores kept or both rejected because
+  their timestamp estimates differ. Real repetitions are separate occurrences;
+  ambiguous recognition is left intact rather than globally deduplicated.
 - Word times come back relative to the window and are shifted to **absolute**
   recording time.
 
@@ -36,8 +34,11 @@ import tempfile
 import threading
 import time
 import wave
+from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -59,11 +60,12 @@ WHISTLE_MODEL_NAME = "whistle"
 #: checked against this *before* any asset is fetched, so a typo costs nothing.
 SUPPORTED_LANGUAGES: tuple[str, ...] = ("en", "de", "fr", "es", "it", "nl", "pl")
 
-#: The native CLI refuses a clip longer than this; every window stays under it.
-MAX_CLIP_SECONDS = 30.0
+#: Conservative decode ceiling: the native limit is 30 s, but 30 s calls
+#: reproducibly omit speech that shorter calls recover. Keep context <= 15 s.
+MAX_CLIP_SECONDS = 15.0
 #: The span each window is *responsible* for. Context either side is the slack.
-CORE_SECONDS = 26.0
-#: Context taken each side of the core, capped so core + 2 * context <= 30.
+CORE_SECONDS = 11.0
+#: Context taken each side of the core, capped so core + 2 * context <= 15.
 MAX_CONTEXT_SECONDS = 2.0
 
 #: Wall-clock ceiling for one window's native call.
@@ -94,10 +96,10 @@ _WAV_BLOCK_FRAMES = 16000  # one second of 16 kHz mono s16le
 MAX_STDOUT_BYTES = 1024 * 1024
 
 #: Resume-progress schema version. Bumped if the stored shape changes.
-PROGRESS_SCHEMA = "textflowkit.whistle.progress/1"
+PROGRESS_SCHEMA = "textflowkit.whistle.progress/2"
 #: The windowing policy, recorded so a resume computed under a different policy
 #: is refused rather than silently reused.
-WINDOW_POLICY = f"core={CORE_SECONDS:g};context<={MAX_CONTEXT_SECONDS:g};max={MAX_CLIP_SECONDS:g}"
+WINDOW_POLICY = f"core={CORE_SECONDS:g};context<={MAX_CONTEXT_SECONDS:g};max={MAX_CLIP_SECONDS:g};seam=2;gap=1"
 
 #: A pause at least this long (or sentence-ending punctuation) starts a new
 #: segment, so a long transcript becomes sane SRT/VTT cues rather than one block.
@@ -386,7 +388,8 @@ def assign_ownership(windows: list[_Window], words: list[_ParsedWord]) -> list[_
     A convenience over :func:`_own_in_core` for a whole plan at once: exactly
     one window owns each word, and the result is sorted by absolute time so it
     reads as one transcript. Used by tests to assert the plan tiles without
-    loss or duplication; the engine applies the same rule window by window.
+    loss or duplication for a single shared word sequence. Independent native
+    window decodes additionally need :func:`_reconcile_boundary`.
     """
     kept: list[_ParsedWord] = []
     for i, window in enumerate(windows):
@@ -700,6 +703,7 @@ class Progress:
     #: validation contract, so a resume computed without it is still accepted
     #: (``validate_progress`` reads only the fields it needs and ignores extras).
     total_cores: int = 0
+    seam_words: list[dict[str, Any]] = field(default_factory=list)
     schema: str = PROGRESS_SCHEMA
     policy: str = WINDOW_POLICY
 
@@ -715,6 +719,7 @@ class Progress:
             "completed_core_index": self.completed_core_index,
             "segments": self.segments,
             "total_cores": self.total_cores,
+            "seam_words": self.seam_words,
         }
 
 
@@ -902,6 +907,24 @@ def validate_progress(raw: Any, *, wav_identity_value: str, duration: float,
     # rather than trusting a value the checkpoint happened to carry. The number
     # of windows is a property of the audio and the window policy - both already
     # validated above - so it is authoritative here.
+    seam_raw = raw.get("seam_words")
+    if not isinstance(seam_raw, list):
+        raise WhistleError("resume progress has no seam word list")
+    if not completed and seam_raw:
+        raise WhistleError("resume progress has seam words without completed cores")
+    seam_words = []
+    if completed:
+        last = windows[completed - 1]
+        seam_words = _validate_progress_words(
+            {"words": seam_raw},
+            segment={"start": last.clip_start, "end": last.clip_end},
+            prefix_limit=0,
+        )
+        for word in seam_words:
+            if (word["start"] < last.clip_start - TIMESTAMP_EPSILON_SECONDS
+                    or word["end"] > last.clip_end + TIMESTAMP_EPSILON_SECONDS
+                    or word["end"] < last.core_end - MAX_CONTEXT_SECONDS):
+                raise WhistleError("resume progress seam words lie outside the overlap")
     return Progress(
         wav_identity=wav_identity_value,
         duration=duration,
@@ -911,6 +934,7 @@ def validate_progress(raw: Any, *, wav_identity_value: str, duration: float,
         completed_core_index=completed,
         segments=segments,
         total_cores=len(windows),
+        seam_words=seam_words,
     )
 
 
@@ -1017,6 +1041,7 @@ class WhistleEngine:
         # who meant to resume learns their inputs no longer match.
         completed_cores = 0
         segments: list[Segment] = []
+        seam_words: list[_ParsedWord] = []
         if resume_progress is not None:
             adopted = validate_progress(
                 resume_progress,
@@ -1029,6 +1054,7 @@ class WhistleEngine:
             )
             completed_cores = adopted.completed_core_index
             segments = [Segment.from_dict(entry) for entry in adopted.segments]
+            seam_words = [_ParsedWord(**entry, probability=None) for entry in adopted.seam_words]
 
         repairs = Repairs()
         scratch = Path(tempfile.mkdtemp(prefix="textflowkit-whistle-"))
@@ -1049,6 +1075,7 @@ class WhistleEngine:
                 duration=info.duration,
                 model_sha=model_sha,
                 binary_sha=binary_sha,
+                seam_words=seam_words,
             )
         finally:
             _cleanup(scratch)
@@ -1059,12 +1086,15 @@ class WhistleEngine:
                      on_progress: Callable[[dict[str, Any]], None] | None,
                      repairs: Repairs, scratch: Path, completed_cores: int,
                      segments: list[Segment], identity: str, duration: float,
-                     model_sha: str, binary_sha: str) -> Transcript:
+                     model_sha: str, binary_sha: str,
+                     seam_words: list[_ParsedWord]) -> Transcript:
         base_cmd = [str(binary_path), "--model", str(model_path), "--audio-word-timestamps"]
         if language:
             base_cmd.extend(["--audio-language", language])
 
         detected_language = language
+        gap_recovery = {"attempted": 0, "accepted": 0, "words": 0}
+        boundary_time_repairs = 0
         for window in windows:
             if check_cancel is not None:
                 check_cancel()
@@ -1119,11 +1149,36 @@ class WhistleEngine:
                     f"{window.clip_end:.3f}s)"
                 )
 
-            # Own only the words whose midpoint falls in this core, then append
-            # this window's segments. Ownership is applied per window so the
-            # running segment list mirrors a from-scratch run.
+            # Start with midpoint ownership, then reconcile shared occurrences
+            # against the preceding raw context (also persisted across resume).
             owned = _own_in_core(window, parsed, is_last=window.index == len(windows) - 1)
+            if window.index:
+                owned = _reconcile_boundary(
+                    seam_words, parsed, boundary=window.core_start, owned=owned
+                )
+            preceding = None
+            if segments and segments[-1].words:
+                last = segments[-1].words[-1]
+                preceding = _ParsedWord(last.text, last.start, last.end, None)
+            owned, recovered = _recover_short_gaps(
+                source, owned, preceding=preceding, base_cmd=base_cmd,
+                scratch=scratch, timeout=self.timeout, check_cancel=check_cancel,
+                stats=gap_recovery, duration=duration, repairs=repairs,
+            )
+            # Independently estimated starts can move slightly backwards even
+            # for different consecutive words. Retain the words in spoken order
+            # and record the timestamp adjustment instead of deleting text.
+            floor = preceding.start if preceding is not None else 0.0
+            for index, word in enumerate(owned):
+                if word.start < floor:
+                    owned[index] = replace(word, start=floor,
+                                           end=min(duration, max(word.end, floor + REPAIR_INTERVAL_SECONDS)))
+                    boundary_time_repairs += 1
+                floor = owned[index].start
             segments.extend(segment_words(owned))
+            parsed = sorted([*parsed, *recovered], key=lambda word: (word.start, word.end))
+            seam_words = [word for word in parsed
+                          if word.end >= window.core_end - MAX_CONTEXT_SECONDS]
 
             if on_progress is not None:
                 on_progress(
@@ -1140,6 +1195,7 @@ class WhistleEngine:
                         completed_core_index=window.index + 1,
                         segments=[s.to_dict() for s in segments],
                         total_cores=len(windows),
+                        seam_words=[asdict(word) for word in seam_words],
                     ).to_dict()
                 )
 
@@ -1158,8 +1214,151 @@ class WhistleEngine:
                 "cores": len(windows),
                 "timestamp_repairs": repairs.to_dict(),
                 "resumed_from_core": completed_cores if completed_cores else None,
+                "gap_recovery_since_resume": gap_recovery,
+                "boundary_time_repairs_since_resume": boundary_time_repairs,
             },
         )
+
+
+def _recover_short_gaps(source: Path, owned: list[_ParsedWord], *,
+                        preceding: _ParsedWord | None, base_cmd: list[str],
+                        scratch: Path, timeout: float,
+                        check_cancel: Callable[[], None] | None,
+                        stats: dict[str, int], duration: float,
+                        repairs: Repairs) -> tuple[list[_ParsedWord], list[_ParsedWord]]:
+    """Retry short interior gaps, requiring both existing audio/text anchors.
+
+    A short window can still jump over quiet speech. Reframe that gap once and
+    accept only the words between matching left/right anchors at nearby times.
+    Existing words stay intact. Long pauses, missing anchors and empty retries
+    add nothing. At most two bounded native calls are made per completed core.
+    """
+    def norm(text: str) -> str:
+        return "".join(c for c in text.casefold() if c.isalnum())
+
+    def anchor_index(target: _ParsedWord, words: list[_ParsedWord]) -> int | None:
+        wanted = norm(target.text)
+        if not wanted:
+            return None
+        matches = []
+        for i, word in enumerate(words):
+            text = norm(word.text)
+            same = text == wanted
+            similar = (min(len(text), len(wanted)) >= 5
+                       and SequenceMatcher(None, text, wanted).ratio() >= 0.7)
+            if ((same or similar) and abs(word.end - target.end) <= 0.75
+                    and abs(word.start - target.start) <= 1):
+                matches.append((abs(word.end - target.end) + abs(word.start - target.start), i))
+        return min(matches)[1] if matches else None
+
+    output: list[_ParsedWord] = []
+    recovered: list[_ParsedWord] = []
+    left = preceding
+    attempts = 0
+    for right in owned:
+        if left is not None and attempts < 2 and 4 <= right.start - left.end <= 11:
+            start, end = max(0, left.start - 0.5), min(duration, right.end + 0.5)
+            if end - start <= MAX_CLIP_SECONDS:
+                if check_cancel is not None:
+                    check_cancel()
+                attempts += 1
+                stats["attempted"] += 1
+                clip = scratch / "gap-recovery.wav"
+                _write_window_wav(source, _Window(0, start, end, start, end), clip)
+                try:
+                    result = _run_native([*base_cmd, "--audio", str(clip)],
+                                         timeout=timeout, check_cancel=check_cancel)
+                finally:
+                    clip.unlink(missing_ok=True)
+                if result.timed_out or result.returncode != 0:
+                    raise WhistleError("Whistle failed while checking a speech gap")
+                _, _, raw = parse_standalone(result.stdout)
+                words = _parse_words(raw, offset=start, clip_start=start,
+                                     clip_end=end, repairs=repairs)
+                a, b = anchor_index(left, words), anchor_index(right, words)
+                if a is not None and b is not None and a < b:
+                    additions = [word for word in words[a + 1:b]
+                                 if word.start >= left.start
+                                 and left.end - 0.1 < (word.start + word.end) / 2
+                                 < right.start + 0.1]
+                    if additions:
+                        output.extend(additions)
+                        recovered.extend(additions)
+                        stats["accepted"] += 1
+                        stats["words"] += len(additions)
+        output.append(right)
+        left = right
+    return output, recovered
+
+
+def _reconcile_boundary(previous: list[_ParsedWord], current: list[_ParsedWord], *,
+                        boundary: float, owned: list[_ParsedWord]) -> list[_ParsedWord]:
+    """Align occurrences in shared context, not repeated text globally.
+
+    The preceding core is already committed. For each unambiguous aligned
+    occurrence, retain its right copy iff the left copy was not committed.
+    This handles both double-ownership and neither-ownership timestamp shifts.
+    Ambiguous merged repetitions and unmatched recognition keep midpoint behavior.
+    """
+    def token(word: _ParsedWord) -> str:
+        return "".join(c for c in word.text.casefold() if c.isalnum())
+
+    def context(words: list[_ParsedWord]) -> list[_ParsedWord]:
+        return [word for word in words
+                if word.end >= boundary - MAX_CONTEXT_SECONDS
+                and word.start <= boundary + MAX_CONTEXT_SECONDS]
+
+    left, right = context(previous), context(current)
+    # Bound work even for pathological native output; no global dedup fallback.
+    if not left or not right or max(len(left), len(right)) > 128:
+        return owned
+    counts_left, counts_right = Counter(map(token, left)), Counter(map(token, right))
+    collapsed_left = Counter(token(w) for w in left
+                             if w.end - w.start <= REPAIR_INTERVAL_SECONDS + 1e-6)
+    collapsed_right = Counter(token(w) for w in right
+                              if w.end - w.start <= REPAIR_INTERVAL_SECONDS + 1e-6)
+    # A cluster of repeated words with repaired/collapsed timestamps cannot
+    # identify individual occurrences reliably. Preserve the whole disputed
+    # token sequence, rather than matching another member after skipping one.
+    ambiguous = {text for text in counts_left.keys() | counts_right.keys()
+                 if counts_left[text] != counts_right[text]
+                 and max(collapsed_left[text], collapsed_right[text]) >= 2}
+    def spans_repetitions(word: _ParsedWord, others: list[_ParsedWord]) -> bool:
+        return sum(token(other) == token(word)
+                   and min(word.end, other.end) > max(word.start, other.start) + 0.001
+                   for other in others) > 1
+
+    @lru_cache(None)
+    def align(i: int, j: int) -> tuple[int, float, tuple[tuple[int, int], ...]]:
+        if i == len(left) or j == len(right):
+            return 0, 0.0, ()
+        options = [align(i + 1, j), align(i, j + 1)]
+        a, b = left[i], right[j]
+        text = token(a)
+        start_shift, end_shift = abs(a.start - b.start), abs(a.end - b.end)
+        if (text and text == token(b)
+                and not spans_repetitions(a, right) and not spans_repetitions(b, left)
+                and text not in ambiguous
+                and min(start_shift, end_shift) <= 0.8
+                and max(start_shift, end_shift) <= 3
+                and min(a.end, b.end) >= max(a.start, b.start) - 0.2):
+            count, score, pairs = align(i + 1, j + 1)
+            options.append((count + 1, score - start_shift - end_shift, ((i, j),) + pairs))
+        return max(options, key=lambda item: (item[0], item[1]))
+
+    decisions = {}
+    replacements = {}
+    original = {id(word) for word in owned}
+    for i, j in align(0, 0)[2]:
+        a = left[i]
+        left_kept = (a.start + a.end) / 2 < boundary - TIMESTAMP_EPSILON_SECONDS
+        decisions[id(right[j])] = not left_kept
+        if not left_kept and id(right[j]) not in original:
+            # Restore the left recognition, whose ordering agrees with the
+            # already committed prefix, rather than an early shifted right time.
+            replacements[id(right[j])] = a
+    return [replacements.get(id(word), word) for word in current
+            if decisions.get(id(word), id(word) in original)]
 
 
 def _own_in_core(window: _Window, words: list[_ParsedWord], *,

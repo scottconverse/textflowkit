@@ -156,7 +156,7 @@ optionally DOCX and PDF.</desc>
   <text x="560" y="362" class="tag">DEFAULT ENGINE</text>
   <text x="560" y="386" class="hs">Whistle</text>
   <text x="560" y="406" class="ts">CPU-only native CLI</text>
-  <text x="560" y="424" class="ts">no PyTorch · ≤ 30 s clips</text>
+  <text x="560" y="424" class="ts">no PyTorch · ≤ 15 s clips</text>
 
   <rect class="box" x="780" y="336" width="200" height="108"/>
   <text x="800" y="362" class="tag2">EXPLICIT ONLY</text>

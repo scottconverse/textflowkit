@@ -1,6 +1,6 @@
 # Install notes
 
-Current release: [v0.1.12](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12).
+Current release: [v0.1.13](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13).
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -10,9 +10,9 @@ selected with `--engine whisper`. The ROCm instructions below apply to the
 explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
 or WSL**.
 
-## Windows desktop installer (v0.1.12; public EXE pending)
+## Windows desktop installer (v0.1.13; public EXE pending)
 
-The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. Use the Python package for the supported developer and integration install path.
+The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.13. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending issue #31 corresponding-source verification. No public installer download link is available. Use the Python package for the supported developer and integration install path.
 
 The installer includes a private embeddable CPython runtime; the
 existing browser UI and its HTTP, export, and streaming dependencies; the pinned
@@ -53,7 +53,7 @@ The local browser workspace **ships in the core package as of v0.1.10**. A
 regular install of the current release carries the `textflowkit-ui` command:
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.12'
+python -m pip install 'textflowkit[http,export]==0.1.13'
 textflowkit-ui
 ```
 
@@ -82,14 +82,14 @@ them; cancel a job first to stop it early. See the
 
 ## Live microphone streaming
 
-Live streaming in v0.1.12 is **Windows x86_64 only, opt-in and off by default**.
+Live streaming in v0.1.13 (introduced in v0.1.11) is **Windows x86_64 only, opt-in and off by default**.
 Other live platforms are unsupported; existing standalone platform support and
 Whistle defaults are unchanged. Physical browser microphone capture has not been
 verified; the public website is static documentation and does not accept streams. It needs one extra dependency
 (the WebSocket implementation for the ASGI server):
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.12"
+python -m pip install "textflowkit[streaming]==0.1.13"
 ```
 
 Set `TEXTFLOWKIT_STREAMING=1` to serve it, then open the shipped browser example.
@@ -476,7 +476,7 @@ record is written. A saved request is checked the same way when it is resumed; a
 job that already finished is the exception - it is answered from its stored
 transcript and needs no engine.
 
-## Optional AI proofreading (v0.1.12)
+## Optional AI proofreading (introduced in v0.1.12)
 
 The local UI cleanup feature requires a separately installed/running local
 Ollama and an already installed general language model. Neither is bundled or
@@ -486,7 +486,7 @@ local tag explicitly (for example `qwen3.8:27b-q4_K_M`). Cloud tags are refused.
 The default cleanup endpoint is `http://127.0.0.1:11434`; optional
 `TEXTFLOWKIT_CLEANUP_OLLAMA_URL` and `TEXTFLOWKIT_CLEANUP_MODEL` affect only the
 process started with those settings. No new Python dependency is required.
-This ships in core v0.1.12; upgrading is required to change an installed app. One final cold
+This ships in core v0.1.12 (introduced in v0.1.12; unchanged in v0.1.13); upgrading is required to change an installed app. One final cold
 full-UI run completed 39 segments in three chunks and verified the separate TXT
 save; this demonstrates workflow completion for that run, not accuracy. The
 original transcript/export is kept; review AI corrections against audio before

@@ -1,0 +1,3767 @@
+{
+  "source": "Public Longmont council meeting 2026-09-08; saved native Whistle context at 23 observed boundary cases. Not a human reference transcript.",
+  "cases": [
+    {
+      "boundary": 4290.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "okay",
+          "start": 4287.92,
+          "end": 4290.64,
+          "probability": 0.805
+        },
+        {
+          "text": "see",
+          "start": 4290.64,
+          "end": 4290.88,
+          "probability": 0.771
+        },
+        {
+          "text": "no",
+          "start": 4290.88,
+          "end": 4291.12,
+          "probability": 0.888
+        },
+        {
+          "text": "one",
+          "start": 4291.12,
+          "end": 4291.44,
+          "probability": 0.999
+        },
+        {
+          "text": "i",
+          "start": 4291.44,
+          "end": 4291.68,
+          "probability": 0.977
+        },
+        {
+          "text": "will",
+          "start": 4291.68,
+          "end": 4291.84,
+          "probability": 0.998
+        },
+        {
+          "text": "know",
+          "start": 4291.84,
+          "end": 4291.92,
+          "probability": 0.537
+        }
+      ],
+      "right": [
+        {
+          "text": "Okay.",
+          "start": 4290.32,
+          "end": 4290.64,
+          "probability": 0.866
+        },
+        {
+          "text": "See,",
+          "start": 4290.72,
+          "end": 4290.88,
+          "probability": 0.982
+        },
+        {
+          "text": "no",
+          "start": 4291.04,
+          "end": 4291.12,
+          "probability": 0.997
+        },
+        {
+          "text": "one.",
+          "start": 4291.12,
+          "end": 4291.36,
+          "probability": 0.997
+        },
+        {
+          "text": "I",
+          "start": 4291.6,
+          "end": 4291.76,
+          "probability": 0.999
+        },
+        {
+          "text": "will",
+          "start": 4291.76,
+          "end": 4291.92,
+          "probability": 1.0
+        },
+        {
+          "text": "now",
+          "start": 4291.92,
+          "end": 4292.24,
+          "probability": 1.0
+        }
+      ],
+      "target_left": {
+        "text": "okay",
+        "start": 4287.92,
+        "end": 4290.64,
+        "probability": 0.805
+      },
+      "target_right": {
+        "text": "Okay.",
+        "start": 4290.32,
+        "end": 4290.64,
+        "probability": 0.866
+      }
+    },
+    {
+      "boundary": 5590.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "ahead",
+          "start": 5587.92,
+          "end": 5588.0,
+          "probability": 0.973
+        },
+        {
+          "text": "and",
+          "start": 5588.0,
+          "end": 5588.08,
+          "probability": 0.999
+        },
+        {
+          "text": "vote.",
+          "start": 5588.08,
+          "end": 5588.24,
+          "probability": 0.999
+        },
+        {
+          "text": "Let",
+          "start": 5589.92,
+          "end": 5590.0,
+          "probability": 0.982
+        },
+        {
+          "text": "me",
+          "start": 5590.0,
+          "end": 5590.16,
+          "probability": 1.0
+        },
+        {
+          "text": "just",
+          "start": 5590.16,
+          "end": 5590.32,
+          "probability": 0.998
+        },
+        {
+          "text": "double",
+          "start": 5590.32,
+          "end": 5590.64,
+          "probability": 1.0
+        },
+        {
+          "text": "check",
+          "start": 5590.64,
+          "end": 5590.88,
+          "probability": 0.98
+        },
+        {
+          "text": "Mayor.",
+          "start": 5590.88,
+          "end": 5591.12,
+          "probability": 0.842
+        },
+        {
+          "text": "We're",
+          "start": 5591.2,
+          "end": 5591.44,
+          "probability": 0.997
+        },
+        {
+          "text": "moving.",
+          "start": 5591.44,
+          "end": 5591.84,
+          "probability": 0.999
+        }
+      ],
+      "right": [
+        {
+          "text": "Let",
+          "start": 5589.92,
+          "end": 5590.08,
+          "probability": 0.672
+        },
+        {
+          "text": "me",
+          "start": 5590.08,
+          "end": 5590.16,
+          "probability": 1.0
+        },
+        {
+          "text": "just",
+          "start": 5590.16,
+          "end": 5590.32,
+          "probability": 0.999
+        },
+        {
+          "text": "double",
+          "start": 5590.32,
+          "end": 5590.64,
+          "probability": 1.0
+        },
+        {
+          "text": "check,",
+          "start": 5590.64,
+          "end": 5590.88,
+          "probability": 0.99
+        },
+        {
+          "text": "Mayor.",
+          "start": 5590.88,
+          "end": 5591.12,
+          "probability": 0.695
+        },
+        {
+          "text": "We're",
+          "start": 5591.2,
+          "end": 5591.44,
+          "probability": 0.998
+        },
+        {
+          "text": "moving",
+          "start": 5591.44,
+          "end": 5591.92,
+          "probability": 0.997
+        },
+        {
+          "text": "to",
+          "start": 5591.92,
+          "end": 5592.32,
+          "probability": 0.992
+        }
+      ],
+      "target_left": {
+        "text": "Let",
+        "start": 5589.92,
+        "end": 5590.0,
+        "probability": 0.982
+      },
+      "target_right": {
+        "text": "Let",
+        "start": 5589.92,
+        "end": 5590.08,
+        "probability": 0.672
+      }
+    },
+    {
+      "boundary": 6968.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "on",
+          "start": 6965.92,
+          "end": 6966.08,
+          "probability": 0.993
+        },
+        {
+          "text": "this",
+          "start": 6966.08,
+          "end": 6966.16,
+          "probability": 1.0
+        },
+        {
+          "text": "i'll",
+          "start": 6966.16,
+          "end": 6966.4,
+          "probability": 0.998
+        },
+        {
+          "text": "just",
+          "start": 6966.4,
+          "end": 6966.48,
+          "probability": 1.0
+        },
+        {
+          "text": "note",
+          "start": 6966.48,
+          "end": 6966.64,
+          "probability": 1.0
+        },
+        {
+          "text": "that",
+          "start": 6966.64,
+          "end": 6967.04,
+          "probability": 0.996
+        },
+        {
+          "text": "uh",
+          "start": 6967.04,
+          "end": 6967.76,
+          "probability": 0.94
+        },
+        {
+          "text": "the",
+          "start": 6967.76,
+          "end": 6968.08,
+          "probability": 0.998
+        },
+        {
+          "text": "kind",
+          "start": 6968.08,
+          "end": 6968.4,
+          "probability": 0.979
+        },
+        {
+          "text": "of",
+          "start": 6968.4,
+          "end": 6968.56,
+          "probability": 1.0
+        },
+        {
+          "text": "section",
+          "start": 6968.56,
+          "end": 6968.88,
+          "probability": 0.998
+        },
+        {
+          "text": "the",
+          "start": 6968.88,
+          "end": 6969.2,
+          "probability": 0.824
+        },
+        {
+          "text": "overview",
+          "start": 6969.2,
+          "end": 6969.76,
+          "probability": 0.997
+        },
+        {
+          "text": "of",
+          "start": 6969.76,
+          "end": 6969.84,
+          "probability": 0.999
+        },
+        {
+          "text": "this",
+          "start": 6969.84,
+          "end": 6969.92,
+          "probability": 0.831
+        }
+      ],
+      "right": [
+        {
+          "text": "I'll",
+          "start": 6966.0,
+          "end": 6966.4,
+          "probability": 0.971
+        },
+        {
+          "text": "just",
+          "start": 6966.4,
+          "end": 6966.48,
+          "probability": 1.0
+        },
+        {
+          "text": "note",
+          "start": 6966.48,
+          "end": 6966.64,
+          "probability": 1.0
+        },
+        {
+          "text": "that",
+          "start": 6966.64,
+          "end": 6968.0,
+          "probability": 0.993
+        },
+        {
+          "text": "the",
+          "start": 6968.0,
+          "end": 6968.08,
+          "probability": 0.998
+        },
+        {
+          "text": "kind",
+          "start": 6968.08,
+          "end": 6968.4,
+          "probability": 0.64
+        },
+        {
+          "text": "of",
+          "start": 6968.4,
+          "end": 6968.56,
+          "probability": 1.0
+        },
+        {
+          "text": "section,",
+          "start": 6968.56,
+          "end": 6968.8,
+          "probability": 0.879
+        },
+        {
+          "text": "the",
+          "start": 6969.12,
+          "end": 6969.2,
+          "probability": 0.997
+        },
+        {
+          "text": "overview",
+          "start": 6969.2,
+          "end": 6969.76,
+          "probability": 0.997
+        },
+        {
+          "text": "of",
+          "start": 6969.76,
+          "end": 6969.92,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 6969.92,
+          "end": 6970.0,
+          "probability": 0.785
+        },
+        {
+          "text": "section",
+          "start": 6970.0,
+          "end": 6970.24,
+          "probability": 0.991
+        }
+      ],
+      "target_left": {
+        "text": "the",
+        "start": 6967.76,
+        "end": 6968.08,
+        "probability": 0.998
+      },
+      "target_right": {
+        "text": "the",
+        "start": 6968.0,
+        "end": 6968.08,
+        "probability": 0.998
+      }
+    },
+    {
+      "boundary": 7020.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "motion",
+          "start": 7017.92,
+          "end": 7018.32,
+          "probability": 1.0
+        },
+        {
+          "text": "to",
+          "start": 7018.32,
+          "end": 7018.72,
+          "probability": 1.0
+        },
+        {
+          "text": "table",
+          "start": 7018.72,
+          "end": 7018.96,
+          "probability": 0.976
+        },
+        {
+          "text": "this",
+          "start": 7018.96,
+          "end": 7019.28,
+          "probability": 1.0
+        },
+        {
+          "text": "item",
+          "start": 7019.28,
+          "end": 7019.6,
+          "probability": 1.0
+        },
+        {
+          "text": "until",
+          "start": 7019.6,
+          "end": 7019.84,
+          "probability": 0.691
+        },
+        {
+          "text": "we",
+          "start": 7019.84,
+          "end": 7020.08,
+          "probability": 1.0
+        },
+        {
+          "text": "have",
+          "start": 7020.08,
+          "end": 7020.24,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 7020.24,
+          "end": 7020.48,
+          "probability": 1.0
+        },
+        {
+          "text": "boards",
+          "start": 7020.48,
+          "end": 7020.72,
+          "probability": 0.955
+        },
+        {
+          "text": "and",
+          "start": 7020.72,
+          "end": 7020.88,
+          "probability": 0.914
+        },
+        {
+          "text": "commissions",
+          "start": 7020.88,
+          "end": 7021.36,
+          "probability": 0.969
+        },
+        {
+          "text": "conversation",
+          "start": 7021.36,
+          "end": 7021.92,
+          "probability": 0.89
+        }
+      ],
+      "right": [
+        {
+          "text": "to",
+          "start": 7018.48,
+          "end": 7018.72,
+          "probability": 0.994
+        },
+        {
+          "text": "table",
+          "start": 7018.72,
+          "end": 7018.96,
+          "probability": 0.933
+        },
+        {
+          "text": "this",
+          "start": 7018.96,
+          "end": 7019.28,
+          "probability": 1.0
+        },
+        {
+          "text": "item",
+          "start": 7019.28,
+          "end": 7019.6,
+          "probability": 1.0
+        },
+        {
+          "text": "and",
+          "start": 7019.6,
+          "end": 7019.84,
+          "probability": 0.388
+        },
+        {
+          "text": "so",
+          "start": 7019.84,
+          "end": 7019.92,
+          "probability": 0.998
+        },
+        {
+          "text": "we",
+          "start": 7019.92,
+          "end": 7020.08,
+          "probability": 1.0
+        },
+        {
+          "text": "have",
+          "start": 7020.08,
+          "end": 7020.24,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 7020.24,
+          "end": 7020.48,
+          "probability": 1.0
+        },
+        {
+          "text": "Boards",
+          "start": 7020.48,
+          "end": 7020.72,
+          "probability": 0.853
+        },
+        {
+          "text": "and",
+          "start": 7020.72,
+          "end": 7020.88,
+          "probability": 0.971
+        },
+        {
+          "text": "Commission's",
+          "start": 7020.88,
+          "end": 7021.44,
+          "probability": 0.956
+        },
+        {
+          "text": "conversation",
+          "start": 7021.44,
+          "end": 7022.08,
+          "probability": 0.815
+        }
+      ],
+      "target_left": {
+        "text": "we",
+        "start": 7019.84,
+        "end": 7020.08,
+        "probability": 1.0
+      },
+      "target_right": {
+        "text": "we",
+        "start": 7019.92,
+        "end": 7020.08,
+        "probability": 1.0
+      }
+    },
+    {
+      "boundary": 7410.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "hey,",
+          "start": 7407.84,
+          "end": 7408.0,
+          "probability": 0.993
+        },
+        {
+          "text": "I",
+          "start": 7408.32,
+          "end": 7408.4,
+          "probability": 0.999
+        },
+        {
+          "text": "don't",
+          "start": 7408.4,
+          "end": 7408.64,
+          "probability": 1.0
+        },
+        {
+          "text": "think",
+          "start": 7408.64,
+          "end": 7408.96,
+          "probability": 1.0
+        },
+        {
+          "text": "we're",
+          "start": 7408.96,
+          "end": 7409.84,
+          "probability": 0.999
+        },
+        {
+          "text": "moving",
+          "start": 7409.84,
+          "end": 7410.08,
+          "probability": 1.0
+        },
+        {
+          "text": "forward",
+          "start": 7410.08,
+          "end": 7410.48,
+          "probability": 1.0
+        },
+        {
+          "text": "appropriately",
+          "start": 7410.48,
+          "end": 7411.12,
+          "probability": 0.998
+        },
+        {
+          "text": "and",
+          "start": 7411.12,
+          "end": 7411.28,
+          "probability": 0.408
+        },
+        {
+          "text": "I'll",
+          "start": 7411.28,
+          "end": 7411.44,
+          "probability": 0.995
+        },
+        {
+          "text": "follow",
+          "start": 7411.44,
+          "end": 7411.6,
+          "probability": 0.996
+        },
+        {
+          "text": "up",
+          "start": 7411.6,
+          "end": 7411.84,
+          "probability": 0.999
+        },
+        {
+          "text": "with",
+          "start": 7411.84,
+          "end": 7411.92,
+          "probability": 0.997
+        }
+      ],
+      "right": [
+        {
+          "text": "I",
+          "start": 7408.0,
+          "end": 7408.4,
+          "probability": 0.996
+        },
+        {
+          "text": "don't",
+          "start": 7408.4,
+          "end": 7408.64,
+          "probability": 1.0
+        },
+        {
+          "text": "think",
+          "start": 7408.64,
+          "end": 7409.04,
+          "probability": 1.0
+        },
+        {
+          "text": "we're",
+          "start": 7409.04,
+          "end": 7409.92,
+          "probability": 0.999
+        },
+        {
+          "text": "moving",
+          "start": 7409.92,
+          "end": 7410.08,
+          "probability": 1.0
+        },
+        {
+          "text": "forward",
+          "start": 7410.08,
+          "end": 7410.48,
+          "probability": 1.0
+        },
+        {
+          "text": "appropriately",
+          "start": 7410.48,
+          "end": 7411.12,
+          "probability": 0.998
+        },
+        {
+          "text": "and",
+          "start": 7411.12,
+          "end": 7411.28,
+          "probability": 0.794
+        },
+        {
+          "text": "I'll",
+          "start": 7411.28,
+          "end": 7411.44,
+          "probability": 0.998
+        },
+        {
+          "text": "follow",
+          "start": 7411.44,
+          "end": 7411.6,
+          "probability": 0.999
+        },
+        {
+          "text": "up",
+          "start": 7411.6,
+          "end": 7411.84,
+          "probability": 1.0
+        },
+        {
+          "text": "with",
+          "start": 7411.84,
+          "end": 7412.0,
+          "probability": 0.999
+        },
+        {
+          "text": "staff",
+          "start": 7412.0,
+          "end": 7412.24,
+          "probability": 0.991
+        }
+      ],
+      "target_left": {
+        "text": "moving",
+        "start": 7409.84,
+        "end": 7410.08,
+        "probability": 1.0
+      },
+      "target_right": {
+        "text": "moving",
+        "start": 7409.92,
+        "end": 7410.08,
+        "probability": 1.0
+      }
+    },
+    {
+      "boundary": 7878.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "with",
+          "start": 7875.6,
+          "end": 7876.4,
+          "probability": 1.0
+        },
+        {
+          "text": "with",
+          "start": 7876.4,
+          "end": 7876.48,
+          "probability": 0.975
+        },
+        {
+          "text": "the",
+          "start": 7876.48,
+          "end": 7876.64,
+          "probability": 0.998
+        },
+        {
+          "text": "kids",
+          "start": 7876.64,
+          "end": 7876.88,
+          "probability": 0.675
+        },
+        {
+          "text": "with",
+          "start": 7876.88,
+          "end": 7877.28,
+          "probability": 0.992
+        },
+        {
+          "text": "the",
+          "start": 7877.28,
+          "end": 7877.44,
+          "probability": 0.515
+        },
+        {
+          "text": "parents",
+          "start": 7877.44,
+          "end": 7877.68,
+          "probability": 0.972
+        },
+        {
+          "text": "so",
+          "start": 7877.68,
+          "end": 7878.0,
+          "probability": 0.969
+        },
+        {
+          "text": "they",
+          "start": 7878.0,
+          "end": 7878.16,
+          "probability": 0.995
+        },
+        {
+          "text": "they",
+          "start": 7878.16,
+          "end": 7879.04,
+          "probability": 0.827
+        },
+        {
+          "text": "do",
+          "start": 7879.04,
+          "end": 7879.2,
+          "probability": 1.0
+        },
+        {
+          "text": "have",
+          "start": 7879.2,
+          "end": 7879.36,
+          "probability": 0.999
+        },
+        {
+          "text": "other",
+          "start": 7879.36,
+          "end": 7879.6,
+          "probability": 0.998
+        }
+      ],
+      "right": [
+        {
+          "text": "with",
+          "start": 7876.24,
+          "end": 7876.48,
+          "probability": 0.914
+        },
+        {
+          "text": "the",
+          "start": 7876.48,
+          "end": 7876.64,
+          "probability": 0.997
+        },
+        {
+          "text": "gifts,",
+          "start": 7876.64,
+          "end": 7877.04,
+          "probability": 0.805
+        },
+        {
+          "text": "with",
+          "start": 7877.2,
+          "end": 7877.28,
+          "probability": 0.999
+        },
+        {
+          "text": "the",
+          "start": 7877.28,
+          "end": 7877.44,
+          "probability": 0.773
+        },
+        {
+          "text": "parents.",
+          "start": 7877.44,
+          "end": 7877.68,
+          "probability": 0.941
+        },
+        {
+          "text": "So",
+          "start": 7878.0,
+          "end": 7878.001,
+          "probability": 0.935
+        },
+        {
+          "text": "they",
+          "start": 7878.0,
+          "end": 7878.16,
+          "probability": 0.99
+        },
+        {
+          "text": "do",
+          "start": 7878.16,
+          "end": 7879.2,
+          "probability": 0.997
+        },
+        {
+          "text": "have",
+          "start": 7879.2,
+          "end": 7879.36,
+          "probability": 1.0
+        },
+        {
+          "text": "other",
+          "start": 7879.36,
+          "end": 7880.88,
+          "probability": 1.0
+        }
+      ],
+      "target_left": {
+        "text": "so",
+        "start": 7877.68,
+        "end": 7878.0,
+        "probability": 0.969
+      },
+      "target_right": {
+        "text": "So",
+        "start": 7878.0,
+        "end": 7878.001,
+        "probability": 0.935
+      }
+    },
+    {
+      "boundary": 8606.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "to",
+          "start": 8603.6,
+          "end": 8604.0,
+          "probability": 0.651
+        },
+        {
+          "text": "general",
+          "start": 8604.0,
+          "end": 8604.48,
+          "probability": 0.926
+        },
+        {
+          "text": "business",
+          "start": 8604.48,
+          "end": 8605.2,
+          "probability": 0.999
+        },
+        {
+          "text": "item",
+          "start": 8605.2,
+          "end": 8606.56,
+          "probability": 0.985
+        },
+        {
+          "text": "A",
+          "start": 8606.56,
+          "end": 8606.96,
+          "probability": 0.75
+        },
+        {
+          "text": "purchasing",
+          "start": 8606.96,
+          "end": 8607.44,
+          "probability": 0.961
+        },
+        {
+          "text": "decision",
+          "start": 8607.44,
+          "end": 8607.92,
+          "probability": 0.979
+        }
+      ],
+      "right": [
+        {
+          "text": "General",
+          "start": 8604.08,
+          "end": 8604.56,
+          "probability": 0.919
+        },
+        {
+          "text": "Business,",
+          "start": 8604.56,
+          "end": 8605.2,
+          "probability": 0.708
+        },
+        {
+          "text": "item",
+          "start": 8606.4,
+          "end": 8606.56,
+          "probability": 0.974
+        },
+        {
+          "text": "A,",
+          "start": 8606.56,
+          "end": 8606.96,
+          "probability": 0.941
+        },
+        {
+          "text": "purchasing",
+          "start": 8607.12,
+          "end": 8607.44,
+          "probability": 0.986
+        },
+        {
+          "text": "decision",
+          "start": 8607.44,
+          "end": 8608.0,
+          "probability": 0.984
+        },
+        {
+          "text": "appeal",
+          "start": 8608.0,
+          "end": 8608.48,
+          "probability": 0.982
+        }
+      ],
+      "target_left": {
+        "text": "item",
+        "start": 8605.2,
+        "end": 8606.56,
+        "probability": 0.985
+      },
+      "target_right": {
+        "text": "item",
+        "start": 8606.4,
+        "end": 8606.56,
+        "probability": 0.974
+      }
+    },
+    {
+      "boundary": 9490.0,
+      "kind": "ambiguous",
+      "left": [
+        {
+          "text": "Yeah,",
+          "start": 9487.92,
+          "end": 9488.16,
+          "probability": 0.99
+        },
+        {
+          "text": "it's",
+          "start": 9488.24,
+          "end": 9488.48,
+          "probability": 0.849
+        },
+        {
+          "text": "code.",
+          "start": 9488.48,
+          "end": 9488.64,
+          "probability": 0.99
+        },
+        {
+          "text": "It's",
+          "start": 9488.64,
+          "end": 9488.8,
+          "probability": 0.986
+        },
+        {
+          "text": "not.",
+          "start": 9488.8,
+          "end": 9488.96,
+          "probability": 0.91
+        },
+        {
+          "text": "It's",
+          "start": 9488.96,
+          "end": 9489.2,
+          "probability": 0.99
+        },
+        {
+          "text": "code.",
+          "start": 9489.2,
+          "end": 9489.28,
+          "probability": 0.964
+        },
+        {
+          "text": "It's",
+          "start": 9489.6,
+          "end": 9490.08,
+          "probability": 0.989
+        },
+        {
+          "text": "not",
+          "start": 9490.08,
+          "end": 9490.24,
+          "probability": 0.985
+        }
+      ],
+      "right": [
+        {
+          "text": "It's",
+          "start": 9488.24,
+          "end": 9488.48,
+          "probability": 0.777
+        },
+        {
+          "text": "code.",
+          "start": 9488.48,
+          "end": 9488.64,
+          "probability": 0.836
+        },
+        {
+          "text": "It's",
+          "start": 9488.72,
+          "end": 9488.8,
+          "probability": 0.987
+        },
+        {
+          "text": "not.",
+          "start": 9488.8,
+          "end": 9488.96,
+          "probability": 0.64
+        },
+        {
+          "text": "It's",
+          "start": 9489.04,
+          "end": 9489.2,
+          "probability": 0.985
+        },
+        {
+          "text": "code.",
+          "start": 9489.2,
+          "end": 9489.28,
+          "probability": 0.996
+        },
+        {
+          "text": "It's",
+          "start": 9489.36,
+          "end": 9489.44,
+          "probability": 0.995
+        },
+        {
+          "text": "not",
+          "start": 9489.44,
+          "end": 9489.6,
+          "probability": 0.995
+        },
+        {
+          "text": "charts.",
+          "start": 9489.6,
+          "end": 9490.0,
+          "probability": 0.477
+        },
+        {
+          "text": "It's",
+          "start": 9490.08,
+          "end": 9490.081,
+          "probability": 0.827
+        },
+        {
+          "text": "not",
+          "start": 9490.08,
+          "end": 9490.081,
+          "probability": 0.861
+        },
+        {
+          "text": "charts.",
+          "start": 9490.08,
+          "end": 9490.081,
+          "probability": 0.873
+        },
+        {
+          "text": "It's",
+          "start": 9490.16,
+          "end": 9490.161,
+          "probability": 0.842
+        },
+        {
+          "text": "not",
+          "start": 9490.16,
+          "end": 9490.161,
+          "probability": 0.869
+        },
+        {
+          "text": "charts.",
+          "start": 9490.16,
+          "end": 9490.161,
+          "probability": 0.917
+        },
+        {
+          "text": "And",
+          "start": 9490.16,
+          "end": 9490.161,
+          "probability": 0.051
+        },
+        {
+          "text": "it's",
+          "start": 9490.16,
+          "end": 9490.32,
+          "probability": 0.818
+        },
+        {
+          "text": "not",
+          "start": 9490.32,
+          "end": 9490.48,
+          "probability": 0.412
+        },
+        {
+          "text": "charts.",
+          "start": 9490.48,
+          "end": 9490.72,
+          "probability": 0.848
+        },
+        {
+          "text": "Okay.",
+          "start": 9491.6,
+          "end": 9491.92,
+          "probability": 0.873
+        }
+      ],
+      "target_left": {
+        "text": "It's",
+        "start": 9489.6,
+        "end": 9490.08,
+        "probability": 0.989
+      },
+      "target_right": {
+        "text": "It's",
+        "start": 9490.08,
+        "end": 9490.081,
+        "probability": 0.827
+      }
+    },
+    {
+      "boundary": 9750.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "them.",
+          "start": 9747.84,
+          "end": 9748.08,
+          "probability": 1.0
+        },
+        {
+          "text": "We",
+          "start": 9749.2,
+          "end": 9749.44,
+          "probability": 0.967
+        },
+        {
+          "text": "don't",
+          "start": 9749.44,
+          "end": 9750.48,
+          "probability": 0.983
+        },
+        {
+          "text": "think",
+          "start": 9750.48,
+          "end": 9750.64,
+          "probability": 1.0
+        },
+        {
+          "text": "they",
+          "start": 9750.64,
+          "end": 9750.8,
+          "probability": 0.999
+        },
+        {
+          "text": "heard.",
+          "start": 9750.8,
+          "end": 9751.12,
+          "probability": 0.579
+        }
+      ],
+      "right": [
+        {
+          "text": "We",
+          "start": 9749.52,
+          "end": 9750.0,
+          "probability": 0.876
+        },
+        {
+          "text": "don't",
+          "start": 9750.0,
+          "end": 9750.48,
+          "probability": 0.996
+        },
+        {
+          "text": "think",
+          "start": 9750.48,
+          "end": 9750.64,
+          "probability": 1.0
+        },
+        {
+          "text": "they",
+          "start": 9750.64,
+          "end": 9750.8,
+          "probability": 0.998
+        },
+        {
+          "text": "heard",
+          "start": 9750.8,
+          "end": 9751.12,
+          "probability": 0.814
+        },
+        {
+          "text": "further",
+          "start": 9751.12,
+          "end": 9752.64,
+          "probability": 0.934
+        }
+      ],
+      "target_left": {
+        "text": "don't",
+        "start": 9749.44,
+        "end": 9750.48,
+        "probability": 0.983
+      },
+      "target_right": {
+        "text": "don't",
+        "start": 9750.0,
+        "end": 9750.48,
+        "probability": 0.996
+      }
+    },
+    {
+      "boundary": 10140.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "compassion",
+          "start": 10137.68,
+          "end": 10138.24,
+          "probability": 0.999
+        },
+        {
+          "text": "piece",
+          "start": 10138.24,
+          "end": 10138.64,
+          "probability": 0.936
+        },
+        {
+          "text": "however",
+          "start": 10138.64,
+          "end": 10140.16,
+          "probability": 0.791
+        },
+        {
+          "text": "you",
+          "start": 10140.16,
+          "end": 10140.48,
+          "probability": 0.981
+        },
+        {
+          "text": "know",
+          "start": 10140.48,
+          "end": 10140.56,
+          "probability": 0.999
+        },
+        {
+          "text": "I'm",
+          "start": 10140.56,
+          "end": 10140.8,
+          "probability": 0.992
+        },
+        {
+          "text": "also",
+          "start": 10140.8,
+          "end": 10141.04,
+          "probability": 1.0
+        },
+        {
+          "text": "looking",
+          "start": 10141.04,
+          "end": 10141.28,
+          "probability": 1.0
+        },
+        {
+          "text": "at",
+          "start": 10141.28,
+          "end": 10141.52,
+          "probability": 1.0
+        },
+        {
+          "text": "an",
+          "start": 10141.52,
+          "end": 10141.68,
+          "probability": 0.993
+        },
+        {
+          "text": "intended",
+          "start": 10141.68,
+          "end": 10141.92,
+          "probability": 0.786
+        }
+      ],
+      "right": [
+        {
+          "text": "peace.",
+          "start": 10138.56,
+          "end": 10139.04,
+          "probability": 0.916
+        },
+        {
+          "text": "However,",
+          "start": 10139.92,
+          "end": 10140.24,
+          "probability": 0.998
+        },
+        {
+          "text": "you",
+          "start": 10140.48,
+          "end": 10140.481,
+          "probability": 0.766
+        },
+        {
+          "text": "know,",
+          "start": 10140.48,
+          "end": 10140.64,
+          "probability": 0.998
+        },
+        {
+          "text": "I'm",
+          "start": 10140.64,
+          "end": 10140.72,
+          "probability": 0.999
+        },
+        {
+          "text": "also",
+          "start": 10140.72,
+          "end": 10141.04,
+          "probability": 1.0
+        },
+        {
+          "text": "looking",
+          "start": 10141.04,
+          "end": 10141.28,
+          "probability": 1.0
+        },
+        {
+          "text": "at",
+          "start": 10141.28,
+          "end": 10141.52,
+          "probability": 1.0
+        },
+        {
+          "text": "unintended",
+          "start": 10141.52,
+          "end": 10142.0,
+          "probability": 0.888
+        },
+        {
+          "text": "consequences.",
+          "start": 10142.0,
+          "end": 10142.72,
+          "probability": 1.0
+        }
+      ],
+      "target_left": {
+        "text": "however",
+        "start": 10138.64,
+        "end": 10140.16,
+        "probability": 0.791
+      },
+      "target_right": {
+        "text": "However,",
+        "start": 10139.92,
+        "end": 10140.24,
+        "probability": 0.998
+      }
+    },
+    {
+      "boundary": 11778.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "we",
+          "start": 11775.92,
+          "end": 11776.32,
+          "probability": 0.985
+        },
+        {
+          "text": "essentially",
+          "start": 11776.32,
+          "end": 11776.72,
+          "probability": 0.999
+        },
+        {
+          "text": "had",
+          "start": 11776.72,
+          "end": 11776.96,
+          "probability": 0.997
+        },
+        {
+          "text": "two",
+          "start": 11776.96,
+          "end": 11777.12,
+          "probability": 0.999
+        },
+        {
+          "text": "choices",
+          "start": 11777.12,
+          "end": 11777.68,
+          "probability": 1.0
+        },
+        {
+          "text": "one",
+          "start": 11777.68,
+          "end": 11778.24,
+          "probability": 0.974
+        },
+        {
+          "text": "is",
+          "start": 11778.24,
+          "end": 11779.12,
+          "probability": 0.991
+        },
+        {
+          "text": "exceptional",
+          "start": 11779.12,
+          "end": 11779.76,
+          "probability": 0.991
+        },
+        {
+          "text": "pay",
+          "start": 11779.76,
+          "end": 11779.92,
+          "probability": 0.952
+        }
+      ],
+      "right": [
+        {
+          "text": "we",
+          "start": 11776.0,
+          "end": 11776.32,
+          "probability": 0.421
+        },
+        {
+          "text": "essentially",
+          "start": 11776.32,
+          "end": 11776.72,
+          "probability": 0.999
+        },
+        {
+          "text": "had",
+          "start": 11776.72,
+          "end": 11776.96,
+          "probability": 0.992
+        },
+        {
+          "text": "two",
+          "start": 11776.96,
+          "end": 11777.12,
+          "probability": 0.998
+        },
+        {
+          "text": "choices.",
+          "start": 11777.12,
+          "end": 11777.6,
+          "probability": 1.0
+        },
+        {
+          "text": "One",
+          "start": 11778.0,
+          "end": 11778.24,
+          "probability": 0.993
+        },
+        {
+          "text": "is",
+          "start": 11778.24,
+          "end": 11779.12,
+          "probability": 0.94
+        },
+        {
+          "text": "exceptional",
+          "start": 11779.12,
+          "end": 11779.76,
+          "probability": 0.989
+        },
+        {
+          "text": "pay",
+          "start": 11779.76,
+          "end": 11780.0,
+          "probability": 0.965
+        },
+        {
+          "text": "for",
+          "start": 11780.0,
+          "end": 11780.16,
+          "probability": 0.991
+        }
+      ],
+      "target_left": {
+        "text": "one",
+        "start": 11777.68,
+        "end": 11778.24,
+        "probability": 0.974
+      },
+      "target_right": {
+        "text": "One",
+        "start": 11778.0,
+        "end": 11778.24,
+        "probability": 0.993
+      }
+    },
+    {
+      "boundary": 11804.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "and",
+          "start": 11801.92,
+          "end": 11802.08,
+          "probability": 0.893
+        },
+        {
+          "text": "into",
+          "start": 11802.08,
+          "end": 11802.96,
+          "probability": 0.986
+        },
+        {
+          "text": "the",
+          "start": 11802.96,
+          "end": 11803.2,
+          "probability": 1.0
+        },
+        {
+          "text": "process",
+          "start": 11803.2,
+          "end": 11803.6,
+          "probability": 1.0
+        },
+        {
+          "text": "and",
+          "start": 11803.6,
+          "end": 11804.0,
+          "probability": 0.901
+        },
+        {
+          "text": "so",
+          "start": 11804.0,
+          "end": 11804.4,
+          "probability": 0.846
+        },
+        {
+          "text": "what",
+          "start": 11804.4,
+          "end": 11804.64,
+          "probability": 0.999
+        },
+        {
+          "text": "we",
+          "start": 11804.64,
+          "end": 11804.88,
+          "probability": 1.0
+        },
+        {
+          "text": "were",
+          "start": 11804.88,
+          "end": 11805.04,
+          "probability": 0.994
+        },
+        {
+          "text": "really",
+          "start": 11805.04,
+          "end": 11805.28,
+          "probability": 1.0
+        },
+        {
+          "text": "seeing",
+          "start": 11805.28,
+          "end": 11805.6,
+          "probability": 0.965
+        },
+        {
+          "text": "is",
+          "start": 11805.6,
+          "end": 11805.84,
+          "probability": 0.99
+        }
+      ],
+      "right": [
+        {
+          "text": "into",
+          "start": 11802.72,
+          "end": 11803.04,
+          "probability": 0.937
+        },
+        {
+          "text": "the",
+          "start": 11803.04,
+          "end": 11803.2,
+          "probability": 1.0
+        },
+        {
+          "text": "process.",
+          "start": 11803.2,
+          "end": 11803.6,
+          "probability": 1.0
+        },
+        {
+          "text": "And",
+          "start": 11804.16,
+          "end": 11804.161,
+          "probability": 0.996
+        },
+        {
+          "text": "so",
+          "start": 11804.16,
+          "end": 11804.48,
+          "probability": 1.0
+        },
+        {
+          "text": "what",
+          "start": 11804.48,
+          "end": 11804.64,
+          "probability": 1.0
+        },
+        {
+          "text": "we",
+          "start": 11804.64,
+          "end": 11804.88,
+          "probability": 1.0
+        },
+        {
+          "text": "were",
+          "start": 11804.88,
+          "end": 11805.04,
+          "probability": 0.998
+        },
+        {
+          "text": "really",
+          "start": 11805.04,
+          "end": 11805.28,
+          "probability": 1.0
+        },
+        {
+          "text": "seeing",
+          "start": 11805.28,
+          "end": 11805.6,
+          "probability": 0.787
+        },
+        {
+          "text": "is",
+          "start": 11805.6,
+          "end": 11805.76,
+          "probability": 0.998
+        },
+        {
+          "text": "if",
+          "start": 11805.76,
+          "end": 11806.48,
+          "probability": 0.905
+        }
+      ],
+      "target_left": {
+        "text": "and",
+        "start": 11803.6,
+        "end": 11804.0,
+        "probability": 0.901
+      },
+      "target_right": {
+        "text": "And",
+        "start": 11804.16,
+        "end": 11804.161,
+        "probability": 0.996
+      }
+    },
+    {
+      "boundary": 11830.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "Then",
+          "start": 11828.64,
+          "end": 11828.88,
+          "probability": 0.997
+        },
+        {
+          "text": "we",
+          "start": 11828.88,
+          "end": 11828.96,
+          "probability": 0.999
+        },
+        {
+          "text": "were",
+          "start": 11828.96,
+          "end": 11829.04,
+          "probability": 1.0
+        },
+        {
+          "text": "looking",
+          "start": 11829.04,
+          "end": 11829.36,
+          "probability": 0.999
+        },
+        {
+          "text": "at",
+          "start": 11829.36,
+          "end": 11829.6,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 11829.6,
+          "end": 11829.68,
+          "probability": 1.0
+        },
+        {
+          "text": "positions.",
+          "start": 11829.68,
+          "end": 11830.24,
+          "probability": 1.0
+        },
+        {
+          "text": "And",
+          "start": 11830.4,
+          "end": 11830.48,
+          "probability": 0.99
+        },
+        {
+          "text": "so",
+          "start": 11830.48,
+          "end": 11830.72,
+          "probability": 0.999
+        },
+        {
+          "text": "we",
+          "start": 11830.72,
+          "end": 11831.2,
+          "probability": 0.999
+        },
+        {
+          "text": "still",
+          "start": 11831.2,
+          "end": 11831.44,
+          "probability": 1.0
+        },
+        {
+          "text": "had",
+          "start": 11831.44,
+          "end": 11831.6,
+          "probability": 0.996
+        },
+        {
+          "text": "people.",
+          "start": 11831.6,
+          "end": 11831.92,
+          "probability": 1.0
+        }
+      ],
+      "right": [
+        {
+          "text": "Then",
+          "start": 11828.64,
+          "end": 11828.88,
+          "probability": 0.943
+        },
+        {
+          "text": "we",
+          "start": 11828.88,
+          "end": 11828.96,
+          "probability": 0.999
+        },
+        {
+          "text": "were",
+          "start": 11828.96,
+          "end": 11829.12,
+          "probability": 0.984
+        },
+        {
+          "text": "looking",
+          "start": 11829.12,
+          "end": 11829.36,
+          "probability": 0.999
+        },
+        {
+          "text": "at",
+          "start": 11829.36,
+          "end": 11829.6,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 11829.6,
+          "end": 11829.76,
+          "probability": 1.0
+        },
+        {
+          "text": "positions",
+          "start": 11829.76,
+          "end": 11830.24,
+          "probability": 1.0
+        },
+        {
+          "text": "and",
+          "start": 11830.24,
+          "end": 11830.48,
+          "probability": 0.548
+        },
+        {
+          "text": "so",
+          "start": 11830.48,
+          "end": 11830.72,
+          "probability": 0.996
+        },
+        {
+          "text": "we",
+          "start": 11830.72,
+          "end": 11831.2,
+          "probability": 0.975
+        },
+        {
+          "text": "still",
+          "start": 11831.2,
+          "end": 11831.36,
+          "probability": 0.999
+        },
+        {
+          "text": "had",
+          "start": 11831.36,
+          "end": 11831.6,
+          "probability": 0.99
+        },
+        {
+          "text": "people",
+          "start": 11831.6,
+          "end": 11831.92,
+          "probability": 1.0
+        },
+        {
+          "text": "on",
+          "start": 11831.92,
+          "end": 11832.08,
+          "probability": 0.71
+        }
+      ],
+      "target_left": {
+        "text": "positions.",
+        "start": 11829.68,
+        "end": 11830.24,
+        "probability": 1.0
+      },
+      "target_right": {
+        "text": "positions",
+        "start": 11829.76,
+        "end": 11830.24,
+        "probability": 1.0
+      }
+    },
+    {
+      "boundary": 12922.0,
+      "kind": "ambiguous",
+      "left": [
+        {
+          "text": "revenue",
+          "start": 12919.28,
+          "end": 12920.48,
+          "probability": 0.99
+        },
+        {
+          "text": "source",
+          "start": 12920.48,
+          "end": 12920.96,
+          "probability": 0.999
+        },
+        {
+          "text": "is",
+          "start": 12920.96,
+          "end": 12921.52,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 12921.52,
+          "end": 12922.4,
+          "probability": 0.993
+        },
+        {
+          "text": "the",
+          "start": 12922.4,
+          "end": 12923.68,
+          "probability": 0.867
+        },
+        {
+          "text": "middle",
+          "start": 12923.68,
+          "end": 12923.92,
+          "probability": 0.21
+        }
+      ],
+      "right": [
+        {
+          "text": "Revenue",
+          "start": 12920.16,
+          "end": 12920.48,
+          "probability": 0.663
+        },
+        {
+          "text": "Source",
+          "start": 12920.48,
+          "end": 12920.96,
+          "probability": 0.776
+        },
+        {
+          "text": "is",
+          "start": 12920.96,
+          "end": 12921.52,
+          "probability": 0.993
+        },
+        {
+          "text": "the",
+          "start": 12921.52,
+          "end": 12923.68,
+          "probability": 0.998
+        },
+        {
+          "text": "millenni",
+          "start": 12923.68,
+          "end": 12924.4,
+          "probability": 0.6
+        }
+      ],
+      "target_left": {
+        "text": "the",
+        "start": 12921.52,
+        "end": 12922.4,
+        "probability": 0.993
+      },
+      "target_right": {
+        "text": "the",
+        "start": 12921.52,
+        "end": 12923.68,
+        "probability": 0.998
+      }
+    },
+    {
+      "boundary": 14066.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "voting",
+          "start": 14062.96,
+          "end": 14064.08,
+          "probability": 0.999
+        },
+        {
+          "text": "on",
+          "start": 14064.08,
+          "end": 14064.24,
+          "probability": 0.998
+        },
+        {
+          "text": "second",
+          "start": 14064.24,
+          "end": 14064.56,
+          "probability": 0.999
+        },
+        {
+          "text": "reading",
+          "start": 14064.56,
+          "end": 14064.96,
+          "probability": 0.999
+        },
+        {
+          "text": "and",
+          "start": 14064.96,
+          "end": 14066.8,
+          "probability": 0.911
+        },
+        {
+          "text": "you",
+          "start": 14066.8,
+          "end": 14067.28,
+          "probability": 0.994
+        },
+        {
+          "text": "know",
+          "start": 14067.28,
+          "end": 14067.36,
+          "probability": 1.0
+        },
+        {
+          "text": "and",
+          "start": 14067.36,
+          "end": 14067.52,
+          "probability": 0.726
+        },
+        {
+          "text": "those",
+          "start": 14067.52,
+          "end": 14067.68,
+          "probability": 0.999
+        }
+      ],
+      "right": [
+        {
+          "text": "on",
+          "start": 14064.08,
+          "end": 14064.32,
+          "probability": 0.453
+        },
+        {
+          "text": "second",
+          "start": 14064.32,
+          "end": 14064.56,
+          "probability": 0.939
+        },
+        {
+          "text": "reading",
+          "start": 14064.56,
+          "end": 14064.88,
+          "probability": 0.992
+        },
+        {
+          "text": "and",
+          "start": 14064.88,
+          "end": 14067.12,
+          "probability": 0.852
+        },
+        {
+          "text": "you",
+          "start": 14067.12,
+          "end": 14067.28,
+          "probability": 0.638
+        },
+        {
+          "text": "know",
+          "start": 14067.28,
+          "end": 14067.44,
+          "probability": 1.0
+        },
+        {
+          "text": "in",
+          "start": 14067.44,
+          "end": 14067.52,
+          "probability": 0.296
+        },
+        {
+          "text": "those",
+          "start": 14067.52,
+          "end": 14067.68,
+          "probability": 0.994
+        },
+        {
+          "text": "the",
+          "start": 14067.68,
+          "end": 14068.4,
+          "probability": 0.982
+        }
+      ],
+      "target_left": {
+        "text": "and",
+        "start": 14064.96,
+        "end": 14066.8,
+        "probability": 0.911
+      },
+      "target_right": {
+        "text": "and",
+        "start": 14064.88,
+        "end": 14067.12,
+        "probability": 0.852
+      }
+    },
+    {
+      "boundary": 3562.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "we're",
+          "start": 3560.24,
+          "end": 3560.4,
+          "probability": 0.996
+        },
+        {
+          "text": "heading",
+          "start": 3560.4,
+          "end": 3560.56,
+          "probability": 0.989
+        },
+        {
+          "text": "into",
+          "start": 3560.56,
+          "end": 3560.72,
+          "probability": 0.765
+        },
+        {
+          "text": "another",
+          "start": 3560.72,
+          "end": 3561.04,
+          "probability": 1.0
+        },
+        {
+          "text": "budget",
+          "start": 3561.04,
+          "end": 3561.36,
+          "probability": 0.997
+        },
+        {
+          "text": "year",
+          "start": 3561.36,
+          "end": 3561.68,
+          "probability": 0.999
+        },
+        {
+          "text": "at",
+          "start": 3561.68,
+          "end": 3562.32,
+          "probability": 0.88
+        },
+        {
+          "text": "last",
+          "start": 3562.32,
+          "end": 3562.56,
+          "probability": 0.994
+        },
+        {
+          "text": "last",
+          "start": 3562.56,
+          "end": 3563.2,
+          "probability": 0.786
+        },
+        {
+          "text": "week's",
+          "start": 3563.2,
+          "end": 3563.52,
+          "probability": 0.989
+        },
+        {
+          "text": "meeting.",
+          "start": 3563.52,
+          "end": 3563.76,
+          "probability": 1.0
+        }
+      ],
+      "right": [
+        {
+          "text": "We're",
+          "start": 3560.16,
+          "end": 3560.4,
+          "probability": 0.989
+        },
+        {
+          "text": "heading",
+          "start": 3560.4,
+          "end": 3560.56,
+          "probability": 0.979
+        },
+        {
+          "text": "into",
+          "start": 3560.56,
+          "end": 3560.72,
+          "probability": 0.666
+        },
+        {
+          "text": "another",
+          "start": 3560.72,
+          "end": 3561.04,
+          "probability": 1.0
+        },
+        {
+          "text": "budget",
+          "start": 3561.04,
+          "end": 3561.36,
+          "probability": 0.996
+        },
+        {
+          "text": "year",
+          "start": 3561.36,
+          "end": 3561.6,
+          "probability": 0.999
+        },
+        {
+          "text": "at",
+          "start": 3561.6,
+          "end": 3562.32,
+          "probability": 0.559
+        },
+        {
+          "text": "last",
+          "start": 3562.32,
+          "end": 3562.56,
+          "probability": 0.997
+        },
+        {
+          "text": "last",
+          "start": 3562.56,
+          "end": 3563.2,
+          "probability": 0.451
+        },
+        {
+          "text": "week's",
+          "start": 3563.2,
+          "end": 3563.52,
+          "probability": 0.977
+        },
+        {
+          "text": "meeting.",
+          "start": 3563.52,
+          "end": 3563.76,
+          "probability": 0.999
+        }
+      ],
+      "target_left": {
+        "text": "at",
+        "start": 3561.68,
+        "end": 3562.32,
+        "probability": 0.88
+      },
+      "target_right": {
+        "text": "at",
+        "start": 3561.6,
+        "end": 3562.32,
+        "probability": 0.559
+      }
+    },
+    {
+      "boundary": 7254.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "staff",
+          "start": 7251.84,
+          "end": 7252.16,
+          "probability": 1.0
+        },
+        {
+          "text": "that",
+          "start": 7252.16,
+          "end": 7252.4,
+          "probability": 0.997
+        },
+        {
+          "text": "help",
+          "start": 7252.4,
+          "end": 7252.8,
+          "probability": 0.999
+        },
+        {
+          "text": "the",
+          "start": 7252.8,
+          "end": 7253.68,
+          "probability": 0.57
+        },
+        {
+          "text": "youth,",
+          "start": 7253.68,
+          "end": 7254.32,
+          "probability": 0.998
+        },
+        {
+          "text": "sorry.",
+          "start": 7254.8,
+          "end": 7255.28,
+          "probability": 0.998
+        }
+      ],
+      "right": [
+        {
+          "text": "that",
+          "start": 7252.24,
+          "end": 7252.48,
+          "probability": 0.977
+        },
+        {
+          "text": "help,",
+          "start": 7252.48,
+          "end": 7252.72,
+          "probability": 0.997
+        },
+        {
+          "text": "that",
+          "start": 7253.44,
+          "end": 7253.68,
+          "probability": 0.706
+        },
+        {
+          "text": "youth,",
+          "start": 7253.68,
+          "end": 7254.24,
+          "probability": 0.998
+        },
+        {
+          "text": "sorry,",
+          "start": 7254.32,
+          "end": 7255.28,
+          "probability": 0.998
+        },
+        {
+          "text": "that",
+          "start": 7256.0,
+          "end": 7256.24,
+          "probability": 0.199
+        }
+      ],
+      "target_left": {
+        "text": "youth,",
+        "start": 7253.68,
+        "end": 7254.32,
+        "probability": 0.998
+      },
+      "target_right": {
+        "text": "youth,",
+        "start": 7253.68,
+        "end": 7254.24,
+        "probability": 0.998
+      }
+    },
+    {
+      "boundary": 8164.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "as",
+          "start": 8161.92,
+          "end": 8162.16,
+          "probability": 0.999
+        },
+        {
+          "text": "our",
+          "start": 8162.16,
+          "end": 8162.4,
+          "probability": 0.998
+        },
+        {
+          "text": "needs",
+          "start": 8162.4,
+          "end": 8163.12,
+          "probability": 0.999
+        },
+        {
+          "text": "evolve,",
+          "start": 8163.12,
+          "end": 8163.68,
+          "probability": 0.996
+        },
+        {
+          "text": "but",
+          "start": 8163.92,
+          "end": 8164.08,
+          "probability": 1.0
+        },
+        {
+          "text": "also",
+          "start": 8164.08,
+          "end": 8164.4,
+          "probability": 1.0
+        },
+        {
+          "text": "for",
+          "start": 8164.4,
+          "end": 8164.64,
+          "probability": 1.0
+        },
+        {
+          "text": "us",
+          "start": 8164.64,
+          "end": 8164.8,
+          "probability": 1.0
+        },
+        {
+          "text": "to",
+          "start": 8164.8,
+          "end": 8164.96,
+          "probability": 1.0
+        },
+        {
+          "text": "join",
+          "start": 8164.96,
+          "end": 8165.28,
+          "probability": 1.0
+        },
+        {
+          "text": "this",
+          "start": 8165.28,
+          "end": 8165.52,
+          "probability": 0.998
+        },
+        {
+          "text": "small",
+          "start": 8165.52,
+          "end": 8165.92,
+          "probability": 0.996
+        }
+      ],
+      "right": [
+        {
+          "text": "are",
+          "start": 8162.0,
+          "end": 8162.4,
+          "probability": 0.579
+        },
+        {
+          "text": "needs",
+          "start": 8162.4,
+          "end": 8163.12,
+          "probability": 0.996
+        },
+        {
+          "text": "evolved",
+          "start": 8163.12,
+          "end": 8163.84,
+          "probability": 0.783
+        },
+        {
+          "text": "but",
+          "start": 8163.84,
+          "end": 8164.08,
+          "probability": 0.608
+        },
+        {
+          "text": "also",
+          "start": 8164.08,
+          "end": 8164.4,
+          "probability": 1.0
+        },
+        {
+          "text": "for",
+          "start": 8164.4,
+          "end": 8164.64,
+          "probability": 1.0
+        },
+        {
+          "text": "us",
+          "start": 8164.64,
+          "end": 8164.8,
+          "probability": 1.0
+        },
+        {
+          "text": "to",
+          "start": 8164.8,
+          "end": 8164.96,
+          "probability": 1.0
+        },
+        {
+          "text": "join",
+          "start": 8164.96,
+          "end": 8165.28,
+          "probability": 1.0
+        },
+        {
+          "text": "this",
+          "start": 8165.28,
+          "end": 8165.52,
+          "probability": 0.988
+        },
+        {
+          "text": "small",
+          "start": 8165.52,
+          "end": 8165.92,
+          "probability": 0.999
+        },
+        {
+          "text": "but",
+          "start": 8165.92,
+          "end": 8166.72,
+          "probability": 0.972
+        }
+      ],
+      "target_left": {
+        "text": "but",
+        "start": 8163.92,
+        "end": 8164.08,
+        "probability": 1.0
+      },
+      "target_right": {
+        "text": "but",
+        "start": 8163.84,
+        "end": 8164.08,
+        "probability": 0.608
+      }
+    },
+    {
+      "boundary": 9360.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "procurement",
+          "start": 9357.76,
+          "end": 9358.16,
+          "probability": 0.982
+        },
+        {
+          "text": "was",
+          "start": 9358.16,
+          "end": 9358.4,
+          "probability": 0.999
+        },
+        {
+          "text": "June",
+          "start": 9358.4,
+          "end": 9358.64,
+          "probability": 0.984
+        },
+        {
+          "text": "17th",
+          "start": 9358.64,
+          "end": 9359.6,
+          "probability": 0.979
+        },
+        {
+          "text": "2006",
+          "start": 9359.6,
+          "end": 9360.4,
+          "probability": 0.736
+        },
+        {
+          "text": "correct",
+          "start": 9360.4,
+          "end": 9360.72,
+          "probability": 0.692
+        },
+        {
+          "text": "and",
+          "start": 9360.72,
+          "end": 9361.84,
+          "probability": 0.994
+        },
+        {
+          "text": "then",
+          "start": 9361.84,
+          "end": 9361.92,
+          "probability": 0.999
+        }
+      ],
+      "right": [
+        {
+          "text": "It",
+          "start": 9358.16,
+          "end": 9358.24,
+          "probability": 0.592
+        },
+        {
+          "text": "was",
+          "start": 9358.24,
+          "end": 9358.32,
+          "probability": 1.0
+        },
+        {
+          "text": "June",
+          "start": 9358.32,
+          "end": 9358.64,
+          "probability": 0.999
+        },
+        {
+          "text": "17th,",
+          "start": 9358.64,
+          "end": 9359.52,
+          "probability": 0.943
+        },
+        {
+          "text": "2006",
+          "start": 9359.52,
+          "end": 9360.4,
+          "probability": 0.855
+        },
+        {
+          "text": "correct,",
+          "start": 9360.4,
+          "end": 9360.64,
+          "probability": 0.477
+        },
+        {
+          "text": "and",
+          "start": 9361.6,
+          "end": 9361.84,
+          "probability": 0.999
+        },
+        {
+          "text": "then",
+          "start": 9361.84,
+          "end": 9362.08,
+          "probability": 0.998
+        }
+      ],
+      "target_left": {
+        "text": "2006",
+        "start": 9359.6,
+        "end": 9360.4,
+        "probability": 0.736
+      },
+      "target_right": {
+        "text": "2006",
+        "start": 9359.52,
+        "end": 9360.4,
+        "probability": 0.855
+      }
+    },
+    {
+      "boundary": 9412.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "referencing",
+          "start": 9409.92,
+          "end": 9410.48,
+          "probability": 0.971
+        },
+        {
+          "text": "midnet",
+          "start": 9410.48,
+          "end": 9410.8,
+          "probability": 0.696
+        },
+        {
+          "text": "that",
+          "start": 9410.8,
+          "end": 9410.96,
+          "probability": 0.986
+        },
+        {
+          "text": "said",
+          "start": 9410.96,
+          "end": 9411.12,
+          "probability": 0.994
+        },
+        {
+          "text": "it",
+          "start": 9411.12,
+          "end": 9411.28,
+          "probability": 0.998
+        },
+        {
+          "text": "was",
+          "start": 9411.28,
+          "end": 9411.44,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 9411.44,
+          "end": 9411.6,
+          "probability": 0.999
+        },
+        {
+          "text": "19th.",
+          "start": 9411.6,
+          "end": 9412.8,
+          "probability": 0.999
+        },
+        {
+          "text": "But",
+          "start": 9412.8,
+          "end": 9412.96,
+          "probability": 0.995
+        },
+        {
+          "text": "then",
+          "start": 9412.96,
+          "end": 9413.12,
+          "probability": 1.0
+        },
+        {
+          "text": "when",
+          "start": 9413.12,
+          "end": 9413.28,
+          "probability": 0.999
+        },
+        {
+          "text": "the",
+          "start": 9413.28,
+          "end": 9413.36,
+          "probability": 1.0
+        },
+        {
+          "text": "19th",
+          "start": 9413.36,
+          "end": 9413.92,
+          "probability": 0.999
+        }
+      ],
+      "right": [
+        {
+          "text": "referencing",
+          "start": 9410.0,
+          "end": 9410.48,
+          "probability": 0.935
+        },
+        {
+          "text": "bid",
+          "start": 9410.48,
+          "end": 9410.64,
+          "probability": 0.615
+        },
+        {
+          "text": "net",
+          "start": 9410.64,
+          "end": 9410.8,
+          "probability": 0.651
+        },
+        {
+          "text": "that",
+          "start": 9410.8,
+          "end": 9410.96,
+          "probability": 0.992
+        },
+        {
+          "text": "said",
+          "start": 9410.96,
+          "end": 9411.12,
+          "probability": 0.986
+        },
+        {
+          "text": "it",
+          "start": 9411.12,
+          "end": 9411.28,
+          "probability": 0.997
+        },
+        {
+          "text": "was",
+          "start": 9411.28,
+          "end": 9411.44,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 9411.44,
+          "end": 9411.6,
+          "probability": 0.998
+        },
+        {
+          "text": "19th",
+          "start": 9411.6,
+          "end": 9412.24,
+          "probability": 0.993
+        },
+        {
+          "text": "but",
+          "start": 9412.24,
+          "end": 9412.96,
+          "probability": 0.694
+        },
+        {
+          "text": "then",
+          "start": 9412.96,
+          "end": 9413.12,
+          "probability": 0.999
+        },
+        {
+          "text": "when",
+          "start": 9413.12,
+          "end": 9413.28,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 9413.28,
+          "end": 9413.44,
+          "probability": 1.0
+        },
+        {
+          "text": "19th",
+          "start": 9413.44,
+          "end": 9414.08,
+          "probability": 0.996
+        }
+      ],
+      "target_left": {
+        "text": "19th.",
+        "start": 9411.6,
+        "end": 9412.8,
+        "probability": 0.999
+      },
+      "target_right": {
+        "text": "19th",
+        "start": 9411.6,
+        "end": 9412.24,
+        "probability": 0.993
+      }
+    },
+    {
+      "boundary": 11960.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "then",
+          "start": 11957.84,
+          "end": 11958.0,
+          "probability": 0.986
+        },
+        {
+          "text": "as",
+          "start": 11958.0,
+          "end": 11958.24,
+          "probability": 0.445
+        },
+        {
+          "text": "Joanne",
+          "start": 11958.24,
+          "end": 11958.64,
+          "probability": 0.727
+        },
+        {
+          "text": "mentioned,",
+          "start": 11958.64,
+          "end": 11959.52,
+          "probability": 0.992
+        },
+        {
+          "text": "I'll",
+          "start": 11959.76,
+          "end": 11960.24,
+          "probability": 0.997
+        },
+        {
+          "text": "talk",
+          "start": 11960.24,
+          "end": 11960.48,
+          "probability": 0.999
+        },
+        {
+          "text": "about",
+          "start": 11960.48,
+          "end": 11960.8,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 11960.8,
+          "end": 11961.12,
+          "probability": 0.999
+        },
+        {
+          "text": "employee",
+          "start": 11961.12,
+          "end": 11961.6,
+          "probability": 0.993
+        },
+        {
+          "text": "benefit.",
+          "start": 11961.6,
+          "end": 11961.92,
+          "probability": 0.633
+        }
+      ],
+      "right": [
+        {
+          "text": "Join",
+          "start": 11958.0,
+          "end": 11958.56,
+          "probability": 0.508
+        },
+        {
+          "text": "mentioned",
+          "start": 11958.56,
+          "end": 11959.52,
+          "probability": 0.965
+        },
+        {
+          "text": "I'll",
+          "start": 11959.52,
+          "end": 11960.24,
+          "probability": 0.924
+        },
+        {
+          "text": "talk",
+          "start": 11960.24,
+          "end": 11960.4,
+          "probability": 0.983
+        },
+        {
+          "text": "about",
+          "start": 11960.4,
+          "end": 11960.8,
+          "probability": 1.0
+        },
+        {
+          "text": "the",
+          "start": 11960.8,
+          "end": 11961.12,
+          "probability": 0.999
+        },
+        {
+          "text": "employee",
+          "start": 11961.12,
+          "end": 11961.6,
+          "probability": 0.926
+        },
+        {
+          "text": "benefit",
+          "start": 11961.6,
+          "end": 11962.0,
+          "probability": 0.94
+        },
+        {
+          "text": "fund",
+          "start": 11962.0,
+          "end": 11962.4,
+          "probability": 0.995
+        }
+      ],
+      "target_left": {
+        "text": "I'll",
+        "start": 11959.76,
+        "end": 11960.24,
+        "probability": 0.997
+      },
+      "target_right": {
+        "text": "I'll",
+        "start": 11959.52,
+        "end": 11960.24,
+        "probability": 0.924
+      }
+    },
+    {
+      "boundary": 12324.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "the",
+          "start": 12322.0,
+          "end": 12322.16,
+          "probability": 0.999
+        },
+        {
+          "text": "hybrid",
+          "start": 12322.16,
+          "end": 12322.56,
+          "probability": 0.991
+        },
+        {
+          "text": "defined",
+          "start": 12322.56,
+          "end": 12323.04,
+          "probability": 0.943
+        },
+        {
+          "text": "benefit",
+          "start": 12323.04,
+          "end": 12323.36,
+          "probability": 0.983
+        },
+        {
+          "text": "plan,",
+          "start": 12323.36,
+          "end": 12323.84,
+          "probability": 1.0
+        },
+        {
+          "text": "and",
+          "start": 12324.0,
+          "end": 12324.16,
+          "probability": 0.999
+        },
+        {
+          "text": "the",
+          "start": 12324.16,
+          "end": 12324.32,
+          "probability": 1.0
+        },
+        {
+          "text": "hybrid",
+          "start": 12324.32,
+          "end": 12324.72,
+          "probability": 1.0
+        },
+        {
+          "text": "money",
+          "start": 12324.72,
+          "end": 12325.04,
+          "probability": 0.922
+        },
+        {
+          "text": "purchase",
+          "start": 12325.04,
+          "end": 12325.44,
+          "probability": 0.925
+        },
+        {
+          "text": "plan.",
+          "start": 12325.44,
+          "end": 12325.84,
+          "probability": 1.0
+        }
+      ],
+      "right": [
+        {
+          "text": "hybrid",
+          "start": 12322.0,
+          "end": 12322.64,
+          "probability": 0.808
+        },
+        {
+          "text": "defined",
+          "start": 12322.64,
+          "end": 12323.04,
+          "probability": 0.843
+        },
+        {
+          "text": "benefit",
+          "start": 12323.04,
+          "end": 12323.36,
+          "probability": 0.987
+        },
+        {
+          "text": "plan",
+          "start": 12323.36,
+          "end": 12323.76,
+          "probability": 0.999
+        },
+        {
+          "text": "and",
+          "start": 12323.76,
+          "end": 12324.16,
+          "probability": 0.994
+        },
+        {
+          "text": "the",
+          "start": 12324.16,
+          "end": 12324.32,
+          "probability": 0.999
+        },
+        {
+          "text": "hybrid",
+          "start": 12324.32,
+          "end": 12324.72,
+          "probability": 0.999
+        },
+        {
+          "text": "money",
+          "start": 12324.72,
+          "end": 12325.04,
+          "probability": 0.983
+        },
+        {
+          "text": "purchase",
+          "start": 12325.04,
+          "end": 12325.44,
+          "probability": 0.969
+        },
+        {
+          "text": "plan",
+          "start": 12325.44,
+          "end": 12325.92,
+          "probability": 1.0
+        },
+        {
+          "text": "those",
+          "start": 12325.92,
+          "end": 12326.64,
+          "probability": 0.75
+        }
+      ],
+      "target_left": {
+        "text": "and",
+        "start": 12324.0,
+        "end": 12324.16,
+        "probability": 0.999
+      },
+      "target_right": {
+        "text": "and",
+        "start": 12323.76,
+        "end": 12324.16,
+        "probability": 0.994
+      }
+    },
+    {
+      "boundary": 13468.0,
+      "kind": "drop",
+      "left": [
+        {
+          "text": "sooner",
+          "start": 13465.52,
+          "end": 13466.0,
+          "probability": 0.995
+        },
+        {
+          "text": "than",
+          "start": 13466.0,
+          "end": 13466.16,
+          "probability": 1.0
+        },
+        {
+          "text": "that,",
+          "start": 13466.16,
+          "end": 13466.4,
+          "probability": 1.0
+        },
+        {
+          "text": "but",
+          "start": 13466.64,
+          "end": 13466.88,
+          "probability": 0.996
+        },
+        {
+          "text": "just",
+          "start": 13466.88,
+          "end": 13467.6,
+          "probability": 0.831
+        },
+        {
+          "text": "pending",
+          "start": 13467.6,
+          "end": 13467.92,
+          "probability": 0.946
+        },
+        {
+          "text": "on",
+          "start": 13467.92,
+          "end": 13468.08,
+          "probability": 0.707
+        },
+        {
+          "text": "whether",
+          "start": 13468.08,
+          "end": 13468.24,
+          "probability": 0.45
+        },
+        {
+          "text": "or",
+          "start": 13468.24,
+          "end": 13468.48,
+          "probability": 0.818
+        },
+        {
+          "text": "so.",
+          "start": 13468.48,
+          "end": 13468.8,
+          "probability": 0.985
+        }
+      ],
+      "right": [
+        {
+          "text": "that",
+          "start": 13466.0,
+          "end": 13466.48,
+          "probability": 0.804
+        },
+        {
+          "text": "but",
+          "start": 13466.48,
+          "end": 13466.72,
+          "probability": 0.944
+        },
+        {
+          "text": "you",
+          "start": 13466.72,
+          "end": 13467.28,
+          "probability": 0.994
+        },
+        {
+          "text": "know",
+          "start": 13467.28,
+          "end": 13467.44,
+          "probability": 1.0
+        },
+        {
+          "text": "just",
+          "start": 13467.44,
+          "end": 13467.6,
+          "probability": 0.993
+        },
+        {
+          "text": "pending",
+          "start": 13467.6,
+          "end": 13467.84,
+          "probability": 0.962
+        },
+        {
+          "text": "on",
+          "start": 13467.84,
+          "end": 13468.08,
+          "probability": 0.87
+        },
+        {
+          "text": "weather",
+          "start": 13468.08,
+          "end": 13468.32,
+          "probability": 0.435
+        },
+        {
+          "text": "so",
+          "start": 13468.32,
+          "end": 13468.8,
+          "probability": 0.985
+        },
+        {
+          "text": "um",
+          "start": 13468.8,
+          "end": 13469.52,
+          "probability": 0.907
+        },
+        {
+          "text": "the",
+          "start": 13469.52,
+          "end": 13471.6,
+          "probability": 0.999
+        }
+      ],
+      "target_left": {
+        "text": "on",
+        "start": 13467.92,
+        "end": 13468.08,
+        "probability": 0.707
+      },
+      "target_right": {
+        "text": "on",
+        "start": 13467.84,
+        "end": 13468.08,
+        "probability": 0.87
+      }
+    },
+    {
+      "boundary": 5632.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "Marcine",
+          "start": 5629.48,
+          "end": 5632.28,
+          "probability": 0.897
+        },
+        {
+          "text": "Recusel.",
+          "start": 5632.28,
+          "end": 5633.32,
+          "probability": 0.73
+        }
+      ],
+      "right": [
+        {
+          "text": "Marcine,",
+          "start": 5632.4,
+          "end": 5632.88,
+          "probability": 0.944
+        },
+        {
+          "text": "recusal,",
+          "start": 5632.88,
+          "end": 5633.36,
+          "probability": 0.921
+        },
+        {
+          "text": "yeah.",
+          "start": 5633.52,
+          "end": 5633.76,
+          "probability": 0.993
+        }
+      ],
+      "target_left": {
+        "text": "Marcine",
+        "start": 5629.48,
+        "end": 5632.28,
+        "probability": 0.897
+      },
+      "target_right": {
+        "text": "Marcine,",
+        "start": 5632.4,
+        "end": 5632.88,
+        "probability": 0.944
+      }
+    },
+    {
+      "boundary": 6413.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "Okay.",
+          "start": 6411.6,
+          "end": 6412.24,
+          "probability": 0.986
+        },
+        {
+          "text": "Councilmember",
+          "start": 6412.48,
+          "end": 6413.12,
+          "probability": 0.742
+        },
+        {
+          "text": "Christ.",
+          "start": 6413.12,
+          "end": 6414.0,
+          "probability": 0.673
+        }
+      ],
+      "right": [
+        {
+          "text": "Councilmember",
+          "start": 6413.08,
+          "end": 6413.56,
+          "probability": 0.788
+        },
+        {
+          "text": "Christ.",
+          "start": 6413.56,
+          "end": 6414.04,
+          "probability": 0.705
+        }
+      ],
+      "target_left": {
+        "text": "Councilmember",
+        "start": 6412.48,
+        "end": 6413.12,
+        "probability": 0.742
+      },
+      "target_right": {
+        "text": "Councilmember",
+        "start": 6413.08,
+        "end": 6413.56,
+        "probability": 0.788
+      }
+    },
+    {
+      "boundary": 6468.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "comma,",
+          "start": 6465.64,
+          "end": 6466.76,
+          "probability": 0.905
+        },
+        {
+          "text": "constitutional",
+          "start": 6466.76,
+          "end": 6467.96,
+          "probability": 0.988
+        },
+        {
+          "text": "and",
+          "start": 6467.96,
+          "end": 6469.24,
+          "probability": 0.177
+        },
+        {
+          "text": "other.",
+          "start": 6469.24,
+          "end": 6469.72,
+          "probability": 0.977
+        }
+      ],
+      "right": [
+        {
+          "text": "constitutional",
+          "start": 6468.0,
+          "end": 6468.64,
+          "probability": 0.924
+        },
+        {
+          "text": "and",
+          "start": 6468.64,
+          "end": 6469.28,
+          "probability": 0.999
+        },
+        {
+          "text": "other",
+          "start": 6469.28,
+          "end": 6469.68,
+          "probability": 0.999
+        },
+        {
+          "text": "considerations.",
+          "start": 6469.68,
+          "end": 6471.28,
+          "probability": 0.996
+        }
+      ],
+      "target_left": {
+        "text": "constitutional",
+        "start": 6466.76,
+        "end": 6467.96,
+        "probability": 0.988
+      },
+      "target_right": {
+        "text": "constitutional",
+        "start": 6468.0,
+        "end": 6468.64,
+        "probability": 0.924
+      }
+    },
+    {
+      "boundary": 11352.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "We",
+          "start": 11351.32,
+          "end": 11351.96,
+          "probability": 0.836
+        },
+        {
+          "text": "wish.",
+          "start": 11351.96,
+          "end": 11352.44,
+          "probability": 0.89
+        }
+      ],
+      "right": [
+        {
+          "text": "We",
+          "start": 11351.92,
+          "end": 11352.4,
+          "probability": 0.385
+        },
+        {
+          "text": "wish,",
+          "start": 11352.4,
+          "end": 11352.88,
+          "probability": 0.996
+        },
+        {
+          "text": "it's",
+          "start": 11353.76,
+          "end": 11354.32,
+          "probability": 0.972
+        }
+      ],
+      "target_left": {
+        "text": "We",
+        "start": 11351.32,
+        "end": 11351.96,
+        "probability": 0.836
+      },
+      "target_right": {
+        "text": "We",
+        "start": 11351.92,
+        "end": 11352.4,
+        "probability": 0.385
+      }
+    },
+    {
+      "boundary": 12089.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "through",
+          "start": 12086.88,
+          "end": 12087.2,
+          "probability": 0.998
+        },
+        {
+          "text": "2008.",
+          "start": 12087.2,
+          "end": 12089.36,
+          "probability": 0.939
+        }
+      ],
+      "right": [
+        {
+          "text": "2008,",
+          "start": 12089.08,
+          "end": 12090.04,
+          "probability": 0.738
+        },
+        {
+          "text": "but",
+          "start": 12090.04,
+          "end": 12091.0,
+          "probability": 0.998
+        },
+        {
+          "text": "since",
+          "start": 12091.0,
+          "end": 12091.32,
+          "probability": 0.99
+        }
+      ],
+      "target_left": {
+        "text": "2008.",
+        "start": 12087.2,
+        "end": 12089.36,
+        "probability": 0.939
+      },
+      "target_right": {
+        "text": "2008,",
+        "start": 12089.08,
+        "end": 12090.04,
+        "probability": 0.738
+      }
+    },
+    {
+      "boundary": 12122.0,
+      "kind": "repeat",
+      "left": [
+        {
+          "text": "and",
+          "start": 12119.8,
+          "end": 12122.44,
+          "probability": 0.62
+        },
+        {
+          "text": "has",
+          "start": 12122.44,
+          "end": 12123.08,
+          "probability": 0.992
+        },
+        {
+          "text": "an",
+          "start": 12123.08,
+          "end": 12123.32,
+          "probability": 0.958
+        },
+        {
+          "text": "unfunded",
+          "start": 12123.32,
+          "end": 12123.96,
+          "probability": 0.995
+        },
+        {
+          "text": "life.",
+          "start": 12123.96,
+          "end": 12123.961,
+          "probability": 0.364
+        }
+      ],
+      "right": [
+        {
+          "text": "and",
+          "start": 12122.24,
+          "end": 12122.8,
+          "probability": 0.506
+        },
+        {
+          "text": "has",
+          "start": 12122.8,
+          "end": 12123.12,
+          "probability": 0.876
+        },
+        {
+          "text": "an",
+          "start": 12123.12,
+          "end": 12123.28,
+          "probability": 0.829
+        },
+        {
+          "text": "unfunded",
+          "start": 12123.28,
+          "end": 12123.92,
+          "probability": 0.992
+        },
+        {
+          "text": "liability",
+          "start": 12123.92,
+          "end": 12124.56,
+          "probability": 0.997
+        }
+      ],
+      "target_left": {
+        "text": "and",
+        "start": 12119.8,
+        "end": 12122.44,
+        "probability": 0.62
+      },
+      "target_right": {
+        "text": "and",
+        "start": 12122.24,
+        "end": 12122.8,
+        "probability": 0.506
+      }
+    },
+    {
+      "boundary": 13904.0,
+      "kind": "ambiguous",
+      "left": [
+        {
+          "text": "One,",
+          "start": 13902.36,
+          "end": 13902.52,
+          "probability": 0.612
+        },
+        {
+          "text": "just",
+          "start": 13902.92,
+          "end": 13903.72,
+          "probability": 0.88
+        },
+        {
+          "text": "one,",
+          "start": 13903.72,
+          "end": 13903.96,
+          "probability": 0.999
+        },
+        {
+          "text": "one",
+          "start": 13903.96,
+          "end": 13904.36,
+          "probability": 0.997
+        },
+        {
+          "text": "speaker",
+          "start": 13904.36,
+          "end": 13904.76,
+          "probability": 0.861
+        },
+        {
+          "text": "per",
+          "start": 13904.76,
+          "end": 13905.16,
+          "probability": 0.747
+        },
+        {
+          "text": "session.",
+          "start": 13905.16,
+          "end": 13905.56,
+          "probability": 0.999
+        }
+      ],
+      "right": [
+        {
+          "text": "Just",
+          "start": 13903.12,
+          "end": 13903.76,
+          "probability": 0.784
+        },
+        {
+          "text": "one",
+          "start": 13903.76,
+          "end": 13904.24,
+          "probability": 0.992
+        },
+        {
+          "text": "speaker",
+          "start": 13904.24,
+          "end": 13904.8,
+          "probability": 0.872
+        },
+        {
+          "text": "per",
+          "start": 13904.8,
+          "end": 13905.2,
+          "probability": 0.972
+        },
+        {
+          "text": "session.",
+          "start": 13905.2,
+          "end": 13905.52,
+          "probability": 0.999
+        },
+        {
+          "text": "That's",
+          "start": 13905.84,
+          "end": 13906.4,
+          "probability": 0.998
+        }
+      ],
+      "target_left": {
+        "text": "one,",
+        "start": 13903.72,
+        "end": 13903.96,
+        "probability": 0.999
+      },
+      "target_right": {
+        "text": "one",
+        "start": 13903.76,
+        "end": 13904.24,
+        "probability": 0.992
+      }
+    }
+  ]
+}
