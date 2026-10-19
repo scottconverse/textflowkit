@@ -77,13 +77,15 @@ def main():
             (run / "report.md").write_text(message.get("content", ""), encoding="utf-8")
             print(json.dumps(meta), flush=True)
             return
-        for call in calls:
+        for call_index, call in enumerate(calls):
             if call["function"]["name"] != "powershell":
                 raise RuntimeError("Unexpected tool")
             command = call["function"]["arguments"]["command"]
+            command_path = run / f"command-{turn:02d}-{call_index:02d}.ps1"
+            command_path.write_text(command, encoding="utf-8")
             try:
                 completed = subprocess.run(
-                    ["pwsh", "-NoProfile", "-Command", command],
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(command_path)],
                     check=False,
                     cwd=ROOT,
                     capture_output=True,
@@ -97,8 +99,9 @@ def main():
                 output = "Command timed out after 120 seconds; do not claim completion."
             with (run / "tools.jsonl").open("a", encoding="utf-8") as log:
                 log.write(
-                    json.dumps({"command": command, "output": output}, ensure_ascii=False) + "\n"
+                    json.dumps({"command": command, "script": str(command_path), "output": output}, ensure_ascii=False) + "\n"
                 )
+
             messages.append({"role": "tool", "tool_name": "powershell", "content": output[-24000:]})
     raise RuntimeError("Worker exceeded the 20-turn unit limit")
 
