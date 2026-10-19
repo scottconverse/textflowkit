@@ -1,0 +1,1207 @@
+{
+  "features": {
+    "shape": [
+      1,
+      3001,
+      128
+    ],
+    "finite": true,
+    "min": -2.3898777961730957,
+    "max": 4.315001010894775
+  },
+  "encoded": {
+    "shape": [
+      376,
+      1024
+    ],
+    "finite": true,
+    "min": -0.2062446027994156,
+    "max": 0.18188819289207458
+  },
+  "text": "But then when the nineteenth half",
+  "events": [
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 0,
+      "seconds": 0.0
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 1,
+      "seconds": 0.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 2,
+      "seconds": 0.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 3,
+      "seconds": 0.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 4,
+      "seconds": 0.32
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 5,
+      "seconds": 0.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 6,
+      "seconds": 0.48
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 8,
+      "seconds": 0.64
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 10,
+      "seconds": 0.8
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 14,
+      "seconds": 1.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 18,
+      "seconds": 1.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 19,
+      "seconds": 1.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 21,
+      "seconds": 1.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 23,
+      "seconds": 1.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 27,
+      "seconds": 2.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 29,
+      "seconds": 2.32
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 31,
+      "seconds": 2.48
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 35,
+      "seconds": 2.8
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 39,
+      "seconds": 3.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 41,
+      "seconds": 3.28
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 43,
+      "seconds": 3.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 47,
+      "seconds": 3.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 51,
+      "seconds": 4.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 55,
+      "seconds": 4.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 59,
+      "seconds": 4.72
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 63,
+      "seconds": 5.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 65,
+      "seconds": 5.2
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 67,
+      "seconds": 5.36
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 69,
+      "seconds": 5.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 71,
+      "seconds": 5.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 72,
+      "seconds": 5.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 74,
+      "seconds": 5.92
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 76,
+      "seconds": 6.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 77,
+      "seconds": 6.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 78,
+      "seconds": 6.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 79,
+      "seconds": 6.32
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 83,
+      "seconds": 6.64
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 85,
+      "seconds": 6.8
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 87,
+      "seconds": 6.96
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 91,
+      "seconds": 7.28
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 92,
+      "seconds": 7.36
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 96,
+      "seconds": 7.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 97,
+      "seconds": 7.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 99,
+      "seconds": 7.92
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 103,
+      "seconds": 8.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 107,
+      "seconds": 8.56
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 111,
+      "seconds": 8.88
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 113,
+      "seconds": 9.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 114,
+      "seconds": 9.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 118,
+      "seconds": 9.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 122,
+      "seconds": 9.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 126,
+      "seconds": 10.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 130,
+      "seconds": 10.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 134,
+      "seconds": 10.72
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 138,
+      "seconds": 11.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 139,
+      "seconds": 11.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 143,
+      "seconds": 11.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 147,
+      "seconds": 11.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 151,
+      "seconds": 12.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 155,
+      "seconds": 12.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 159,
+      "seconds": 12.72
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 163,
+      "seconds": 13.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 165,
+      "seconds": 13.2
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 169,
+      "seconds": 13.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 171,
+      "seconds": 13.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 172,
+      "seconds": 13.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 173,
+      "seconds": 13.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 174,
+      "seconds": 13.92
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 176,
+      "seconds": 14.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 178,
+      "seconds": 14.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 182,
+      "seconds": 14.56
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 183,
+      "seconds": 14.64
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 187,
+      "seconds": 14.96
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 191,
+      "seconds": 15.28
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 195,
+      "seconds": 15.6
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 199,
+      "seconds": 15.92
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 203,
+      "seconds": 16.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 207,
+      "seconds": 16.56
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 211,
+      "seconds": 16.88
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 212,
+      "seconds": 16.96
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 216,
+      "seconds": 17.28
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 217,
+      "seconds": 17.36
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 218,
+      "seconds": 17.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 222,
+      "seconds": 17.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 223,
+      "seconds": 17.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 227,
+      "seconds": 18.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 229,
+      "seconds": 18.32
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 230,
+      "seconds": 18.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 231,
+      "seconds": 18.48
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 235,
+      "seconds": 18.8
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 239,
+      "seconds": 19.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 243,
+      "seconds": 19.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 247,
+      "seconds": 19.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 249,
+      "seconds": 19.92
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 250,
+      "seconds": 20.0
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 252,
+      "seconds": 20.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 253,
+      "seconds": 20.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 255,
+      "seconds": 20.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 259,
+      "seconds": 20.72
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 263,
+      "seconds": 21.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 265,
+      "seconds": 21.2
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 267,
+      "seconds": 21.36
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 269,
+      "seconds": 21.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 273,
+      "seconds": 21.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 277,
+      "seconds": 22.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 281,
+      "seconds": 22.48
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 285,
+      "seconds": 22.8
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 289,
+      "seconds": 23.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 293,
+      "seconds": 23.44
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 297,
+      "seconds": 23.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 301,
+      "seconds": 24.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 305,
+      "seconds": 24.4
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 309,
+      "seconds": 24.72
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 311,
+      "seconds": 24.88
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 313,
+      "seconds": 25.04
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 315,
+      "seconds": 25.2
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 319,
+      "seconds": 25.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 321,
+      "seconds": 25.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 323,
+      "seconds": 25.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 327,
+      "seconds": 26.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 328,
+      "seconds": 26.24
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 332,
+      "seconds": 26.56
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 336,
+      "seconds": 26.88
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 337,
+      "seconds": 26.96
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 339,
+      "seconds": 27.12
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 340,
+      "seconds": 27.2
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 342,
+      "seconds": 27.36
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 346,
+      "seconds": 27.68
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 350,
+      "seconds": 28.0
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 351,
+      "seconds": 28.08
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 4,
+      "logits_finite": true,
+      "frame": 352,
+      "seconds": 28.16
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 356,
+      "seconds": 28.48
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 357,
+      "seconds": 28.56
+    },
+    {
+      "token": 3592,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 358,
+      "seconds": 28.64
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 359,
+      "seconds": 28.72
+    },
+    {
+      "token": 5380,
+      "blank": false,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 361,
+      "seconds": 28.88
+    },
+    {
+      "token": 4611,
+      "blank": false,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 363,
+      "seconds": 29.04
+    },
+    {
+      "token": 506,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 365,
+      "seconds": 29.2
+    },
+    {
+      "token": 7194,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 366,
+      "seconds": 29.28
+    },
+    {
+      "token": 781,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 367,
+      "seconds": 29.36
+    },
+    {
+      "token": 340,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 368,
+      "seconds": 29.44
+    },
+    {
+      "token": 7882,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 369,
+      "seconds": 29.52
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 370,
+      "seconds": 29.6
+    },
+    {
+      "token": 1991,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 371,
+      "seconds": 29.68
+    },
+    {
+      "token": 7894,
+      "blank": false,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 372,
+      "seconds": 29.76
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 2,
+      "logits_finite": true,
+      "frame": 373,
+      "seconds": 29.84
+    },
+    {
+      "token": 8192,
+      "blank": true,
+      "duration": 1,
+      "logits_finite": true,
+      "frame": 375,
+      "seconds": 30.0
+    }
+  ],
+  "summary": {
+    "steps": 147,
+    "blank_predictions": 137,
+    "nonblank_predictions": 10,
+    "first_nonblank_seconds": 28.64,
+    "all_logits_finite": true
+  }
+}

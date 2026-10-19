@@ -1,0 +1,1316 @@
+{
+  "mode": "torch-decoder",
+  "load_seconds": 38.52514239997254,
+  "description": {
+    "kind": "speech",
+    "engine": "cpu",
+    "profile": "five-value",
+    "backend": "phonon2-five-value",
+    "runtime": "cpu: C encoder (packed int8) + torch TDT loop, avx512-vnni tier",
+    "activations": "float32",
+    "threads": 16,
+    "five_value_modules": 264,
+    "packed": {
+      "modules": 264,
+      "kernel_id": 4,
+      "kernel": "avx512-vnni",
+      "tier": "avx512-vnni",
+      "library": "phonon2_enc-windows-x64.dll",
+      "onedot": true,
+      "plane_cache": "direct"
+    },
+    "c_tdt_loop": false,
+    "ctdt_error": null,
+    "c_encoder": true,
+    "cenc_error": null,
+    "selftest": {
+      "shipped": {
+        "gemm": true,
+        "tdt": true,
+        "enc": true
+      },
+      "gemm_loaded": true,
+      "tdt_loaded": false,
+      "enc_loaded": true,
+      "glibc_note": null
+    },
+    "load_seconds": 38.14,
+    "hotwords": [],
+    "hotword_lambda": null,
+    "hotword_bias": "bonus per matching piece on the decoder's token scores; blank never biased; at most 25 words",
+    "note": "native kernels + C TDT loop where the platform binary loads, else the full-precision path; same-accuracy class as the MLX engine"
+  },
+  "clips": [
+    {
+      "index": 2,
+      "seconds": 1.0154838000016753,
+      "result": {
+        "text": "One nation under God, indivisible, with liberty and justice for all. In accordance with the council's rules of procedure, the rules for providing public comment are as followed. Only Longmont residents and employees um in the city of of the city of Longmont may speak during first call public invited to be heard. You must provide your address at the sign up sheet before the meeting or",
+        "decode_seconds": 1.0111851000110619,
+        "audio_seconds": 30.0,
+        "segments": [
+          {
+            "id": 0,
+            "start": 0.32,
+            "end": 5.84,
+            "text": "One nation under God, indivisible, with liberty and justice for all."
+          },
+          {
+            "id": 1,
+            "start": 13.44,
+            "end": 16.56,
+            "text": "In accordance with the council's rules of procedure,"
+          },
+          {
+            "id": 2,
+            "start": 16.56,
+            "end": 19.44,
+            "text": "the rules for providing public comment are as followed."
+          },
+          {
+            "id": 3,
+            "start": 19.44,
+            "end": 23.76,
+            "text": "Only Longmont residents and employees um in the city of of the city of Longmont"
+          },
+          {
+            "id": 4,
+            "start": 24.0,
+            "end": 26.8,
+            "text": "may speak during first call public invited to be heard."
+          },
+          {
+            "id": 5,
+            "start": 26.8,
+            "end": 29.84,
+            "text": "You must provide your address at the sign up sheet before the meeting or"
+          }
+        ],
+        "truncated": false,
+        "generation_tokens": 127,
+        "words": [
+          {
+            "text": "One",
+            "start": 0.32,
+            "end": 0.64
+          },
+          {
+            "text": "nation",
+            "start": 0.72,
+            "end": 1.04
+          },
+          {
+            "text": "under",
+            "start": 1.2,
+            "end": 1.36
+          },
+          {
+            "text": "God,",
+            "start": 1.84,
+            "end": 2.56
+          },
+          {
+            "text": "indivisible,",
+            "start": 2.56,
+            "end": 3.52
+          },
+          {
+            "text": "with",
+            "start": 3.52,
+            "end": 3.68
+          },
+          {
+            "text": "liberty",
+            "start": 3.84,
+            "end": 4.16
+          },
+          {
+            "text": "and",
+            "start": 4.48,
+            "end": 4.64
+          },
+          {
+            "text": "justice",
+            "start": 4.64,
+            "end": 4.96
+          },
+          {
+            "text": "for",
+            "start": 5.2,
+            "end": 5.36
+          },
+          {
+            "text": "all.",
+            "start": 5.36,
+            "end": 5.84
+          },
+          {
+            "text": "In",
+            "start": 13.44,
+            "end": 13.6
+          },
+          {
+            "text": "accordance",
+            "start": 13.68,
+            "end": 14.16
+          },
+          {
+            "text": "with",
+            "start": 14.48,
+            "end": 14.56
+          },
+          {
+            "text": "the",
+            "start": 14.8,
+            "end": 14.96
+          },
+          {
+            "text": "council's",
+            "start": 15.04,
+            "end": 15.6
+          },
+          {
+            "text": "rules",
+            "start": 15.6,
+            "end": 15.84
+          },
+          {
+            "text": "of",
+            "start": 15.84,
+            "end": 15.92
+          },
+          {
+            "text": "procedure,",
+            "start": 16.0,
+            "end": 16.56
+          },
+          {
+            "text": "the",
+            "start": 16.56,
+            "end": 16.72
+          },
+          {
+            "text": "rules",
+            "start": 16.72,
+            "end": 17.04
+          },
+          {
+            "text": "for",
+            "start": 17.04,
+            "end": 17.2
+          },
+          {
+            "text": "providing",
+            "start": 17.2,
+            "end": 17.6
+          },
+          {
+            "text": "public",
+            "start": 17.68,
+            "end": 17.84
+          },
+          {
+            "text": "comment",
+            "start": 18.0,
+            "end": 18.16
+          },
+          {
+            "text": "are",
+            "start": 18.32,
+            "end": 18.48
+          },
+          {
+            "text": "as",
+            "start": 18.56,
+            "end": 18.72
+          },
+          {
+            "text": "followed.",
+            "start": 18.72,
+            "end": 19.44
+          },
+          {
+            "text": "Only",
+            "start": 19.44,
+            "end": 19.68
+          },
+          {
+            "text": "Longmont",
+            "start": 19.68,
+            "end": 20.16
+          },
+          {
+            "text": "residents",
+            "start": 20.32,
+            "end": 20.64
+          },
+          {
+            "text": "and",
+            "start": 20.8,
+            "end": 20.96
+          },
+          {
+            "text": "employees",
+            "start": 21.04,
+            "end": 21.6
+          },
+          {
+            "text": "um",
+            "start": 21.84,
+            "end": 22.0
+          },
+          {
+            "text": "in",
+            "start": 22.08,
+            "end": 22.24
+          },
+          {
+            "text": "the",
+            "start": 22.24,
+            "end": 22.32
+          },
+          {
+            "text": "city",
+            "start": 22.32,
+            "end": 22.56
+          },
+          {
+            "text": "of",
+            "start": 22.56,
+            "end": 22.72
+          },
+          {
+            "text": "of",
+            "start": 22.8,
+            "end": 22.88
+          },
+          {
+            "text": "the",
+            "start": 22.96,
+            "end": 23.04
+          },
+          {
+            "text": "city",
+            "start": 23.04,
+            "end": 23.28
+          },
+          {
+            "text": "of",
+            "start": 23.28,
+            "end": 23.36
+          },
+          {
+            "text": "Longmont",
+            "start": 23.36,
+            "end": 23.76
+          },
+          {
+            "text": "may",
+            "start": 24.0,
+            "end": 24.08
+          },
+          {
+            "text": "speak",
+            "start": 24.16,
+            "end": 24.4
+          },
+          {
+            "text": "during",
+            "start": 24.4,
+            "end": 24.72
+          },
+          {
+            "text": "first",
+            "start": 24.72,
+            "end": 24.8
+          },
+          {
+            "text": "call",
+            "start": 24.88,
+            "end": 25.12
+          },
+          {
+            "text": "public",
+            "start": 25.2,
+            "end": 25.36
+          },
+          {
+            "text": "invited",
+            "start": 25.52,
+            "end": 25.92
+          },
+          {
+            "text": "to",
+            "start": 25.92,
+            "end": 26.08
+          },
+          {
+            "text": "be",
+            "start": 26.08,
+            "end": 26.24
+          },
+          {
+            "text": "heard.",
+            "start": 26.24,
+            "end": 26.8
+          },
+          {
+            "text": "You",
+            "start": 26.8,
+            "end": 26.88
+          },
+          {
+            "text": "must",
+            "start": 26.96,
+            "end": 27.2
+          },
+          {
+            "text": "provide",
+            "start": 27.2,
+            "end": 27.44
+          },
+          {
+            "text": "your",
+            "start": 27.6,
+            "end": 27.76
+          },
+          {
+            "text": "address",
+            "start": 27.76,
+            "end": 28.0
+          },
+          {
+            "text": "at",
+            "start": 28.24,
+            "end": 28.4
+          },
+          {
+            "text": "the",
+            "start": 28.4,
+            "end": 28.48
+          },
+          {
+            "text": "sign",
+            "start": 28.48,
+            "end": 28.64
+          },
+          {
+            "text": "up",
+            "start": 28.8,
+            "end": 28.88
+          },
+          {
+            "text": "sheet",
+            "start": 28.96,
+            "end": 29.12
+          },
+          {
+            "text": "before",
+            "start": 29.2,
+            "end": 29.44
+          },
+          {
+            "text": "the",
+            "start": 29.44,
+            "end": 29.52
+          },
+          {
+            "text": "meeting",
+            "start": 29.52,
+            "end": 29.68
+          },
+          {
+            "text": "or",
+            "start": 29.76,
+            "end": 29.84
+          }
+        ],
+        "tokens": [
+          {
+            "text": " O",
+            "start": 0.32,
+            "end": 0.48
+          },
+          {
+            "text": "ne",
+            "start": 0.48,
+            "end": 0.64
+          },
+          {
+            "text": " n",
+            "start": 0.72,
+            "end": 0.88
+          },
+          {
+            "text": "ation",
+            "start": 0.88,
+            "end": 1.04
+          },
+          {
+            "text": " under",
+            "start": 1.2,
+            "end": 1.36
+          },
+          {
+            "text": " God",
+            "start": 1.84,
+            "end": 2.0
+          },
+          {
+            "text": ",",
+            "start": 2.4,
+            "end": 2.56
+          },
+          {
+            "text": " indiv",
+            "start": 2.56,
+            "end": 2.72
+          },
+          {
+            "text": "is",
+            "start": 2.88,
+            "end": 3.04
+          },
+          {
+            "text": "ib",
+            "start": 3.04,
+            "end": 3.2
+          },
+          {
+            "text": "le",
+            "start": 3.2,
+            "end": 3.36
+          },
+          {
+            "text": ",",
+            "start": 3.44,
+            "end": 3.52
+          },
+          {
+            "text": " with",
+            "start": 3.52,
+            "end": 3.68
+          },
+          {
+            "text": " liber",
+            "start": 3.84,
+            "end": 4.0
+          },
+          {
+            "text": "ty",
+            "start": 4.0,
+            "end": 4.16
+          },
+          {
+            "text": " and",
+            "start": 4.48,
+            "end": 4.64
+          },
+          {
+            "text": " j",
+            "start": 4.64,
+            "end": 4.8
+          },
+          {
+            "text": "usti",
+            "start": 4.8,
+            "end": 4.88
+          },
+          {
+            "text": "ce",
+            "start": 4.88,
+            "end": 4.96
+          },
+          {
+            "text": " for",
+            "start": 5.2,
+            "end": 5.36
+          },
+          {
+            "text": " all",
+            "start": 5.36,
+            "end": 5.52
+          },
+          {
+            "text": ".",
+            "start": 5.68,
+            "end": 5.84
+          },
+          {
+            "text": " In",
+            "start": 13.44,
+            "end": 13.6
+          },
+          {
+            "text": " acc",
+            "start": 13.68,
+            "end": 13.84
+          },
+          {
+            "text": "ord",
+            "start": 13.84,
+            "end": 14.0
+          },
+          {
+            "text": "ance",
+            "start": 14.0,
+            "end": 14.16
+          },
+          {
+            "text": " with",
+            "start": 14.48,
+            "end": 14.56
+          },
+          {
+            "text": " the",
+            "start": 14.8,
+            "end": 14.96
+          },
+          {
+            "text": " co",
+            "start": 15.04,
+            "end": 15.2
+          },
+          {
+            "text": "un",
+            "start": 15.2,
+            "end": 15.36
+          },
+          {
+            "text": "cil",
+            "start": 15.36,
+            "end": 15.44
+          },
+          {
+            "text": "'",
+            "start": 15.44,
+            "end": 15.52
+          },
+          {
+            "text": "s",
+            "start": 15.52,
+            "end": 15.6
+          },
+          {
+            "text": " r",
+            "start": 15.6,
+            "end": 15.68
+          },
+          {
+            "text": "ul",
+            "start": 15.68,
+            "end": 15.76
+          },
+          {
+            "text": "es",
+            "start": 15.76,
+            "end": 15.84
+          },
+          {
+            "text": " of",
+            "start": 15.84,
+            "end": 15.92
+          },
+          {
+            "text": " pro",
+            "start": 16.0,
+            "end": 16.16
+          },
+          {
+            "text": "ced",
+            "start": 16.16,
+            "end": 16.24
+          },
+          {
+            "text": "ure",
+            "start": 16.32,
+            "end": 16.48
+          },
+          {
+            "text": ",",
+            "start": 16.48,
+            "end": 16.56
+          },
+          {
+            "text": " the",
+            "start": 16.56,
+            "end": 16.72
+          },
+          {
+            "text": " r",
+            "start": 16.72,
+            "end": 16.8
+          },
+          {
+            "text": "ul",
+            "start": 16.8,
+            "end": 16.88
+          },
+          {
+            "text": "es",
+            "start": 16.88,
+            "end": 17.04
+          },
+          {
+            "text": " for",
+            "start": 17.04,
+            "end": 17.2
+          },
+          {
+            "text": " pro",
+            "start": 17.2,
+            "end": 17.28
+          },
+          {
+            "text": "vid",
+            "start": 17.28,
+            "end": 17.44
+          },
+          {
+            "text": "ing",
+            "start": 17.44,
+            "end": 17.6
+          },
+          {
+            "text": " public",
+            "start": 17.68,
+            "end": 17.84
+          },
+          {
+            "text": " com",
+            "start": 18.0,
+            "end": 18.08
+          },
+          {
+            "text": "ment",
+            "start": 18.08,
+            "end": 18.16
+          },
+          {
+            "text": " are",
+            "start": 18.32,
+            "end": 18.48
+          },
+          {
+            "text": " as",
+            "start": 18.56,
+            "end": 18.72
+          },
+          {
+            "text": " f",
+            "start": 18.72,
+            "end": 18.8
+          },
+          {
+            "text": "oll",
+            "start": 18.8,
+            "end": 18.88
+          },
+          {
+            "text": "ow",
+            "start": 18.88,
+            "end": 18.96
+          },
+          {
+            "text": "ed",
+            "start": 18.96,
+            "end": 19.12
+          },
+          {
+            "text": ".",
+            "start": 19.28,
+            "end": 19.44
+          },
+          {
+            "text": " On",
+            "start": 19.44,
+            "end": 19.52
+          },
+          {
+            "text": "ly",
+            "start": 19.52,
+            "end": 19.68
+          },
+          {
+            "text": " L",
+            "start": 19.68,
+            "end": 19.76
+          },
+          {
+            "text": "ong",
+            "start": 19.76,
+            "end": 19.92
+          },
+          {
+            "text": "m",
+            "start": 19.92,
+            "end": 20.08
+          },
+          {
+            "text": "ont",
+            "start": 20.08,
+            "end": 20.16
+          },
+          {
+            "text": " res",
+            "start": 20.32,
+            "end": 20.4
+          },
+          {
+            "text": "ident",
+            "start": 20.4,
+            "end": 20.48
+          },
+          {
+            "text": "s",
+            "start": 20.56,
+            "end": 20.64
+          },
+          {
+            "text": " and",
+            "start": 20.8,
+            "end": 20.96
+          },
+          {
+            "text": " em",
+            "start": 21.04,
+            "end": 21.12
+          },
+          {
+            "text": "plo",
+            "start": 21.12,
+            "end": 21.28
+          },
+          {
+            "text": "ye",
+            "start": 21.28,
+            "end": 21.44
+          },
+          {
+            "text": "es",
+            "start": 21.44,
+            "end": 21.6
+          },
+          {
+            "text": " um",
+            "start": 21.84,
+            "end": 22.0
+          },
+          {
+            "text": " in",
+            "start": 22.08,
+            "end": 22.24
+          },
+          {
+            "text": " the",
+            "start": 22.24,
+            "end": 22.32
+          },
+          {
+            "text": " c",
+            "start": 22.32,
+            "end": 22.48
+          },
+          {
+            "text": "ity",
+            "start": 22.48,
+            "end": 22.56
+          },
+          {
+            "text": " of",
+            "start": 22.56,
+            "end": 22.72
+          },
+          {
+            "text": " of",
+            "start": 22.8,
+            "end": 22.88
+          },
+          {
+            "text": " the",
+            "start": 22.96,
+            "end": 23.04
+          },
+          {
+            "text": " c",
+            "start": 23.04,
+            "end": 23.12
+          },
+          {
+            "text": "ity",
+            "start": 23.12,
+            "end": 23.28
+          },
+          {
+            "text": " of",
+            "start": 23.28,
+            "end": 23.36
+          },
+          {
+            "text": " L",
+            "start": 23.36,
+            "end": 23.44
+          },
+          {
+            "text": "ong",
+            "start": 23.44,
+            "end": 23.52
+          },
+          {
+            "text": "m",
+            "start": 23.6,
+            "end": 23.68
+          },
+          {
+            "text": "ont",
+            "start": 23.68,
+            "end": 23.76
+          },
+          {
+            "text": " may",
+            "start": 24.0,
+            "end": 24.08
+          },
+          {
+            "text": " spe",
+            "start": 24.16,
+            "end": 24.24
+          },
+          {
+            "text": "ak",
+            "start": 24.24,
+            "end": 24.4
+          },
+          {
+            "text": " dur",
+            "start": 24.4,
+            "end": 24.56
+          },
+          {
+            "text": "ing",
+            "start": 24.56,
+            "end": 24.72
+          },
+          {
+            "text": " first",
+            "start": 24.72,
+            "end": 24.8
+          },
+          {
+            "text": " c",
+            "start": 24.88,
+            "end": 24.96
+          },
+          {
+            "text": "all",
+            "start": 24.96,
+            "end": 25.12
+          },
+          {
+            "text": " public",
+            "start": 25.2,
+            "end": 25.36
+          },
+          {
+            "text": " inv",
+            "start": 25.52,
+            "end": 25.6
+          },
+          {
+            "text": "it",
+            "start": 25.6,
+            "end": 25.68
+          },
+          {
+            "text": "ed",
+            "start": 25.76,
+            "end": 25.92
+          },
+          {
+            "text": " to",
+            "start": 25.92,
+            "end": 26.08
+          },
+          {
+            "text": " be",
+            "start": 26.08,
+            "end": 26.24
+          },
+          {
+            "text": " he",
+            "start": 26.24,
+            "end": 26.32
+          },
+          {
+            "text": "ard",
+            "start": 26.32,
+            "end": 26.48
+          },
+          {
+            "text": ".",
+            "start": 26.64,
+            "end": 26.8
+          },
+          {
+            "text": " You",
+            "start": 26.8,
+            "end": 26.88
+          },
+          {
+            "text": " m",
+            "start": 26.96,
+            "end": 27.04
+          },
+          {
+            "text": "ust",
+            "start": 27.04,
+            "end": 27.2
+          },
+          {
+            "text": " prov",
+            "start": 27.2,
+            "end": 27.36
+          },
+          {
+            "text": "ide",
+            "start": 27.36,
+            "end": 27.44
+          },
+          {
+            "text": " your",
+            "start": 27.6,
+            "end": 27.76
+          },
+          {
+            "text": " add",
+            "start": 27.76,
+            "end": 27.92
+          },
+          {
+            "text": "ress",
+            "start": 27.92,
+            "end": 28.0
+          },
+          {
+            "text": " at",
+            "start": 28.24,
+            "end": 28.4
+          },
+          {
+            "text": " the",
+            "start": 28.4,
+            "end": 28.48
+          },
+          {
+            "text": " sign",
+            "start": 28.48,
+            "end": 28.64
+          },
+          {
+            "text": " up",
+            "start": 28.8,
+            "end": 28.88
+          },
+          {
+            "text": " she",
+            "start": 28.96,
+            "end": 29.04
+          },
+          {
+            "text": "et",
+            "start": 29.04,
+            "end": 29.12
+          },
+          {
+            "text": " be",
+            "start": 29.2,
+            "end": 29.28
+          },
+          {
+            "text": "for",
+            "start": 29.28,
+            "end": 29.36
+          },
+          {
+            "text": "e",
+            "start": 29.36,
+            "end": 29.44
+          },
+          {
+            "text": " the",
+            "start": 29.44,
+            "end": 29.52
+          },
+          {
+            "text": " me",
+            "start": 29.52,
+            "end": 29.6
+          },
+          {
+            "text": "et",
+            "start": 29.6,
+            "end": 29.6
+          },
+          {
+            "text": "ing",
+            "start": 29.6,
+            "end": 29.68
+          },
+          {
+            "text": " or",
+            "start": 29.76,
+            "end": 29.84
+          }
+        ],
+        "timed": true,
+        "windows": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 30.0,
+            "text": "One nation under God, indivisible, with liberty and justice for all. In accordance with the council's rules of procedure, the rules for providing public comment are as followed. Only Longmont residents and employees um in the city of of the city of Longmont may speak during first call public invited to be heard. You must provide your address at the sign up sheet before the meeting or"
+          }
+        ]
+      }
+    },
+    {
+      "index": 361,
+      "seconds": 0.5902815000154078,
+      "result": {
+        "text": "But then when the nineteenth half",
+        "decode_seconds": 0.5894638999889139,
+        "audio_seconds": 30.0,
+        "segments": [
+          {
+            "id": 0,
+            "start": 28.64,
+            "end": 29.84,
+            "text": "But then when the nineteenth half"
+          }
+        ],
+        "truncated": false,
+        "generation_tokens": 10,
+        "words": [
+          {
+            "text": "But",
+            "start": 28.64,
+            "end": 28.72
+          },
+          {
+            "text": "then",
+            "start": 28.88,
+            "end": 29.04
+          },
+          {
+            "text": "when",
+            "start": 29.04,
+            "end": 29.2
+          },
+          {
+            "text": "the",
+            "start": 29.2,
+            "end": 29.28
+          },
+          {
+            "text": "nineteenth",
+            "start": 29.28,
+            "end": 29.6
+          },
+          {
+            "text": "half",
+            "start": 29.68,
+            "end": 29.84
+          }
+        ],
+        "tokens": [
+          {
+            "text": " But",
+            "start": 28.64,
+            "end": 28.72
+          },
+          {
+            "text": " then",
+            "start": 28.88,
+            "end": 29.04
+          },
+          {
+            "text": " when",
+            "start": 29.04,
+            "end": 29.2
+          },
+          {
+            "text": " the",
+            "start": 29.2,
+            "end": 29.28
+          },
+          {
+            "text": " nin",
+            "start": 29.28,
+            "end": 29.36
+          },
+          {
+            "text": "ete",
+            "start": 29.36,
+            "end": 29.44
+          },
+          {
+            "text": "ent",
+            "start": 29.44,
+            "end": 29.52
+          },
+          {
+            "text": "h",
+            "start": 29.52,
+            "end": 29.6
+          },
+          {
+            "text": " hal",
+            "start": 29.68,
+            "end": 29.76
+          },
+          {
+            "text": "f",
+            "start": 29.76,
+            "end": 29.84
+          }
+        ],
+        "timed": true,
+        "windows": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 30.0,
+            "text": "But then when the nineteenth half"
+          }
+        ]
+      }
+    },
+    {
+      "index": 441,
+      "seconds": 0.6606851000105962,
+      "result": {
+        "text": "Yeah. We're still in the process.",
+        "decode_seconds": 0.6599612999998499,
+        "audio_seconds": 30.0,
+        "segments": [
+          {
+            "id": 0,
+            "start": 28.08,
+            "end": 30.0,
+            "text": "Yeah. We're still in the process."
+          }
+        ],
+        "truncated": false,
+        "generation_tokens": 13,
+        "words": [
+          {
+            "text": "Yeah.",
+            "start": 28.08,
+            "end": 28.56
+          },
+          {
+            "text": "We're",
+            "start": 28.64,
+            "end": 28.96
+          },
+          {
+            "text": "still",
+            "start": 28.96,
+            "end": 29.2
+          },
+          {
+            "text": "in",
+            "start": 29.28,
+            "end": 29.44
+          },
+          {
+            "text": "the",
+            "start": 29.44,
+            "end": 29.52
+          },
+          {
+            "text": "process.",
+            "start": 29.52,
+            "end": 30.0
+          }
+        ],
+        "tokens": [
+          {
+            "text": " Ye",
+            "start": 28.08,
+            "end": 28.16
+          },
+          {
+            "text": "ah",
+            "start": 28.16,
+            "end": 28.24
+          },
+          {
+            "text": ".",
+            "start": 28.4,
+            "end": 28.56
+          },
+          {
+            "text": " We",
+            "start": 28.64,
+            "end": 28.72
+          },
+          {
+            "text": "'",
+            "start": 28.72,
+            "end": 28.8
+          },
+          {
+            "text": "re",
+            "start": 28.8,
+            "end": 28.96
+          },
+          {
+            "text": " st",
+            "start": 28.96,
+            "end": 29.12
+          },
+          {
+            "text": "ill",
+            "start": 29.12,
+            "end": 29.2
+          },
+          {
+            "text": " in",
+            "start": 29.28,
+            "end": 29.44
+          },
+          {
+            "text": " the",
+            "start": 29.44,
+            "end": 29.52
+          },
+          {
+            "text": " pro",
+            "start": 29.52,
+            "end": 29.68
+          },
+          {
+            "text": "cess",
+            "start": 29.68,
+            "end": 29.76
+          },
+          {
+            "text": ".",
+            "start": 29.84,
+            "end": 30.0
+          }
+        ],
+        "timed": true,
+        "windows": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 30.0,
+            "text": "Yeah. We're still in the process."
+          }
+        ]
+      }
+    }
+  ]
+}

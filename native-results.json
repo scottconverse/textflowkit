@@ -1,0 +1,441 @@
+[
+  {
+    "index": 2,
+    "input_start": 50,
+    "input_end": 80,
+    "fresh_30s": {
+      "text": "One nation under God, indivisible, with liberty and justice for all.",
+      "decode_seconds": 0.34418559999903664,
+      "audio_seconds": 30.0,
+      "segments": [
+        {
+          "id": 0,
+          "start": 0.32,
+          "end": 5.84,
+          "text": "One nation under God, indivisible, with liberty and justice for all."
+        }
+      ],
+      "truncated": false,
+      "generation_tokens": 22,
+      "words": [
+        {
+          "text": "One",
+          "start": 0.32,
+          "end": 0.64
+        },
+        {
+          "text": "nation",
+          "start": 0.72,
+          "end": 1.04
+        },
+        {
+          "text": "under",
+          "start": 1.2,
+          "end": 1.36
+        },
+        {
+          "text": "God,",
+          "start": 1.84,
+          "end": 2.56
+        },
+        {
+          "text": "indivisible,",
+          "start": 2.56,
+          "end": 3.52
+        },
+        {
+          "text": "with",
+          "start": 3.52,
+          "end": 3.68
+        },
+        {
+          "text": "liberty",
+          "start": 3.84,
+          "end": 4.16
+        },
+        {
+          "text": "and",
+          "start": 4.48,
+          "end": 4.64
+        },
+        {
+          "text": "justice",
+          "start": 4.64,
+          "end": 4.96
+        },
+        {
+          "text": "for",
+          "start": 5.2,
+          "end": 5.36
+        },
+        {
+          "text": "all.",
+          "start": 5.36,
+          "end": 5.84
+        }
+      ],
+      "tokens": [
+        {
+          "text": " O",
+          "start": 0.32,
+          "end": 0.48
+        },
+        {
+          "text": "ne",
+          "start": 0.48,
+          "end": 0.64
+        },
+        {
+          "text": " n",
+          "start": 0.72,
+          "end": 0.88
+        },
+        {
+          "text": "ation",
+          "start": 0.88,
+          "end": 1.04
+        },
+        {
+          "text": " under",
+          "start": 1.2,
+          "end": 1.36
+        },
+        {
+          "text": " God",
+          "start": 1.84,
+          "end": 2.0
+        },
+        {
+          "text": ",",
+          "start": 2.4,
+          "end": 2.56
+        },
+        {
+          "text": " indiv",
+          "start": 2.56,
+          "end": 2.72
+        },
+        {
+          "text": "is",
+          "start": 2.88,
+          "end": 3.04
+        },
+        {
+          "text": "ib",
+          "start": 3.04,
+          "end": 3.2
+        },
+        {
+          "text": "le",
+          "start": 3.2,
+          "end": 3.36
+        },
+        {
+          "text": ",",
+          "start": 3.44,
+          "end": 3.52
+        },
+        {
+          "text": " with",
+          "start": 3.52,
+          "end": 3.68
+        },
+        {
+          "text": " liber",
+          "start": 3.84,
+          "end": 4.0
+        },
+        {
+          "text": "ty",
+          "start": 4.0,
+          "end": 4.16
+        },
+        {
+          "text": " and",
+          "start": 4.48,
+          "end": 4.64
+        },
+        {
+          "text": " j",
+          "start": 4.64,
+          "end": 4.8
+        },
+        {
+          "text": "usti",
+          "start": 4.8,
+          "end": 4.88
+        },
+        {
+          "text": "ce",
+          "start": 4.88,
+          "end": 4.96
+        },
+        {
+          "text": " for",
+          "start": 5.2,
+          "end": 5.36
+        },
+        {
+          "text": " all",
+          "start": 5.36,
+          "end": 5.52
+        },
+        {
+          "text": ".",
+          "start": 5.68,
+          "end": 5.84
+        }
+      ],
+      "timed": true,
+      "windows": [
+        {
+          "id": 0,
+          "start": 0.0,
+          "end": 30.0,
+          "text": "One nation under God, indivisible, with liberty and justice for all."
+        }
+      ]
+    }
+  },
+  {
+    "index": 361,
+    "input_start": 9384,
+    "input_end": 9414,
+    "fresh_30s": {
+      "text": "But then when the nineteenth half",
+      "decode_seconds": 0.3448887999984436,
+      "audio_seconds": 30.0,
+      "segments": [
+        {
+          "id": 0,
+          "start": 28.64,
+          "end": 29.84,
+          "text": "But then when the nineteenth half"
+        }
+      ],
+      "truncated": false,
+      "generation_tokens": 10,
+      "words": [
+        {
+          "text": "But",
+          "start": 28.64,
+          "end": 28.72
+        },
+        {
+          "text": "then",
+          "start": 28.88,
+          "end": 29.04
+        },
+        {
+          "text": "when",
+          "start": 29.04,
+          "end": 29.2
+        },
+        {
+          "text": "the",
+          "start": 29.2,
+          "end": 29.28
+        },
+        {
+          "text": "nineteenth",
+          "start": 29.28,
+          "end": 29.6
+        },
+        {
+          "text": "half",
+          "start": 29.68,
+          "end": 29.84
+        }
+      ],
+      "tokens": [
+        {
+          "text": " But",
+          "start": 28.64,
+          "end": 28.72
+        },
+        {
+          "text": " then",
+          "start": 28.88,
+          "end": 29.04
+        },
+        {
+          "text": " when",
+          "start": 29.04,
+          "end": 29.2
+        },
+        {
+          "text": " the",
+          "start": 29.2,
+          "end": 29.28
+        },
+        {
+          "text": " nin",
+          "start": 29.28,
+          "end": 29.36
+        },
+        {
+          "text": "ete",
+          "start": 29.36,
+          "end": 29.44
+        },
+        {
+          "text": "ent",
+          "start": 29.44,
+          "end": 29.52
+        },
+        {
+          "text": "h",
+          "start": 29.52,
+          "end": 29.6
+        },
+        {
+          "text": " hal",
+          "start": 29.68,
+          "end": 29.76
+        },
+        {
+          "text": "f",
+          "start": 29.76,
+          "end": 29.84
+        }
+      ],
+      "timed": true,
+      "windows": [
+        {
+          "id": 0,
+          "start": 0.0,
+          "end": 30.0,
+          "text": "But then when the nineteenth half"
+        }
+      ]
+    }
+  },
+  {
+    "index": 441,
+    "input_start": 11464,
+    "input_end": 11494,
+    "fresh_30s": {
+      "text": "Yeah. We're still in the process.",
+      "decode_seconds": 0.3382893000089098,
+      "audio_seconds": 30.0,
+      "segments": [
+        {
+          "id": 0,
+          "start": 28.08,
+          "end": 30.0,
+          "text": "Yeah. We're still in the process."
+        }
+      ],
+      "truncated": false,
+      "generation_tokens": 13,
+      "words": [
+        {
+          "text": "Yeah.",
+          "start": 28.08,
+          "end": 28.56
+        },
+        {
+          "text": "We're",
+          "start": 28.64,
+          "end": 28.96
+        },
+        {
+          "text": "still",
+          "start": 28.96,
+          "end": 29.2
+        },
+        {
+          "text": "in",
+          "start": 29.28,
+          "end": 29.44
+        },
+        {
+          "text": "the",
+          "start": 29.44,
+          "end": 29.52
+        },
+        {
+          "text": "process.",
+          "start": 29.52,
+          "end": 30.0
+        }
+      ],
+      "tokens": [
+        {
+          "text": " Ye",
+          "start": 28.08,
+          "end": 28.16
+        },
+        {
+          "text": "ah",
+          "start": 28.16,
+          "end": 28.24
+        },
+        {
+          "text": ".",
+          "start": 28.4,
+          "end": 28.56
+        },
+        {
+          "text": " We",
+          "start": 28.64,
+          "end": 28.72
+        },
+        {
+          "text": "'",
+          "start": 28.72,
+          "end": 28.8
+        },
+        {
+          "text": "re",
+          "start": 28.8,
+          "end": 28.96
+        },
+        {
+          "text": " st",
+          "start": 28.96,
+          "end": 29.12
+        },
+        {
+          "text": "ill",
+          "start": 29.12,
+          "end": 29.2
+        },
+        {
+          "text": " in",
+          "start": 29.28,
+          "end": 29.44
+        },
+        {
+          "text": " the",
+          "start": 29.44,
+          "end": 29.52
+        },
+        {
+          "text": " pro",
+          "start": 29.52,
+          "end": 29.68
+        },
+        {
+          "text": "cess",
+          "start": 29.68,
+          "end": 29.76
+        },
+        {
+          "text": ".",
+          "start": 29.84,
+          "end": 30.0
+        }
+      ],
+      "timed": true,
+      "windows": [
+        {
+          "id": 0,
+          "start": 0.0,
+          "end": 30.0,
+          "text": "Yeah. We're still in the process."
+        }
+      ]
+    }
+  }
+]
