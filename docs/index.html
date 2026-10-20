@@ -215,7 +215,7 @@
         </div>
         <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
         <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15">v0.1.15</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
-        <p class="micro">v0.1.15 is a developer-tooling patch; transcription behavior is unchanged. The verified Windows installer remains v0.1.13.</p>
+        <p class="micro">v0.1.15 is a developer-tooling patch; transcription behavior is unchanged. The verified Windows installer is v0.1.15.</p>
       </div>
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
@@ -327,10 +327,10 @@
         </div>
       </div>
       <div class="installer-candidate" aria-labelledby="installer-candidate-title">
-        <span class="kicker">Windows x86_64 · v0.1.13 installer</span>
+        <span class="kicker">Windows x86_64 · v0.1.15 installer</span>
         <h3 id="installer-candidate-title">The same local workspace, packaged for Windows.</h3>
-        <p><a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe">Download Windows x64 installer</a> · <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13">Matching sources and notices</a></p>
-        <p>The native Windows installer packages core v0.1.13. The installer and matching FFmpeg source archives, notices and build instructions are offered together in the v0.1.13 GitHub release. It requires no separately installed Python, WSL, or Docker.</p>
+        <p><a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe">Download Windows x64 installer</a> · <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15">Matching sources and notices</a></p>
+        <p>The native Windows installer packages core v0.1.15. The installer and matching FFmpeg source archives, notices and build instructions are offered together in the v0.1.15 GitHub release. It requires no separately installed Python, WSL, or Docker.</p>
         <ol class="installer-flow" aria-label="Windows installer architecture">
           <li class="installer-step"><b>01 / SETUP</b><strong>Per-user installer</strong><span>Locally tested x86_64 installer</span></li>
           <li class="installer-step"><b>02 / RUNTIME</b><strong>Private local runtime</strong><span>CPython, UI/HTTP, exports, streaming dependencies, pinned Whistle assets, ffmpeg, ffprobe, Node</span></li>
@@ -343,8 +343,9 @@
           <li>Normally no administrator rights, no global <code>PATH</code> changes, and no automatic updates. Data is designed to survive upgrades and uninstall.</li>
           <li>Before upgrade or uninstall, stop the UI with <strong>Stop server</strong> and wait. The candidate will block while it is running rather than force-kill jobs; Stop server drains work, so cancel a job first if it should not finish.</li>
           <li>Optional <code>openai-whisper</code> and diarization dependencies are not bundled; those documented features remain available through the Python package with their required dependencies. Streaming remains opt-in, and physical browser microphone capture has not been verified.</li>
-          <li>The installer bundle includes third-party license and notice files, including FFmpeg LGPL notices and corresponding-source information; check the exact notices and source-distribution details against the final binaries before publication. The unsigned candidate may show a Windows SmartScreen warning.</li>
+          <li>The installer bundle includes third-party license and notice files, including FFmpeg LGPL notices and corresponding-source information; matching dependency source snapshots and their checksums accompany this release. The unsigned installer may show a Windows SmartScreen warning.</li>
         </ul>
+        <p class="note">The v0.1.15 EXE passed actual isolated installation, version readback, native speech selftest and browser UI launch. <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS">Windows checksums</a> · <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md">Build and source details</a>. Unchanged dependency source/notice snapshots retain v0.1.13 filenames and hashes; the app is v0.1.15.</p>
         <p class="note">The Python package remains supported for developers and integrations. Docker is a separate operator deployment option.</p>
       </div>
     </section>

@@ -168,11 +168,13 @@ installs `textflowkit-fonts` for offline multilingual PDF rendering:
 python -m pip install 'textflowkit[export]'
 ```
 
-## Windows desktop installer (latest verified installer: v0.1.13)
+## Windows desktop installer (latest verified installer: v0.1.15)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
 
-An installer for the existing local browser workspace accompanies core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). The Python package remains supported for developers and integrations.
+Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](docs/verification/windows-installer-v015-20261020.md). Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
+
+An installer for the existing local browser workspace accompanies core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). The Python package remains supported for developers and integrations.
 
 The installer is designed to run without a separately installed Python, WSL, or
 Docker. Its bundle includes a private embeddable CPython runtime, the
@@ -200,7 +202,7 @@ includes third-party license and notice files, including FFmpeg's LGPL notices
 and corresponding-source information. Check exact notices and source-distribution
 details in the matching source bundles distributed with this release. The installer is
 unsigned, so Windows may show a SmartScreen warning. See the [installer candidate
-notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0113).
+notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0115).
 
 ## Python API
 
@@ -489,7 +491,7 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.15 release.** Developer-tooling patch: records the required isolated headless Codex workflow for DeepSeek coding contributors. Transcription, AI cleanup and streaming behavior are unchanged from v0.1.13; fonts remain 0.1.6. The latest verified Windows installer remains v0.1.13, with its matching source and notice bundles. No new native transcription proof is claimed for this documentation patch.
+**v0.1.15 release.** Developer-tooling patch: records the required isolated headless Codex workflow for DeepSeek coding contributors. Transcription, AI cleanup and streaming behavior are unchanged from v0.1.13; fonts remain 0.1.6. The latest verified Windows installer is v0.1.15, with its matching source and notice bundles. The rebuilt EXE passed isolated installation, installed-version, real Whistle speech selftest and local browser launch checks; no new four-hour accuracy claim is made.
 
 **Whistle behavior introduced in v0.1.13.** Fixes reproduced Whistle speech omissions. Native decode
 inputs are now bounded to 15 seconds (11-second owned cores with up to 2 seconds
@@ -617,7 +619,6 @@ limitation of liability.
 
 Issues and PRs welcome. Please read [LEGAL.md](https://github.com/scottconverse/textflowkit/blob/main/LEGAL.md) before adding a source
 adapter.
-
 
 ## Optional local AI transcript cleanup (introduced in v0.1.12)
 
