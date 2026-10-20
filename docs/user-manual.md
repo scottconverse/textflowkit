@@ -19,7 +19,7 @@ extra selected explicitly with `--engine whisper`. See
 [section 2](#2-transcribe-one-file-or-url) and
 [section 8](#8-whistle-the-default-engine).
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper/faster-whisper engine, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 ## 1. Install and check the machine
 
@@ -43,10 +43,10 @@ only these seven advertised languages: `en`, `de`, `fr`, `es`, `it`, `nl`, and
 Optional `openai-whisper` and diarization dependencies are not bundled; those
 documented optional features remain available to Python package users who install
 and configure their dependencies separately. Streaming remains opt-in, and
-physical browser microphone capture has not been verified. The candidate is
+physical browser microphone capture has not been verified. The installer is
 designed to keep user data outside the application install folder and preserve it
 on upgrade and uninstall. Before upgrading or uninstalling, use **Stop server**
-and wait for the server to exit. The candidate will block while it is running
+and wait for the server to exit. The installer will block while it is running
 rather than force-kill it; Stop server drains active jobs, so cancel a job first
 if it should not finish.
 
@@ -58,7 +58,7 @@ for its scope and status.
 ```mermaid
 sequenceDiagram
     actor User
-    participant Setup as Per-user setup candidate
+    participant Setup as Per-user Windows setup
     participant Runtime as Bundled private CPython
     participant Server as Local server on 127.0.0.1
     participant Browser as Browser UI
@@ -130,7 +130,7 @@ on every release. See [sources and limitations](sources.md).
 
 `--engine` chooses the speech engine. The default is `whistle` (a CPU-only
 native CLI that needs no torch — see
-[section 7](#7-whistle-the-default-engine)). `--engine whisper` selects
+[section 8](#8-whistle-the-default-engine)). `--engine whisper` selects
 `openai-whisper` on the torch stack — ROCm
 on AMD, CUDA on NVIDIA, CPU otherwise.
 and `--engine faster-whisper` is an opt-in CPU/Mac engine; it needs
@@ -295,9 +295,13 @@ when using its JSON API. Example PowerShell client:
 
 ```powershell
 $base = 'http://127.0.0.1:8767'
-$body = @{ source = 'C:\media\meeting.mp4'; model = 'small' } | ConvertTo-Json
+$body = @{ source = 'C:\media\meeting.mp4' } | ConvertTo-Json
 $job = Invoke-RestMethod -Method Post -Uri "$base/jobs" -ContentType 'application/json' -Body $body
-Invoke-RestMethod "$base/jobs/$($job.id)"  # poll until state is done
+do {
+    Start-Sleep -Seconds 1
+    $status = Invoke-RestMethod "$base/jobs/$($job.id)"
+} while ($status.state -notin @('done', 'error', 'cancelled'))
+if ($status.state -ne 'done') { throw "Job ended: $($status.state) $($status.error)" }
 Invoke-RestMethod "$base/jobs/$($job.id)/transcript?include_words=true"
 ```
 
@@ -327,7 +331,7 @@ without the documented authentication/TLS gateway, input/output boundaries,
 and SSRF-filtering egress proxy. A long `openai-whisper` model call cancels
 cooperatively at its next stage boundary, not immediately; a Whistle run
 terminates its owned child process promptly between clips (see
-[section 7](#7-whistle-the-default-engine)). MCP and HTTP jobs decode
+[section 8](#8-whistle-the-default-engine)). MCP and HTTP jobs decode
 under the same `TEXTFLOWKIT_FFMPEG_TIMEOUT_SECONDS` wall-clock limit as the CLI
 (see [transcribe one file or URL](#2-transcribe-one-file-or-url)).
 
@@ -419,7 +423,7 @@ live optional-backend (translation/diarization) run through the UI is claimed,
 and no live Linux or macOS UI run was performed here — those platforms are
 covered by automated tests only.
 
-### 7.1 Live microphone streaming (opt-in, introduced in v0.1.11; v0.1.13)
+### 7.1 Live microphone streaming (opt-in, introduced in v0.1.11)
 
 ![Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams.](assets/live-streaming-flow.svg)
 
@@ -644,7 +648,7 @@ rendered with DOM text nodes, never HTML. Cleanup adds no Python dependency,
 telemetry, cloud provider or network destination beyond the configured local
 Ollama service. Existing media acquisition/translation network behavior is separate.
 
-### Candidate validation status
+### Historical cleanup validation (2026-10-16)
 
 The first cold full-UI attempt ended with a generic error and produced no variant;
 the original remained intact. A subsequent hot 39-segment run returned zero text

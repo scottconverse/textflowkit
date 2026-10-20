@@ -69,7 +69,7 @@ DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.15/docs/assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper/faster-whisper engine, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/main/docs/assets/architecture-overview.svg)
 
 The design principle is **one shared core, thin doors**. Everything of substance
 lives in the core; the interfaces are thin — the local browser UI is a fifth door
@@ -172,7 +172,7 @@ python -m pip install 'textflowkit[export]'
 
 [Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
 
-Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](docs/verification/windows-installer-v015-20261020.md). Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
+Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v015-20261020.md). Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
 
 An installer for the existing local browser workspace accompanies core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). The Python package remains supported for developers and integrations.
 
@@ -201,7 +201,7 @@ Cancel a job first if it should not drain to completion. The bundle also
 includes third-party license and notice files, including FFmpeg's LGPL notices
 and corresponding-source information. Check exact notices and source-distribution
 details in the matching source bundles distributed with this release. The installer is
-unsigned, so Windows may show a SmartScreen warning. See the [installer candidate
+unsigned, so Windows may show a SmartScreen warning. See the [installer
 notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0115).
 
 ## Python API

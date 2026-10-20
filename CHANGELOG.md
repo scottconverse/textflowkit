@@ -1,5 +1,10 @@
 # Changelog
 
+## Documentation follow-up — 2026-10-20 (no new binary release)
+
+- Check current README, manuals, website, architecture diagrams, packaging and contributor instructions against v0.1.15 interfaces. Correct the HTTP example's engine/model mismatch, GPU selftest selection, export endpoint, broken section anchors and remaining stale installer versions.
+- Document all three speech engines in the overview diagram and keep current documentation separate from historical test evidence and immutable dependency/source snapshots. See the [documentation check record](docs/verification/documentation-surfaces-20261020.md).
+
 ## v0.1.15 — 2026-10-20
 
 Developer-tooling patch; core 0.1.15, unchanged optional fonts 0.1.6.

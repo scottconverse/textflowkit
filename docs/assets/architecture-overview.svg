@@ -8,8 +8,8 @@ the local browser interface is layered over the existing HTTP application — it
 under /api unchanged and adds only a loopback browser session — and shares the same job
 store, so it is not a new pipeline. The public Python transcribe() calls the pipeline
 directly and creates no adapter job. The core acquires and decodes audio with ffmpeg, then
-transcribes with one of two alternative engines — Whistle by default, or an explicitly
-selected openai-whisper — never both in sequence. Optional postprocessing (speaker labels or
+transcribes with one of three alternative engines — Whistle by default, or explicitly
+selected openai-whisper or faster-whisper — never chained together. Optional postprocessing (speaker labels or
 translation) sits after the transcript; when no postprocess is selected the transcript routes
 straight to export, bypassing it. Renderers publish TXT, SRT, VTT, JSON, Markdown, and
 optionally DOCX and PDF.</desc>
@@ -151,7 +151,7 @@ optionally DOCX and PDF.</desc>
   <path class="edge" d="M 252 200 C 360 190, 460 176, 540 162"/>
   <path class="edge" d="M 640 196 L 640 218"/>
 
-  <!-- Two ALTERNATIVE engines, branched from acquire/decode -->
+  <!-- Default engine or explicitly selected alternative, branched from acquire/decode -->
   <rect class="core" x="540" y="336" width="200" height="108"/>
   <text x="560" y="362" class="tag">DEFAULT ENGINE</text>
   <text x="560" y="386" class="hs">Whistle</text>
@@ -160,9 +160,9 @@ optionally DOCX and PDF.</desc>
 
   <rect class="box" x="780" y="336" width="200" height="108"/>
   <text x="800" y="362" class="tag2">EXPLICIT ONLY</text>
-  <text x="800" y="386" class="hs">openai-whisper</text>
-  <text x="800" y="406" class="ts">torch: ROCm · CUDA · CPU</text>
-  <text x="800" y="424" class="ts">never selected for you</text>
+  <text x="800" y="386" class="hs">Optional engines</text>
+  <text x="800" y="406" class="ts">openai-whisper: torch</text>
+  <text x="800" y="424" class="ts">faster-whisper: CTranslate2</text>
 
   <!-- branch fan-out from decode to both alternative engines -->
   <path class="edgeM" d="M 620 296 C 620 314, 620 322, 640 336"/>
@@ -209,5 +209,5 @@ optionally DOCX and PDF.</desc>
   <text x="40" y="646" class="cap">* Postprocess is optional: without a selected postprocessor the canonical transcript routes directly to export.</text>
   <text x="40" y="664" class="cap">The local browser UI (fifth door) mounts the existing HTTP app under /api and shares the same job store — it adds transport only, not a new pipeline.</text>
   <text x="40" y="682" class="cap">Whistle runs a pinned native binary and one pinned model (hash-verified, first use); every Whistle child forces telemetry off.</text>
-  <text x="40" y="700" class="cap">openai-whisper needs the optional “whisper” extra and is never chosen unless asked. The static website never runs the pipeline.</text>
+  <text x="40" y="700" class="cap">Optional engines need their respective “whisper” or “faster-whisper” extras. The static website never runs the pipeline.</text>
 </svg>

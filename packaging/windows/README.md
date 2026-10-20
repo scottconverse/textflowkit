@@ -1,4 +1,4 @@
-# Native Windows installer (v0.1.13)
+# Native Windows installer (v0.1.15)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
@@ -48,7 +48,7 @@ The installer compiler wrapper validates that manifest before compiling.
 - No background update service, startup-at-login task, public HTTP listener, or
   Docker service is installed.
 
-## Local AI cleanup validation (v0.1.12, carried forward to v0.1.13)
+## Historical local AI cleanup validation (v0.1.12)
 
 A final cold full-UI run, begun with the local model explicitly unloaded, completed
 39 segments in three chunks with four changed segments. The in-app comparison and
@@ -61,7 +61,21 @@ its native Whistle selftest and a real 30-second transcription. The unchanged
 installer bootstrap/upgrade behavior retains its earlier acceptance evidence;
 the current build has not been installed over the owner's running application.
 
-## Before public distribution
+## Current published installer acceptance
+
+The [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
+contains the rebuilt v0.1.15 EXE, payload manifest and `WINDOWS-SHA256SUMS`.
+It was assembled from the exact v0.1.15 tag and published core wheel, preserving
+the verified dependency payload. An actual isolated EXE install passed version
+readback, native Whistle speech selftest and local browser UI launch. This was
+not an upgrade over the owner's active installation. See the
+[verification record](../../docs/verification/windows-installer-v015-20261020.md).
+
+The unchanged dependency sources/notices retain their original v0.1.13 snapshot
+filenames and hashes and accompany v0.1.15. The pins in `source-materials.json`
+identify dependency snapshots, not the application version; do not relabel them.
+
+## Distribution requirements
 
 Public EXE distribution requires the matching source assets and notices below.
 The installer is unsigned;

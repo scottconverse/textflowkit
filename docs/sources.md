@@ -79,7 +79,7 @@ the destination at connection time. Without one, production URL jobs refuse to
 run. The application guard includes:
 
 - **Blocked hostnames:** `localhost`, `localhost.localdomain`, `ip6-localhost`,
-  `metadata`, `metadata.google.internal`, and anything ending in `.localhost`.
+  `ip6-loopback`, `metadata`, `metadata.google.internal`, and anything ending in `.localhost`.
 - **Blocked networks:** `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`,
   `127.0.0.0/8`, `169.254.0.0/16` (includes `169.254.169.254` cloud metadata),
   `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `224.0.0.0/4`,

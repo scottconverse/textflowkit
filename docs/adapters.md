@@ -15,7 +15,7 @@ interface (`textflowkit-ui`) all call `textflowkit.core.submission` and share on
 job model for file and URL transcription. The optional live `StreamingSession`
 API and WebSockets are ephemeral and bypass durable job submission.
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper/faster-whisper engine, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 ```
                     ┌──────────────────────┐
@@ -45,7 +45,7 @@ supports only these seven advertised languages: `en`, `de`, `fr`, `es`, `it`,
 
 UI data is designed to stay outside the install directory and be preserved on
 upgrade and uninstall. Before either operation, stop the UI server with **Stop
-server** and wait for it to exit. The candidate will block while that server is
+server** and wait for it to exit. The installer will block while that server is
 running rather than force-kill it; the stop action drains active jobs, so cancel a
 job first if it should not finish. The installer does not bundle optional
 `openai-whisper` or diarization dependencies; those documented optional features
@@ -58,7 +58,7 @@ warning.
 
 ```mermaid
 flowchart LR
-    Setup[Per-user Windows x86_64 installer candidate] --> Runtime[Private embeddable CPython and bundled components]
+    Setup[Per-user Windows x86_64 installer] --> Runtime[Private embeddable CPython and bundled components]
     Shortcut[Start Menu or optional desktop shortcut] --> Server[Local server at 127.0.0.1]
     Runtime --> Server
     Server <--> Browser[Existing browser UI at localhost]
@@ -745,7 +745,7 @@ Two paths, because two kinds of output:
 | | Formats | Returned |
 |---|---|---|
 | **inline** (`get_transcript`, `GET /transcript`) | txt, srt, vtt, md, json | as text in the response |
-| **export** (`export_transcript`, `POST /export`) | all of the above **plus docx, pdf** | written to disk |
+| **export** (`export_transcript`, `POST /jobs/{id}/export`) | all of the above **plus docx, pdf** | written to disk |
 
 Binary formats cannot be returned inline, and asking for one that way returns a
 clear message rather than failing deeper down.

@@ -13,7 +13,7 @@ including AMD ROCm through PyTorch for the explicit `whisper` engine; no WSL lay
 is involved. Linux and macOS are additional targets. The published website is
 static documentation and never runs the pipeline.
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper/faster-whisper engine, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](assets/architecture-overview.svg)
 
 As of v0.1.9 the default engine is **Whistle**, a CPU-only native CLI that needs
 no torch and downloads one pinned model on first use. `openai-whisper` is an
@@ -26,9 +26,9 @@ a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
 
-### Windows desktop installer (v0.1.13)
+### Windows desktop installer (v0.1.15)
 
-The Windows x86_64 installer for core v0.1.13 provisions this same browser door without adding a second pipeline or hosted service. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+The Windows x86_64 installer for core v0.1.15 provisions this same browser door without adding a second pipeline or hosted service. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
 
 ```mermaid
 flowchart LR
@@ -49,14 +49,17 @@ features remain available to Python package users who install and configure them
 separately. Streaming dependencies are bundled, but streaming remains opt-in, and
 physical browser microphone capture has not been verified.
 
-The candidate is designed to keep per-user data outside the installation
+The installer is designed to keep per-user data outside the installation
 directory and preserve it across upgrades and uninstall. Stop the server from the
-UI and wait before either operation; the candidate will block while it is running
+UI and wait before either operation; the installer will block while it is running
 rather than force-kill it. Stop server drains active jobs, so cancel one first if
 it should not finish. The installer bundle includes third-party license
 and notice files, including FFmpeg's LGPL notices and corresponding-source
-information; verify the exact notices and source-distribution details against the
-final binaries before publication. The candidate is unsigned, so Windows may show
+information. The unchanged dependency source/notice snapshots retain their original
+v0.1.13 filenames and hashes in the v0.1.15 release. Actual isolated installation,
+version readback, native speech selftest and UI launch are recorded in the
+[v0.1.15 installer verification](verification/windows-installer-v015-20261020.md).
+The installer is unsigned, so Windows may show
 a SmartScreen warning. The Python package remains the supported
 developer and integration path, and Docker remains a separate operator option.
 
@@ -352,7 +355,7 @@ one-owning-process-per-store model below.
 
 Transcription outputs use a **no-clobber** publication rule: filenames include a
 job identifier, and a file is not overwritten by a different job's rendering.
-Explicit **re-export** (`export_transcript`, `POST /export`) is the path that
+Explicit **re-export** (`export_transcript`, `POST /jobs/{id}/export`) is the path that
 replaces a selected destination file (`{job_id}.{format}`). Completed-output
 reuse checks that the recorded files still match the job's expected publication.
 The rule is strict per format and never a byte budget:
@@ -518,4 +521,4 @@ three chunks at 2026-10-16 17:39:52 UTC, with four changed segments. The canonic
 SQLite JSON/source and segment IDs/timestamps matched, and the browser comparison
 and TXT save were verified. This confirms the local persistence/export path for
 that run only, not correction accuracy; human audio review remains required.
-The optional UI-only cleanup ships with core v0.1.12 (introduced in v0.1.12; unchanged in v0.1.13); models are not bundled.
+The optional UI-only cleanup is included in v0.1.15 (introduced in v0.1.12); models are not bundled.
