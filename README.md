@@ -8,7 +8,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
 [Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.13](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13).**
+**Current release: [v0.1.14](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.14).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -69,7 +69,7 @@ DOCX and PDF are available through the optional `export` extra.
 
 ## Architecture
 
-![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.13/docs/assets/architecture-overview.svg)
+![TextFlowKit shared-core architecture: five thin entry points feed one core. The CLI, Python API, MCP, HTTP API, and the local browser UI (a fifth door that mounts the existing HTTP app under /api and shares the same job store, adding transport only, not a new pipeline) sit above one core that acquires and decodes media, transcribes with the default Whistle engine or an explicitly selected openai-whisper, keeps job state and resume checkpoints in an optional SQLite store, adds optional speaker or translation postprocessing, and publishes TXT, SRT, VTT, JSON, Markdown, and optional DOCX/PDF exports.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.14/docs/assets/architecture-overview.svg)
 
 The design principle is **one shared core, thin doors**. Everything of substance
 lives in the core; the interfaces are thin — the local browser UI is a fifth door
@@ -93,7 +93,7 @@ see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/mai
 
 ## Live microphone streaming (opt-in)
 
-In v0.1.13, live streaming supports **Windows x86_64 only**. When
+In v0.1.14, live streaming supports **Windows x86_64 only**. When
 `TEXTFLOWKIT_STREAMING=1` is set, the developer HTTP app serves a `/stream`
 WebSocket and the local UI serves `/api/stream`, both transcribing a live microphone
 as you speak. A **runnable, self-hosted browser example** ships at
@@ -102,7 +102,7 @@ as you speak. A **runnable, self-hosted browser example** ships at
 No CDN, no analytics, no external fetch. Requires the `streaming` extra:
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.13"
+python -m pip install "textflowkit[streaming]==0.1.14"
 ```
 
 It is **off by default** — with the switch unset the endpoint does not exist — and
@@ -168,7 +168,7 @@ installs `textflowkit-fonts` for offline multilingual PDF rendering:
 python -m pip install 'textflowkit[export]'
 ```
 
-## Windows desktop installer (v0.1.13)
+## Windows desktop installer (latest verified installer: v0.1.13)
 
 [Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
 
@@ -297,7 +297,7 @@ textflowkit export ./transcript.json --format vtt
 needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
 torch; `openai-whisper` is an explicitly selectable opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 11-second cores with up to 2 seconds of context (each clip ≤ 15 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.13/docs/assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 11-second cores with up to 2 seconds of context (each clip ≤ 15 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.14/docs/assets/whistle-resume.svg)
 
 - **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
   model on first use. Naming a GPU device is refused rather than silently
@@ -418,7 +418,7 @@ its own beyond the `http` extra. It ships with the core package as of v0.1.10:
 a regular install of the current release carries it.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.13'
+python -m pip install 'textflowkit[http,export]==0.1.14'
 textflowkit-ui
 ```
 
@@ -489,7 +489,9 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.13 release.** Fixes reproduced Whistle speech omissions. Native decode
+**v0.1.14 release.** Documentation-only patch: records the required isolated headless Codex workflow for DeepSeek coding contributors. Transcription, AI cleanup and streaming behavior are unchanged from v0.1.13; fonts remain 0.1.6. The latest verified Windows installer remains v0.1.13, with its matching source and notice bundles. No new native transcription proof is claimed for this documentation patch.
+
+**Whistle behavior introduced in v0.1.13.** Fixes reproduced Whistle speech omissions. Native decode
 inputs are now bounded to 15 seconds (11-second owned cores with up to 2 seconds
 of context per side), short interior speech gaps get a bounded second listen that
 accepts words only between matching timed anchors, and shared-context words are

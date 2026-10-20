@@ -1,6 +1,10 @@
 # Developer and integration manual
 
-Current release: [v0.1.13](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13).
+Current release: [v0.1.14](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.14).
+
+v0.1.14 updates developer workflow documentation only; runtime behavior is unchanged. The latest verified Windows installer remains v0.1.13 with its matching sources and notices.
+For DeepSeek coding contributions, use the required [headless Codex worker workflow](deepseek-worker.md); this is a development tool, not a transcription-engine setting.
+
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
@@ -553,7 +557,7 @@ observation rather than forwarding the caller's header, and keep
 
 ## Live microphone streaming (`/stream`, opt-in)
 
-In v0.1.13, native live streaming (introduced in v0.1.11) supports **Windows x86_64 only**. Other live
+In v0.1.14, native live streaming (introduced in v0.1.11) supports **Windows x86_64 only**. Other live
 platforms are unsupported; existing standalone defaults and platform support are
 unchanged. Physical browser microphone capture was not verified. The public site
 is static documentation and serves no streams. Both local server surfaces can
@@ -564,7 +568,7 @@ exist and a connection is refused before any session is allocated - and it needs
 `streaming` extra (`websockets`).
 
 ```powershell
-python -m pip install "textflowkit[streaming]==0.1.13"
+python -m pip install "textflowkit[streaming]==0.1.14"
 # Native Windows PowerShell:
 $env:TEXTFLOWKIT_API_TOKEN="choose-a-long-random-token"
 $env:TEXTFLOWKIT_STREAMING="1"
@@ -604,7 +608,7 @@ supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
 of its own: it is a local app, not a hosted service.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.13'
+python -m pip install 'textflowkit[http,export]==0.1.14'
 textflowkit-ui                 # serve on 127.0.0.1 and open a browser
 textflowkit-ui --no-browser --port 8901
 ```

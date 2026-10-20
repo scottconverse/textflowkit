@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.14 — 2026-10-19
+
+Documentation-only patch; core 0.1.14, unchanged optional fonts 0.1.6.
+
+- Persist the required native headless Codex workflow for all TextFlowKit DeepSeek coding: exact `deepseek-v4.1-flash:1017-cloud`, thinking off, isolated worktree/configuration/environment, supported Windows sandbox, and no silent fallback to the historical Python runner or Claude Code.
+- Link the workflow from contributor and integration documentation and update current package/manual/website release references.
+- No transcription, cleanup, streaming, dependency, or installer behavior change. The latest verified Windows installer remains v0.1.13 and retains its matching FFmpeg sources/notices. Native/live proof remains explicitly attributed to that earlier release; no new accuracy claim.
+- Math comparison fixtures, local logs, model credentials and machine-local launcher/profile files are not included.
+
 ## v0.1.13 — 2026-10-19
 
 Core: 0.1.13; unchanged optional fonts: 0.1.6. Whistle missing-speech fixes and a

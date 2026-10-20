@@ -10,7 +10,15 @@ The main assistant coordinates, plans and oversees. A worker invoked for an impl
 
 Follow Scott's active task selection; do not impose a project-wide Ollama default. His normal substantial-work/coordination preference is gpt-6.1-sol at medium, with gpt-6-luna at xhigh for small bounded work when available. Do not spawn a worker merely to switch models or add providers without authorization.
 
-For the explicitly authorized current Whistle release and issue #31 source-recovery work, Scott requested Ollama `deepseek-v4.1-flash:1017-cloud`, reasoning OFF. `scripts/run_deepseek_worker.py` is an explicit opt-in runner for those assigned DeepSeek units: it sends `think: false`, allows no model fallback, and records the actual response model. Ollama currently returns canonical ID `deepseek-v4.1-flash:1017` without the `-cloud` transport suffix. Do not confuse a worker's self-description with the transport receipts. Preserve existing DeepSeek integrations with reasoning off, but do not turn this task-specific instruction into the default for unrelated future work.
+## Required harness for all TextFlowKit DeepSeek coding (owner directive, 2026-10-19)
+
+Whenever DeepSeek is selected for coding work on TextFlowKit, use native **headless Codex exec through Ollama**, model **`deepseek-v4.1-flash:1017-cloud`**, thinking OFF (`model_reasoning_effort = "none"`). This is a standing project instruction, not limited to one release. The observed provider response ID is `deepseek-v4.1-flash:1017`; verify it from transport receipts, not model self-description.
+
+**Do not use `scripts/run_deepseek_worker.py`, another custom agent loop, or Claude Code for this work.** If the approved setup is missing, blocked or broken after restart, inspect/repair it within authorization or report the concrete blocker; never silently fall back, change the model, enable reasoning, or bypass safeguards.
+
+Use the dedicated worker worktree, separate CODEX_HOME/profile/temp directories, allowlisted environment and supported Windows workspace-write sandbox. No personal auth/settings/hooks/MCP configuration copied; no inherited provider/GitHub tokens; no nested workers or publishing. A worktree isolates changes, not all disk reads. Supply a scoped brief through stdin and retain native Codex events, provider model/reasoning evidence and actual tool results.
+
+Read `docs/deepseek-worker.md` before the next DeepSeek unit and after restart. Verified local launcher: `C:\Users\scott\Documents\Codex\2026-09-21\re\outputs\headless-codex-deepseek-20261019\run-codex.ps1`; local state and evidence are alongside it. This selects the harness whenever DeepSeek is used; it does not make DeepSeek the default for unrelated work.
 
 This does not change the application's transcription or AI-cleanup defaults. Whistle remains the default transcription engine.
 
