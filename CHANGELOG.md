@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.15 — 2026-10-20
+
+Developer-tooling patch; core 0.1.15, unchanged optional fonts 0.1.6.
+
+- Adopt the owner-required LOW effort for DeepSeek 1017, superseding off/none in current agent and contributor instructions. Preserve the exact model and native isolated headless Codex harness.
+- Align the historical direct-Ollama runner's metadata and payload to `think: "low"`; remove its incompatible rejection of reasoning output. This runner remains prohibited as the TextFlowKit coding harness; the exact model allowlist and other safeguards remain in place.
+- Update current README, user/integration manuals, installation instructions and website versions. Application transcription, cleanup and streaming behavior are unchanged; Whistle remains the default.
+- Fonts remain 0.1.6. The latest verified Windows installer and matching sources/notices remain v0.1.13; no installer rebuild or new native transcription accuracy claim.
+
 ## v0.1.14 — 2026-10-19
 
 Documentation-only patch; core 0.1.14, unchanged optional fonts 0.1.6.

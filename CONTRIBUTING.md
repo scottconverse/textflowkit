@@ -102,4 +102,4 @@ Do not open a public issue for a vulnerability. See [SECURITY.md](SECURITY.md).
 
 ## DeepSeek coding workers
 
-When DeepSeek is selected for TextFlowKit coding, follow the required [isolated headless Codex workflow](docs/deepseek-worker.md): exact `deepseek-v4.1-flash:1017-cloud`, thinking off. Do not use the historical Python agent loop or Claude Code. This does not change application engines or make DeepSeek the default for unrelated work.
+When DeepSeek is selected for TextFlowKit coding, follow the required [isolated headless Codex workflow](docs/deepseek-worker.md): exact `deepseek-v4.1-flash:1017-cloud`, LOW effort (`model_reasoning_effort="low"`). Do not use the historical Python agent loop or Claude Code. This does not change application engines or make DeepSeek the default for unrelated work.

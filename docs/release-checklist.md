@@ -1,6 +1,10 @@
 # Release verification checklist
 
-## v0.1.14 documentation-only patch
+## v0.1.15 developer-tooling patch
+
+Core 0.1.15; fonts 0.1.6 reused. Only DeepSeek worker policy, historical runner effort settings and current documentation/version metadata change. Native headless Codex LOW effort was verified against the exact 1017 model with a successful real tool call; previous off/none receipts remain historical. Run version/README guards, affected release tests, Ruff and required CI; require exact merged-main CI before tagging. Verify publication hashes, fresh installed versions and the live website. The installer remains explicitly v0.1.13; do not relabel or rebuild unchanged application artifacts.
+
+## Historical v0.1.14 documentation-only patch
 
 Core 0.1.14; fonts 0.1.6 reused unchanged. This release changes developer workflow documentation and current version metadata only, not application logic/dependencies. Run `python scripts/verify_release_versions.py --tag v0.1.14`, `python scripts/verify_readme_release.py --version v0.1.14`, affected release-surface tests and required CI. Merge only after green PR CI; require exact merged-main CI before tagging/publishing. Verify published distribution hashes, fresh installed version and the deployed website.
 
