@@ -19,7 +19,7 @@ Require green PR CI and exact merged-main CI before tagging. Verify published ha
 
 After tagged core publication, build the installer from the immutable v0.1.16 tag and that exact published core wheel. Validate the full staged payload, compile and publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with the payload manifest, `WINDOWS-SHA256SUMS`, `WINDOWS-README.md` and matching unchanged dependency-source/notice snapshots. Do not relabel the v0.1.13 dependency snapshot filenames or hashes.
 
-Before accepting the Windows assets, an actual isolated EXE installation must pass version readback, native Whistle speech selftest and local browser UI launch. Record only tests actually performed. Until that record exists, current documentation must not claim v0.1.16 installer verification; the [v0.1.15 acceptance record](verification/windows-installer-v015-20261020.md) remains historical and is not a v0.1.16 receipt.
+Before accepting the Windows assets, an actual isolated EXE installation must pass version readback, native Whistle speech selftest and local browser UI launch. Record only tests actually performed. Completed for this release: [v0.1.16 acceptance record](verification/windows-installer-v016-20261020.md). The v0.1.15 record remains historical.
 
 Website RUM and NEL were verified disabled in production on 2026-10-20; recheck the deployed page and response headers after publication. Necessary functional network traffic and hosting-provider operational/security logs are distinct from visitor telemetry.
 

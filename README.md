@@ -176,7 +176,7 @@ python -m pip install 'textflowkit[export]'
 
 [Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
 
-The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. Publication requires actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums. Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
+The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. The actual EXE passed isolated installation, version readback, native Whistle speech selftest, installed privacy guards and browser UI launch. See the [v0.1.16 acceptance record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v016-20261020.md). Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums. Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
 
 The v0.1.16 Windows distribution packages the existing local browser workspace for core v0.1.16 and is built after tagged core publication. Its matching FFmpeg source and notice bundles are distributed together through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The Python package remains supported for developers and integrations.
 
@@ -495,7 +495,7 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.16 release.** No-telemetry release: disables pyannote usage metrics and Hugging Face telemetry before optional imports, while preserving necessary downloads, gated-model authentication and Whistle as the default engine. Website RUM and NEL are disabled. Transcription and streaming behavior are otherwise unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its release process requires isolated install, version, speech and UI acceptance. No new four-hour accuracy claim is made.
+**v0.1.16 release.** No-telemetry release: disables pyannote usage metrics and Hugging Face telemetry before optional imports, while preserving necessary downloads, gated-model authentication and Whistle as the default engine. Website RUM and NEL are disabled. Transcription and streaming behavior are otherwise unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its actual EXE passed isolated install, version, native speech, privacy and UI acceptance. No new four-hour accuracy claim is made.
 
 **Whistle behavior introduced in v0.1.13.** Fixes reproduced Whistle speech omissions. Native decode
 inputs are now bounded to 15 seconds (11-second owned cores with up to 2 seconds
