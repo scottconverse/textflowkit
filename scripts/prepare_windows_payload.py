@@ -42,6 +42,9 @@ REQUIRED_ASSETS = (
     "model_license",
 )
 OPTIONAL_ASSET_KEYS = {"streaming"}
+# Declared in packaging/windows/source-materials.json and copied byte-for-byte into
+# licenses/<filename> after size/SHA-256 verification against the declaration.
+DECLARED_LICENSE_ASSET_KEYS = ("redistribution_notices", "source_index", "build_instructions")
 PLATFORM = "windows-x86_64"
 DOWNLOAD_TIMEOUT_SECONDS = 30
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
@@ -609,6 +612,21 @@ def copy_release_license_material(
         record = verify_asset_file(source, spec) if spec else _file_record(source)
         _copy_file(source, payload_root / "licenses/GPL-3.0.txt")
         copied_assets["gpl_license"] = record
+    for key in DECLARED_LICENSE_ASSET_KEYS:
+        declared = source_metadata.get(key)
+        if declared is None:
+            continue
+        spec = _validate_asset_spec(key, declared)
+        source = asset_cache / spec["filename"]
+        if not source.is_file():
+            raise PayloadError(
+                f"Declared license asset {key!r} is missing from the asset cache: {source}"
+            )
+        # verify_asset_file raises PayloadError on a size or SHA-256 mismatch, so a tampered
+        # declared asset fails the build rather than being copied unverified.
+        record = verify_asset_file(source, spec)
+        _copy_file(source, payload_root / "licenses" / spec["filename"])
+        copied_assets[key] = record
     return copied_assets
 
 

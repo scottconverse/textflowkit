@@ -294,7 +294,7 @@ def _validate_engine_progress(progress: Any) -> None:
     """
     if not isinstance(progress, dict):
         raise CheckpointError("checkpoint partial engine progress is not an object")
-    if progress.get("schema") != _WHISTLE_PROGRESS_SCHEMA:
+    if progress.get("schema") not in (_WHISTLE_PROGRESS_SCHEMA, "textflowkit.whistle.progress/2"):
         raise CheckpointError("checkpoint partial engine progress has an incompatible schema")
     if not isinstance(progress.get("policy"), str) or not progress["policy"]:
         raise CheckpointError("checkpoint partial engine progress has no window policy")

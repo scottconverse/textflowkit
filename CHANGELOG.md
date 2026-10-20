@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.1.13 — 2026-10-19
+
+Core: 0.1.13; unchanged optional fonts: 0.1.6. Whistle missing-speech fixes and a
+native Windows installer distributed with matching FFmpeg sources and notices.
+
+- Bound native Whistle decode inputs to 15 seconds with 11-second owned cores
+  and up to two seconds of context per side. The former 30-second inputs
+  reproducibly omitted passages recovered by shorter inputs. Window policy is
+  part of resume identity; partial progress from the old plan requires a fresh
+  run. The engine and pinned model remain Whistle.
+- Check short gaps with a bounded, differently framed native decode. Add words
+  only between two matching timed anchors; retain original words/repetitions,
+  skip long pauses, and cap extra calls per core. Record recovery counts.
+- Correct Whistle shared-context assembly when independently estimated word
+  timestamps cause both neighboring cores to keep or discard the same occurrence.
+  Match occurrences one-to-one; preserve real repeated speech and leave ambiguous
+  collapsed repetitions untouched rather than using global text deduplication.
+- Persist raw boundary context in Whistle progress schema 2 so resumed assembly
+  matches uninterrupted output. Old schema-1 partial runs require a fresh start;
+  completed jobs remain unchanged. Default engine remains Whistle.
+- The native 30-second omission cases remain reproducible upstream; shorter
+  input windows and anchored gap checks mitigate them in TextFlowKit without
+  changing the engine or model weights.
+- Verification on one four-hour public meeting (1310 native cores, 18 min 34 s
+  native decode, 34,723 final words): the two long missing passages were
+  restored (2 to 50 and 0 to 47 words), 62 short-gap checks accepted 7 for 53
+  added words, resume after cores 350 and 700 reproduced exact word text and
+  timings, and no invalid bounds or backwards starts remained. Focused suite:
+  113 passed. Full suite: 2,097 passed, 18 skipped; skips are not passes. This is
+  coverage evidence for one recording, not human WER or perfect accuracy; normal
+  spelling errors remain. See
+  [the verification note](docs/verification/whistle-coverage-20261019.md).
+
+- Package matching FFmpeg sources, pinned build recipes, dependency archives and full notices alongside the Windows installer; record source hashes and preserve compatible DLL replacement. See [source verification](docs/verification/windows-sources-20261019.md).
+
 ## v0.1.12 — 2026-10-17
 
 Core: 0.1.12; unchanged optional fonts: 0.1.6. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.

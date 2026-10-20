@@ -161,7 +161,7 @@ verification/deployment boundaries, not claims of complete platform coverage.
   with `--engine whisper`. Whistle advertises seven languages (`en`, `de`, `fr`,
   `es`, `it`, `nl`, `pl`), runs natively on Windows x86-64/arm64, Linux
   x86-64/arm64 and Apple Silicon (an Intel Mac is refused and pointed at
-  `--engine whisper`), splits long audio into 26-second cores (≤ 30 s clips), and
+  `--engine whisper`), splits long audio into 11-second cores (≤ 15 s clips), and
   forces telemetry off in every child process. Durable per-block resume and
   prompt cancellation of the owned child are included. Legacy engine aliases are
   preserved, so older saved jobs and `transcribe()` calls still decode. First
@@ -208,6 +208,18 @@ verification/deployment boundaries, not claims of complete platform coverage.
   unverified. This completion records local implementation and release
   preparation; packaging, exact-commit CI, and publication remain
   separate gates. The public site is static documentation, not a stream server.
+
+## v0.1.13 — Whistle missing-speech fixes
+
+- [x] Prepare the native Windows installer with matching FFmpeg sources, dependency notices and pinned build instructions; see [the source verification record](verification/windows-sources-20261019.md). Publication is verified against the actual release assets.
+
+- [x] Ship v0.1.13 review follow-ups: bound native Whistle decode to 15-second
+  inputs with 11-second cores and bounded seam context, add anchored short-gap
+  recovery, correct shared-context word ownership, and persist seam context in
+  progress schema 2 for resumable assembly. Engine and pinned model remain
+  Whistle; fonts remain 0.1.6. Verified locally on one four-hour meeting; see the
+  [coverage note](verification/whistle-coverage-20261019.md). Publication,
+  exact-commit CI and any installer rebuild remain separate gates.
 
 ## v0.1.12 — Windows installer and optional local UI cleanup
 

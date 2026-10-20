@@ -1,4 +1,4 @@
-# Native Windows installer (v0.1.12; public EXE pending)
+# Native Windows installer (v0.1.13)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
@@ -15,6 +15,8 @@ The installer does not replace or register a global Python or modify global PATH
 All cache, wheel, payload, test and installer output directories must be OUTSIDE
 this checkout. Never put pytest basetemp or a packaging checkout inside the tree
 being copied. The scripts refuse overlapping source/payload/output locations.
+
+Before assembly, download the three small files declared as redistribution_notices, source_index and build_instructions in source-materials.json into the asset cache. Their exact v0.1.13 URLs, sizes and SHA-256 hashes are pinned there. Staging refuses missing or modified files; it does not download the multi-gigabyte source set into the installer. The source ZIPs remain separate release assets. See [source verification](../../docs/verification/windows-sources-20261019.md).
 
 From a build environment at the repository root, for example:
 
@@ -46,24 +48,29 @@ The installer compiler wrapper validates that manifest before compiling.
 - No background update service, startup-at-login task, public HTTP listener, or
   Docker service is installed.
 
-## Local AI cleanup validation (v0.1.12)
+## Local AI cleanup validation (v0.1.12, carried forward to v0.1.13)
 
 A final cold full-UI run, begun with the local model explicitly unloaded, completed
 39 segments in three chunks with four changed segments. The in-app comparison and
 corrected TXT save were verified, and the saved file matched the validated variant.
 This is evidence of workflow completion for one run, not accuracy; plausible
 corrections must be reviewed against audio. Earlier cold failure and a hot zero-edit
-run are documented in the user manual. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available.
+run are documented in the user manual. The v0.1.12 installer was built and tested locally; that historical build
+evidence is not relabelled for v0.1.13. The v0.1.13 private packaged runtime passed
+its native Whistle selftest and a real 30-second transcription. The unchanged
+installer bootstrap/upgrade behavior retains its earlier acceptance evidence;
+the current build has not been installed over the owner's running application.
 
 ## Before public distribution
 
-Public EXE distribution remains gated on corresponding-source compliance review. The candidate is unsigned;
+Public EXE distribution requires the matching source assets and notices below.
+The installer is unsigned;
 Windows may show a SmartScreen warning. Do not tell users to disable protections.
 
 Review THIRD-PARTY-NOTICES.txt and the exact source-materials.json provenance.
 The LGPL ffmpeg shared build must be accompanied by its required license texts
 and corresponding-source availability, including linked dependencies. Preserve
-and offer the matching source/build materials with the eventual binary release;
+and offer the matching source/build materials with the binary release;
 a generic upstream homepage alone is not a complete source offer. Public release
 links and version numbers must be updated only when that release is authorized.
 

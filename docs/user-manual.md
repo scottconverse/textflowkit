@@ -1,4 +1,4 @@
-# TextFlowKit user manual — v0.1.12
+# TextFlowKit user manual — v0.1.13
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -21,9 +21,11 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
-### Windows x86_64 installer (v0.1.12; public EXE pending)
+### Windows x86_64 installer (v0.1.13)
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -48,7 +50,7 @@ The installer bundle includes third-party license and notice files,
 including FFmpeg's LGPL notices and corresponding-source information. Check the
 exact notices and source-distribution details against the final bundled binaries
 before publication. The candidate is unsigned, so Windows may show a SmartScreen
-warning. See the [install notes](install.md#windows-desktop-installer-v0112-public-exe-pending)
+warning. See the [install notes](install.md#windows-desktop-installer-v0113)
 for its scope and status.
 
 ```mermaid
@@ -77,7 +79,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.12'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.13'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -345,7 +347,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.12'
+python -m pip install 'textflowkit[http,export]==0.1.13'
 textflowkit-ui
 ```
 
@@ -415,7 +417,7 @@ live optional-backend (translation/diarization) run through the UI is claimed,
 and no live Linux or macOS UI run was performed here — those platforms are
 covered by automated tests only.
 
-### 7.1 Live microphone streaming (opt-in, v0.1.12)
+### 7.1 Live microphone streaming (opt-in, introduced in v0.1.11; v0.1.13)
 
 ![Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams.](assets/live-streaming-flow.svg)
 
@@ -437,7 +439,7 @@ and nowhere else.
 
 It is **off by default**: with the switch unset the endpoint
 does not exist. It needs the `streaming` extra
-(`python -m pip install "textflowkit[streaming]==0.1.12"`). This is a capability of the
+(`python -m pip install "textflowkit[streaming]==0.1.13"`). This is a capability of the
 **servers**, not the command-line `textflowkit` tool — the CLI never opens a
 microphone. See [streaming.md](streaming.md) for the full contract and the
 programmatic API.
@@ -454,7 +456,7 @@ documentation and does not accept streams.
 Whistle is the default engine in v0.1.9. It is a native CPU-only CLI that needs
 no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 26-second cores with up to 2 seconds of context (each clip ≤ 30 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 11-second cores with up to 2 seconds of context (each clip ≤ 15 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](assets/whistle-resume.svg)
 
 - **CPU only, no torch.** Whistle runs a pinned native binary and downloads one
   pinned model on first use (about 17 MB). A request naming a GPU device (`cuda`,
@@ -465,18 +467,32 @@ no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
 - **Platforms:** Windows x86-64/arm64, Linux x86-64/arm64, Apple Silicon. **Intel
   Macs are not supported** — the refusal names the explicit `whisper` engine. No
   WSL is involved on Windows.
-- **Long audio.** The run splits audio into 26-second cores with up to 2 seconds
+- **Long audio.** The run splits audio into 11-second cores with up to 2 seconds
   of context on each side, so each clip handed to the native CLI stays within its
-  30-second limit. A word belongs to the clip whose core contains its midpoint, so
-  every word is emitted once and repeated phrases are kept; per-clip words are
-  shifted to absolute time.
+  15-second decode ceiling (below the native 30-second limit). Per-clip words are shifted to absolute time. The **v0.1.13
+  assembly policy** starts with midpoint ownership, then matches occurrences
+  in shared context to correct double ownership and neither ownership caused by
+  timestamp differences. It preserves real repetitions and leaves ambiguous
+  recognition intact; it is not a guarantee that the recognizer captures every word.
+  The shorter decode ceiling, shipped in v0.1.13, corrects reproduced speech
+  omissions on 30-second inputs. Partials from the previous 26-second-core policy
+  must be restarted; the engine refuses to mix the two window plans.
+  Short interior gaps also receive a bounded second listen. The retry must match
+  the words on both sides at nearby times before extra words are accepted; it
+  does not rewrite the existing transcript or globally remove repeated words.
+  Long pauses and retries without both anchors add nothing. At most two extra
+  native calls occur per core, each using the same timeout and cancellation
+  handling. Metadata records attempts and recovered words since the last resume.
 - **Standalone streaming is not used.** The native `--audio-stream` mode failed its coverage
   and is never passed; only the standalone committed JSON output is read.
 - **Resume.** With `TEXTFLOWKIT_DB` set, a long run writes a partial checkpoint
   after each clip. A resume checks the source and decoded-WAV hashes and the
   configuration, then re-runs only the clips that were not finished — the finished
-  blocks' words are adopted as-is. The durable store still assumes one owning
-  process, as in [section 3](#3-batch-and-resume).
+  blocks' words are adopted as-is. The new assembly policy also saves raw boundary
+  context (progress schema 2). Older schema-1 partial runs must be restarted;
+  incompatible progress is refused, not silently reused. Completed jobs are
+  unchanged. The durable store still assumes one owning process, as in
+  [section 3](#3-batch-and-resume).
 - **Cancellation.** A running Whistle run terminates its exact owned child
   process, bounded by a per-clip timeout and a bounded output cap, and always
   re-raises a cancellation. A single long `openai-whisper` model call is still
@@ -507,12 +523,15 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.12 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12)
-- [Core package 0.1.12 on PyPI](https://pypi.org/project/textflowkit/0.1.12/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.13 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+- [Core package 0.1.13 on PyPI](https://pypi.org/project/textflowkit/0.1.13/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The v0.1.12 release adds optional UI-only local Ollama cleanup and native Windows
-installer packaging (public EXE pending corresponding-source compliance review); the local browser
+The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second
+decode ceiling, anchored gap checks, and shared-context reconciliation, and it
+records progress schema 2, so old 26-second-core partial jobs must restart. The
+native Windows installer accompanies it with matching FFmpeg sources and notices.
+The local browser
 interface introduced in v0.1.10 remains in the core package, and
 the v0.1.9 engine change (Whistle default, `openai-whisper` opt-in) is unchanged.
 The local browser interface's own verification boundary is in
@@ -520,7 +539,7 @@ The local browser interface's own verification boundary is in
 [section 8](#8-whistle-the-default-engine). Release artifacts and workflow
 results are the publication evidence. The paragraphs below retain historical
 evidence for v0.1.9, v0.1.8, v0.1.7, v0.1.6 and v0.1.5; they do not establish
-v0.1.12 installed-package or harness verification.
+v0.1.13 installed-package or harness verification.
 
 The v0.1.9 release made Whistle the default engine and moved `openai-whisper` to
 the optional `whisper` extra. Its own evidence is the local 4-hour CPU run and the
@@ -558,9 +577,9 @@ the wording. PyPI's already-uploaded release metadata cannot be rewritten in
 place; a future package version will carry the corrected description.
 
 
-## Optional local AI transcript cleanup (v0.1.12)
+## Optional local AI transcript cleanup (introduced in v0.1.12)
 
-v0.1.12 adds **opt-in proofreading in the local browser UI only**. After a transcription finishes, choose an
+v0.1.12 adds **opt-in proofreading in the local browser UI only** (introduced in v0.1.12; unchanged in v0.1.13). After a transcription finishes, choose an
 installed local Ollama model and click **Proofread with local AI**. Cleanup never
 runs automatically. Ollama and cleanup models are not bundled in the installer.
 The optional default preference is `qwen3.5:9b` only if already installed; its

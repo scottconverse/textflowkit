@@ -45,9 +45,20 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install ffmpeg (Windows)
+      - name: Install pinned ffmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg --no-progress -y
+        shell: python
+        run: |
+          import os, runpy
+          from pathlib import Path
+          ns = runpy.run_path('scripts/prepare_windows_payload.py')
+          spec = ns['load_asset_lock'](Path('packaging/windows/assets.lock.json'))['assets']['ffmpeg']
+          cache = Path(os.environ['RUNNER_TEMP']) / 'textflowkit-ci-ffmpeg'
+          archive = ns['_download_locked_asset'](cache, spec)
+          destination = cache / 'payload'
+          ns['prepare_ffmpeg_archive'](archive, destination)
+          with open(os.environ['GITHUB_PATH'], 'a', encoding='utf-8') as f:
+              f.write(str(destination / 'bin') + '\n')
 
       - name: Install ffmpeg (macOS)
         if: runner.os == 'macOS'

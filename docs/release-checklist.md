@@ -1,6 +1,49 @@
 # Release verification checklist
 
-## v0.1.12 release preparation
+## v0.1.13 release preparation
+
+Core is 0.1.13; fonts remain 0.1.6, unchanged. Run the existing guards from the candidate root:
+
+```powershell
+python scripts/verify_release_versions.py --tag v0.1.13
+python scripts/verify_readme_release.py --version v0.1.13
+python -m pytest tests/test_release_surfaces.py
+```
+
+### Windows installer source and publication gate
+
+Use [the source verification record](verification/windows-sources-20261019.md) and the three pinned notice/index/instruction assets in packaging/windows/source-materials.json. Stage those small assets into the private runtime, regenerate its file manifest, then rebuild the EXE. Publish the three matching source ZIPs, notices, source index and build instructions alongside the EXE and Windows SHA-256 manifest. Verify GitHub's uploaded asset digests before closing issue #31. Never upload failed scratch bundles. The EXE is unsigned; preserve existing Windows protections.
+
+### Whistle core behavior in v0.1.13
+
+Native Whistle decode is limited to 15-second inputs: 11-second owned cores with up to
+two seconds of context per side. Short 4-11-second interior gaps are checked with a
+bounded, differently framed native decode, and words are added only between two
+matching timed anchors; long pauses are skipped and extra calls are capped per core.
+Shared-context word ownership is reconciled one-to-one so real repetitions survive,
+and slight backwards timestamp estimates are repaired rather than dropped. Progress
+schema 2 persists seam context so a resume assembles like an uninterrupted run;
+schema-1 partial progress is refused and must restart, while completed transcripts are
+not rewritten. Whistle remains the default engine and the pinned model/backwards-runtime
+pins are unchanged.
+
+The two previously reported long omissions on the verification meeting were restored,
+and both were confirmed missing under the former 30-second plan. The prior 30-second
+input plan, old partial-progress restart and both restored passages are covered by the
+[Whistle coverage note](verification/whistle-coverage-20261019.md): 1310 cores, 34,723
+words, 62 gap checks (7 accepted, 53 words), exact resume at cores 350 and 700, zero
+invalid bounds and zero backwards starts, 113 focused tests passing, and 2,097 full-suite
+passes with 18 skips not counted as passes. That note records proof tiers: the fresh
+whole-meeting native run (1310 cores, 18 min 34 s) loaded seam=1 before the final
+assembly change, the final seam=2 public engine consumed the actual saved native
+outputs and real gap calls, and resume replayed hash-bound outputs without a second
+native decode. It is not human WER and does not claim perfect accuracy; spelling errors
+remain.
+
+## Historical v0.1.12 release preparation (not current instructions)
+
+> **Historical only — not current instructions.** The checks, commands, and version references in this v0.1.12 section are retained for the record and must not be used for the current release.
+
 
 Core is 0.1.12; fonts remain 0.1.6. Run the existing guards from the candidate root:
 
@@ -132,7 +175,7 @@ packaging and launch are part of the release:
 ## PyPI publication
 
 After merged-main CI and the local release checks pass, push an annotated final
-version tag (for example `v0.1.12` for this release) on that verified
+version tag (for example `v0.1.13` for this release) on that verified
 `main` commit. Do **not**
 create or publish a GitHub release manually. The tag push triggers
 [`publish-pypi.yml`](../.github/workflows/publish-pypi.yml). It verifies the

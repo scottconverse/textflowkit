@@ -1,4 +1,4 @@
-# Architecture and job lifecycle — v0.1.12
+# Architecture and job lifecycle — v0.1.13
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -26,9 +26,9 @@ a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
 
-### Windows desktop installer (v0.1.12; public EXE pending)
+### Windows desktop installer (v0.1.13)
 
-The Windows x86_64 installer for core v0.1.12 provisions this same browser door without adding a second pipeline or hosted service. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+The Windows x86_64 installer for core v0.1.13 provisions this same browser door without adding a second pipeline or hosted service. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
 
 ```mermaid
 flowchart LR
@@ -297,7 +297,7 @@ saved transcript for the same URL/options and does **not** prove the remote byte
 are unchanged.
 
 **Whistle block resume.** The Whistle engine's long-audio run emits a
-serializable progress snapshot after each 26-second core; the runner persists it as
+serializable progress snapshot after each 11-second core; the runner persists it as
 a **partial** checkpoint body (no transcript yet). Resuming validates that body
 against the requested configuration — schema, window policy, duration, the
 full-content decoded-WAV SHA-256, and the model/binary/language identity — and then
@@ -306,6 +306,21 @@ verbatim. A partial body is **Whistle-only**: a checkpoint that names another
 engine cannot carry partial block progress. This reuses the existing single
 persistence mechanism and the one-owning-process store model; it adds no second
 store and no new process-sharing model.
+
+The v0.1.13 seam-reconciliation policy records progress schema 2, including
+the previous native window's raw tail words. The next core uses one-to-one
+time/text alignment to retain a matched occurrence once even if its two midpoint
+estimates disagree. Collapsed repeated-token ambiguity is preserved, not globally
+deduplicated. Schema-1 partial progress is rejected by the engine and requires a
+fresh run; the checkpoint envelope can still parse historical records. Existing
+completed transcripts are not rewritten. This does not recover speech absent
+from the native model output.
+
+The window policy is a 15-second decode ceiling: 11-second owned cores with at most 2 seconds
+of context each side, so no native call exceeds 15 seconds. A short-gap check after a core
+may reframe an interior gap once, but only when both a left and a right timed anchor match,
+and it adds at most two extra native calls per core; long pauses, missing anchors and empty
+retries add no words.
 
 **Ownership.** The reopen of a terminal row for resume is an atomic claim
 (`JobStore.claim` / `prepare_resume`), pinned to the attempt the caller observed.
@@ -477,7 +492,7 @@ an isolated environment and inspect a real local job's status and outputs. Live
 gated providers, ROCm execution, and platform URLs each need separate evidence;
 see the [release checklist](release-checklist.md) for those boundaries.
 
-## Local UI cleanup sidecar (v0.1.12)
+## Local UI cleanup sidecar (introduced in v0.1.12)
 
 `ui.cleanup` owns the optional proofreading worker and separate SQLite sidecar
 next to the effective job database. The UI shell's existing loopback peer/Host,
@@ -503,4 +518,4 @@ three chunks at 2026-10-16 17:39:52 UTC, with four changed segments. The canonic
 SQLite JSON/source and segment IDs/timestamps matched, and the browser comparison
 and TXT save were verified. This confirms the local persistence/export path for
 that run only, not correction accuracy; human audio review remains required.
-The optional UI-only cleanup ships with core v0.1.12; models are not bundled.
+The optional UI-only cleanup ships with core v0.1.12 (introduced in v0.1.12; unchanged in v0.1.13); models are not bundled.

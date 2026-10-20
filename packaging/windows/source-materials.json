@@ -16,5 +16,24 @@
     "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
     "size": 35149,
     "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "redistribution_notices": {
+    "filename": "TextFlowKit-0.1.13-THIRD-PARTY-NOTICES.zip",
+    "url": "https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-THIRD-PARTY-NOTICES.zip",
+    "size": 10102029,
+    "sha256": "d3640ebf206383d48622fbe6efceb39c21f8214c12b1e377535eb19141d891b2"
+  },
+  "publicsource_release": "https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13",
+  "source_index": {
+    "filename": "TextFlowKit-0.1.13-source-index.json",
+    "url": "https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-source-index.json",
+    "size": 527692,
+    "sha256": "73aef4d6013da5d99b09c8c34610c21fac24b7d7a1f01e07a6c3a4a091f88948"
+  },
+  "build_instructions": {
+    "filename": "TextFlowKit-0.1.13-source-build-instructions.md",
+    "url": "https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-source-build-instructions.md",
+    "size": 3719,
+    "sha256": "39d4750a13051c61565f39ac9297d6b3bd234f8760234e94b9155e6af97b7ec9"
   }
 }

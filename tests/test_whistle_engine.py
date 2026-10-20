@@ -144,11 +144,11 @@ def _engine(**kwargs) -> W.WhistleEngine:
 # --- windows stay <= 30 s --------------------------------------------------
 
 
-def test_every_window_clip_is_at_most_30_seconds():
+def test_every_window_clip_is_at_most_15_seconds():
     for duration in (1.0, 26.0, 26.1, 30.0, 52.0, 66.0, 600.0, 3600.0):
         windows = W.plan_windows(duration)
         for window in windows:
-            assert window.clip_end - window.clip_start <= 30.0 + 1e-9, duration
+            assert window.clip_end - window.clip_start <= 15.0 + 1e-9, duration
 
 
 def test_cores_tile_the_recording_without_gap_or_overlap():
@@ -159,7 +159,7 @@ def test_cores_tile_the_recording_without_gap_or_overlap():
         assert abs(a.core_end - b.core_start) < 1e-9
 
 
-def test_core_is_at_most_26_seconds():
+def test_core_is_at_most_11_seconds():
     for window in W.plan_windows(600.0):
         assert window.core_end - window.core_start <= W.CORE_SECONDS + 1e-9
 
@@ -168,7 +168,7 @@ def test_core_is_at_most_26_seconds():
 
 
 def test_a_word_spanning_a_core_boundary_is_owned_by_its_midpoint_not_its_start():
-    windows = W.plan_windows(66.0)  # cores 0-26, 26-52, 52-66
+    windows = W.plan_windows(66.0, core=26, max_clip=30)  # exercise explicit long-core geometry
     # A word whose *start* (25.0) is in core 0 but whose *midpoint* (26.1) is in
     # core 1. The two rules disagree for this word on purpose: it pins the
     # midpoint rule rather than a start-based one.
@@ -788,8 +788,8 @@ def test_on_progress_fires_once_per_completed_core(monkeypatch, tmp_path, fake_c
     _word_script(monkeypatch, [["w", 1.0, 1.5, 0.9]])
     snapshots = []
     _engine().transcribe(audio, on_progress=snapshots.append)
-    assert len(snapshots) == 3  # 66 s -> 3 cores
-    assert [s["completed_core_index"] for s in snapshots] == [1, 2, 3]
+    assert len(snapshots) == 6  # 66 s -> six 11-second cores
+    assert [s["completed_core_index"] for s in snapshots] == [1, 2, 3, 4, 5, 6]
 
 
 def test_resume_skips_completed_cores_without_duplicate_words(monkeypatch, tmp_path, fake_cli):
@@ -801,7 +801,7 @@ def test_resume_skips_completed_cores_without_duplicate_words(monkeypatch, tmp_p
 
     snapshots = []
     full = _engine().transcribe(audio, on_progress=snapshots.append)
-    assert len(snapshots) == 3
+    assert len(snapshots) == 6
     # Resume from the snapshot after the first core: cores 1 and 2 are skipped,
     # and the resumed run must not re-emit core 0's word.
     resumed = _engine().transcribe(audio, resume_progress=snapshots[0])
@@ -891,8 +891,8 @@ def test_progress_with_a_word_owned_past_the_prefix_is_refused(monkeypatch, tmp_
     # Segment start is inside the prefix, but the word's midpoint (30 s) is well
     # inside core 1, which the checkpoint has not completed.
     broken["segments"] = [{
-        "start": 25.0, "end": 31.0, "text": "late",
-        "words": [{"start": 29.6, "end": 30.4, "text": "late"}],
+        "start": 10.0, "end": 16.0, "text": "late",
+        "words": [{"start": 14.6, "end": 15.4, "text": "late"}],
     }]
     with pytest.raises(W.WhistleError, match="owned after the completed cores"):
         _engine().transcribe(audio, resume_progress=broken)
@@ -910,15 +910,15 @@ def test_progress_with_a_segment_starting_early_in_context_is_allowed(
     audio, snapshots = _snapshot(monkeypatch, tmp_path, fake_cli)
     good = dict(snapshots[0])
     good["segments"] = [{
-        "start": 24.0, "end": 25.5, "text": "back",
+        "start": 9.0, "end": 10.5, "text": "back",
         "words": [
-            {"start": 24.0, "end": 24.4, "text": "back"},
-            {"start": 25.0, "end": 25.4, "text": "again"},
+            {"start": 9.0, "end": 9.4, "text": "back"},
+            {"start": 10.0, "end": 10.4, "text": "again"},
         ],
     }]
     resumed = _engine().transcribe(audio, resume_progress=good)
     adopted = [(w.start, w.text) for seg in resumed.segments for w in seg.words]
-    assert (24.0, "back") in adopted and (25.0, "again") in adopted
+    assert (9.0, "back") in adopted and (10.0, "again") in adopted
 
 
 @pytest.mark.parametrize(

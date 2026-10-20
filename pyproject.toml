@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "textflowkit"
-version = "0.1.12"
+version = "0.1.13"
 description = "Cross-platform media transcription toolkit: URL or file in, timestamped transcripts and subtitle files out."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -130,6 +130,10 @@ include = [
   "/Dockerfile",
   "/compose.yaml",
   "/.dockerignore",
+  # The delegated-worker policy: `scripts/run_deepseek_worker.py` reads it
+  # before a task runs, so the source archive must carry it for the archive
+  # to be a working checkout.
+  "/AGENTS.md",
   "/.env.example",
 ]
 exclude = ["/packages/textflowkit-fonts"]

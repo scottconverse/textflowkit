@@ -1,6 +1,6 @@
 # Developer and integration manual
 
-Current release: [v0.1.12](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.12).
+Current release: [v0.1.13](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13).
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
 in the compatibility table below identify **historical test sessions**, not
 the version of TextFlowKit currently published.
@@ -22,9 +22,11 @@ API and WebSockets are ephemeral and bypass durable job submission.
    HTTP ───────────►└──────────────────────┘
 ```
 
-## Windows desktop installer (v0.1.12; public EXE pending)
+## Windows desktop installer (v0.1.13)
 
-The Windows x86_64 installer packages the existing browser interface for core v0.1.12. The native Windows installer has been built and tested locally. The installer recipe ships in v0.1.12; the EXE remains local-only until unresolved corresponding-source compliance review is cleared. No public installer download link is available. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+
+The Windows x86_64 installer packages the existing browser interface for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
 
 The setup installs per user, adds a Start Menu entry, and offers an
 optional desktop shortcut. Launching it will start the local server and open the
@@ -551,7 +553,7 @@ observation rather than forwarding the caller's header, and keep
 
 ## Live microphone streaming (`/stream`, opt-in)
 
-In v0.1.12, native live streaming supports **Windows x86_64 only**. Other live
+In v0.1.13, native live streaming (introduced in v0.1.11) supports **Windows x86_64 only**. Other live
 platforms are unsupported; existing standalone defaults and platform support are
 unchanged. Physical browser microphone capture was not verified. The public site
 is static documentation and serves no streams. Both local server surfaces can
@@ -562,7 +564,7 @@ exist and a connection is refused before any session is allocated - and it needs
 `streaming` extra (`websockets`).
 
 ```powershell
-python -m pip install "textflowkit[streaming]==0.1.12"
+python -m pip install "textflowkit[streaming]==0.1.13"
 # Native Windows PowerShell:
 $env:TEXTFLOWKIT_API_TOKEN="choose-a-long-random-token"
 $env:TEXTFLOWKIT_STREAMING="1"
@@ -602,7 +604,7 @@ supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
 of its own: it is a local app, not a hosted service.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.12'
+python -m pip install 'textflowkit[http,export]==0.1.13'
 textflowkit-ui                 # serve on 127.0.0.1 and open a browser
 textflowkit-ui --no-browser --port 8901
 ```
@@ -986,7 +988,7 @@ By default the job store is in-memory and bounded (`max_jobs=200`, terminal
 jobs evicted first). Set `TEXTFLOWKIT_DB` to use the durable SQLite store for
 restart-safe jobs and checkpoints. The SQLite store assumes one owning process.
 
-## UI-only proofreading routes (v0.1.12)
+## UI-only proofreading routes (introduced in v0.1.12)
 
 These routes belong to the local UI session gate, not the developer HTTP or MCP
 API. POST requires the existing `x-textflowkit-ui-capability` header. Host, peer
