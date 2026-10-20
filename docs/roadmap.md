@@ -262,3 +262,8 @@ the full five-role audit of v0.1.6 main commit
 Deferral does not remove these findings or waive their acceptance criteria.
 Core engineering/runtime bugs and the major documentation corrections remain
 in the active repair goal. See the [changelog](../CHANGELOG.md).
+
+## v0.1.14 — developer workflow documentation
+
+- [x] Ship v0.1.14 review follow-ups: persist the headless-Codex-only DeepSeek coding policy across restarts; require the exact 1017-cloud model, thinking off, isolated worktree/config/environment and native Windows sandbox, with no silent fallback.
+- [x] Update current package/documentation release references; retain the verified v0.1.13 Windows installer and historical native evidence unchanged. No new application capability.

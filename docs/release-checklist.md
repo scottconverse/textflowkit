@@ -1,6 +1,12 @@
 # Release verification checklist
 
-## v0.1.13 release preparation
+## v0.1.14 documentation-only patch
+
+Core 0.1.14; fonts 0.1.6 reused unchanged. This release changes developer workflow documentation and current version metadata only, not application logic/dependencies. Run `python scripts/verify_release_versions.py --tag v0.1.14`, `python scripts/verify_readme_release.py --version v0.1.14`, affected release-surface tests and required CI. Merge only after green PR CI; require exact merged-main CI before tagging/publishing. Verify published distribution hashes, fresh installed version and the deployed website.
+
+The verified Windows installer and its corresponding sources/notices remain v0.1.13; keep those download links explicitly versioned. Do not relabel/rebuild unchanged installer artifacts merely for this documentation patch. Reuse unaffected v0.1.13 native/live evidence with its original commit/version and do not claim a new live YouTube or native accuracy verification for v0.1.14. No changes to the live-check script or its requirements.
+
+## Historical v0.1.13 release preparation
 
 Core is 0.1.13; fonts remain 0.1.6, unchanged. Run the existing guards from the candidate root:
 
