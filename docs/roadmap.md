@@ -270,4 +270,4 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 
 ## v0.1.15 — LOW-effort developer workflow
 
-- [x] Ship v0.1.15 review follow-ups: require LOW effort for the exact DeepSeek 1017 model in current instructions and historical runner settings; retain headless Codex as the required harness, Whistle as default, fonts 0.1.6 and verified installer v0.1.13.
+- [x] Ship v0.1.15 review follow-ups: require LOW effort for the exact DeepSeek 1017 model in current instructions and historical runner settings; retain headless Codex as the required harness, Whistle as default, fonts 0.1.6 and verified installer v0.1.15.

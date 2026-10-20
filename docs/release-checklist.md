@@ -2,7 +2,7 @@
 
 ## v0.1.15 developer-tooling patch
 
-Core 0.1.15; fonts 0.1.6 reused. Only DeepSeek worker policy, historical runner effort settings and current documentation/version metadata change. Native headless Codex LOW effort was verified against the exact 1017 model with a successful real tool call; previous off/none receipts remain historical. Run version/README guards, affected release tests, Ruff and required CI; require exact merged-main CI before tagging. Verify publication hashes, fresh installed versions and the live website. The installer remains explicitly v0.1.13; do not relabel or rebuild unchanged application artifacts.
+Core 0.1.15; fonts 0.1.6 reused. Only DeepSeek worker policy, historical runner effort settings and current documentation/version metadata change. Native headless Codex LOW effort was verified against the exact 1017 model with a successful real tool call; previous off/none receipts remain historical. Run version/README guards, affected release tests, Ruff and required CI; require exact merged-main CI before tagging. Verify publication hashes, fresh installed versions and the live website. Owner-authorized Windows follow-up: rebuild from the immutable v0.1.15 tag and published wheel, validate the full payload, verify actual isolated EXE install/version/speech/UI behavior, publish Windows checksums and matching unchanged dependency-source snapshots, and update current download links. See [Windows v0.1.15 acceptance](verification/windows-installer-v015-20261020.md).
 
 ## Historical v0.1.14 documentation-only patch
 

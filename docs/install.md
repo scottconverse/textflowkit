@@ -2,7 +2,7 @@
 
 Current release: [v0.1.15](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15).
 
-v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer remains v0.1.13 with its matching sources and notices.
+v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer is v0.1.15 with its matching sources and notices.
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -12,11 +12,11 @@ selected with `--engine whisper`. The ROCm instructions below apply to the
 explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
 or WSL**.
 
-## Windows desktop installer (v0.1.13)
+## Windows desktop installer (v0.1.15)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
 
-The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). Use the Python package for the supported developer and integration install path.
+The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). Use the Python package for the supported developer and integration install path.
 
 The installer includes a private embeddable CPython runtime; the
 existing browser UI and its HTTP, export, and streaming dependencies; the pinned
@@ -47,9 +47,10 @@ Streaming dependencies are bundled, but streaming remains opt-in through
 `TEXTFLOWKIT_STREAMING=1`; physical browser microphone capture has not been
 verified. The installer bundle includes third-party license and notice
 files, including FFmpeg's LGPL notices and corresponding-source information.
-Check the exact notices and source-distribution details against the final bundled
-binaries before publication. The candidate is unsigned, so Windows may show a
+Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a
 SmartScreen warning.
+
+Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](verification/windows-installer-v015-20261020.md).
 
 ## Local browser interface
 

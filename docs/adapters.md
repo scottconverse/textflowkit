@@ -2,7 +2,7 @@
 
 Current release: [v0.1.15](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15).
 
-v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer remains v0.1.13 with its matching sources and notices.
+v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer is v0.1.15 with its matching sources and notices.
 For DeepSeek coding contributions, use the required [headless Codex worker workflow](deepseek-worker.md); this is a development tool, not a transcription-engine setting.
 
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
@@ -26,11 +26,13 @@ API and WebSockets are ephemeral and bypass durable job submission.
    HTTP ───────────►└──────────────────────┘
 ```
 
-## Windows desktop installer (v0.1.13)
+## Windows desktop installer (v0.1.15)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
 
-The Windows x86_64 installer packages the existing browser interface for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
+Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](verification/windows-installer-v015-20261020.md).
+
+The Windows x86_64 installer packages the existing browser interface for core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
 
 The setup installs per user, adds a Start Menu entry, and offers an
 optional desktop shortcut. Launching it will start the local server and open the
@@ -51,9 +53,7 @@ remain available to Python package users who install and configure the required
 dependencies separately. Streaming dependencies are bundled, but streaming
 remains opt-in, and physical browser microphone capture has not been verified.
 The installer bundle includes third-party license and notice files,
-including FFmpeg's LGPL notices and corresponding-source information. The exact
-notices and source-distribution details must be checked against the final binaries
-before publication. The candidate is unsigned, so Windows may show a SmartScreen
+including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a SmartScreen
 warning.
 
 ```mermaid

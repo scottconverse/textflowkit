@@ -1,6 +1,6 @@
 # TextFlowKit user manual — v0.1.15
 
-v0.1.15 is a developer-tooling patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer remains v0.1.13. Developer workflow changes are described in the [integration manual](adapters.md).
+v0.1.15 is a developer-tooling patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer is v0.1.15. Developer workflow changes are described in the [integration manual](adapters.md).
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -23,11 +23,13 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
-### Windows x86_64 installer (v0.1.13)
+### Windows x86_64 installer (v0.1.15)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](verification/windows-installer-v015-20261020.md).
+
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -49,10 +51,8 @@ rather than force-kill it; Stop server drains active jobs, so cancel a job first
 if it should not finish.
 
 The installer bundle includes third-party license and notice files,
-including FFmpeg's LGPL notices and corresponding-source information. Check the
-exact notices and source-distribution details against the final bundled binaries
-before publication. The candidate is unsigned, so Windows may show a SmartScreen
-warning. See the [install notes](install.md#windows-desktop-installer-v0113)
+including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a SmartScreen
+warning. See the [install notes](install.md#windows-desktop-installer-v0115)
 for its scope and status.
 
 ```mermaid
@@ -577,7 +577,6 @@ The uploaded wheel and source archive are version 0.1.5; their hashes match
 the GitHub v0.1.5 release. The current GitHub README and this manual correct
 the wording. PyPI's already-uploaded release metadata cannot be rewritten in
 place; a future package version will carry the corrected description.
-
 
 ## Optional local AI transcript cleanup (introduced in v0.1.12)
 
