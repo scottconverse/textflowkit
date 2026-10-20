@@ -168,11 +168,13 @@ installs `textflowkit-fonts` for offline multilingual PDF rendering:
 python -m pip install 'textflowkit[export]'
 ```
 
-## Windows desktop installer (v0.1.13; public EXE pending)
+## Windows desktop installer (v0.1.13)
 
-An installer for the existing local browser workspace accompanies core v0.1.13. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending issue #31 corresponding-source verification. No public installer download link is available. The Python package remains supported for developers and integrations.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
 
-The candidate is designed to run without a separately installed Python, WSL, or
+An installer for the existing local browser workspace accompanies core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). The Python package remains supported for developers and integrations.
+
+The installer is designed to run without a separately installed Python, WSL, or
 Docker. Its bundle includes a private embeddable CPython runtime, the
 browser UI and HTTP, export, and streaming dependencies, the pinned Whistle model
 and runtime, and ffmpeg, ffprobe, and Node. The setup installs per user,
@@ -189,16 +191,16 @@ bundled; those features remain documented for the Python package when separately
 installed and configured. Streaming dependencies are bundled, but live streaming
 remains opt-in and physical browser microphone capture has not been verified.
 
-The candidate is designed to keep UI data outside the application install
+The installer is designed to keep UI data outside the application install
 directory and preserve it on upgrades and uninstall. Stop the UI server with
 **Stop server** and wait for it to exit before upgrading or uninstalling; the
 installer will block while it is running rather than force-killing active jobs.
 Cancel a job first if it should not drain to completion. The bundle also
 includes third-party license and notice files, including FFmpeg's LGPL notices
 and corresponding-source information. Check exact notices and source-distribution
-details against the final bundled binaries before publication. The candidate is
+details in the matching source bundles distributed with this release. The installer is
 unsigned, so Windows may show a SmartScreen warning. See the [installer candidate
-notes](docs/install.md#windows-desktop-installer-v0112-public-exe-pending).
+notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0113).
 
 ## Python API
 
@@ -495,9 +497,8 @@ reconciled one-to-one before durable resume. Whistle remains the default engine
 with the same pinned model and runtime; fonts remain 0.1.6. Progress schema 2
 stores raw boundary context, so an unfinished partial job from the previous
 26-second-core plan (schema 1) must be restarted instead of resumed; completed
-records are unchanged. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending
-issue #31 corresponding-source verification: there is no public installer download
-link. The rebuild itself is not claimed as tested by this documentation unit.
+records are unchanged. The native Windows installer is rebuilt at v0.1.13 and
+distributed with matching FFmpeg sources, notices, hashes and build instructions.
 Existing optional live streaming provides a transport-neutral
 `StreamingSession` Python API, incremental transcript events, and authenticated
 loopback WebSockets (`/stream` on the developer HTTP API and `/api/stream` on the

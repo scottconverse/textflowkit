@@ -22,9 +22,11 @@ API and WebSockets are ephemeral and bypass durable job submission.
    HTTP ───────────►└──────────────────────┘
 ```
 
-## Windows desktop installer (v0.1.13; public EXE pending)
+## Windows desktop installer (v0.1.13)
 
-The Windows x86_64 installer packages the existing browser interface for core v0.1.13. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending issue #31 corresponding-source verification. No public installer download link is available. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+
+The Windows x86_64 installer packages the existing browser interface for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
 
 The setup installs per user, adds a Start Menu entry, and offers an
 optional desktop shortcut. Launching it will start the local server and open the

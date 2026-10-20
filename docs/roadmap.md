@@ -211,6 +211,8 @@ verification/deployment boundaries, not claims of complete platform coverage.
 
 ## v0.1.13 — Whistle missing-speech fixes
 
+- [x] Prepare the native Windows installer with matching FFmpeg sources, dependency notices and pinned build instructions; see [the source verification record](verification/windows-sources-20261019.md). Publication is verified against the actual release assets.
+
 - [x] Ship v0.1.13 review follow-ups: bound native Whistle decode to 15-second
   inputs with 11-second cores and bounded seam context, add anchored short-gap
   recovery, correct shared-context word ownership, and persist seam context in

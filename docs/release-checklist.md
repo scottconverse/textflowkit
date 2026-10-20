@@ -10,6 +10,10 @@ python scripts/verify_readme_release.py --version v0.1.13
 python -m pytest tests/test_release_surfaces.py
 ```
 
+### Windows installer source and publication gate
+
+Use [the source verification record](verification/windows-sources-20261019.md) and the three pinned notice/index/instruction assets in packaging/windows/source-materials.json. Stage those small assets into the private runtime, regenerate its file manifest, then rebuild the EXE. Publish the three matching source ZIPs, notices, source index and build instructions alongside the EXE and Windows SHA-256 manifest. Verify GitHub's uploaded asset digests before closing issue #31. Never upload failed scratch bundles. The EXE is unsigned; preserve existing Windows protections.
+
 ### Whistle core behavior in v0.1.13
 
 Native Whistle decode is limited to 15-second inputs: 11-second owned cores with up to

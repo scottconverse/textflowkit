@@ -411,3 +411,73 @@ def test_manifest_records_payload_files_but_not_itself(tmp_path: Path) -> None:
     ]
     assert "manifest.json" not in {item["path"] for item in document["files"]}
     json.dumps(document)
+
+def _declared_license_fixture(tmp_path: Path, payload_bytes: bytes) -> tuple[Path, Path]:
+    windows = tmp_path / "packaging" / "windows"
+    windows.mkdir(parents=True)
+    cache = tmp_path / "asset-cache"
+    cache.mkdir()
+    name = "TextFlowKit-0.1.13-source-index.json"
+    (cache / name).write_bytes(payload_bytes)
+    document = {
+        "source_index": {
+            "filename": name,
+            "url": "https://example.invalid/" + name,
+            "size": len(payload_bytes),
+            "sha256": hashlib.sha256(payload_bytes).hexdigest(),
+        }
+    }
+    (windows / "source-materials.json").write_text(json.dumps(document), encoding="utf-8")
+    return windows, cache
+
+
+def test_declared_license_assets_are_copied_byte_for_byte_and_recorded(
+    tmp_path: Path,
+) -> None:
+    body = b'{"assets": []}\n'
+    windows, cache = _declared_license_fixture(tmp_path, body)
+    root = tmp_path / "payload"
+
+    copied = payload.copy_release_license_material(
+        payload_root=root,
+        packaging_windows=windows,
+        asset_cache=cache,
+    )
+
+    name = "TextFlowKit-0.1.13-source-index.json"
+    assert (root / "licenses" / name).read_bytes() == body
+    assert copied["source_index"] == {
+        "filename": name,
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "size": len(body),
+    }
+
+
+def test_declared_license_asset_missing_from_cache_fails(tmp_path: Path) -> None:
+    body = b"build instructions\n"
+    windows, cache = _declared_license_fixture(tmp_path, body)
+    (cache / "TextFlowKit-0.1.13-source-index.json").unlink()
+
+    with pytest.raises(payload.PayloadError, match="missing from the asset cache"):
+        payload.copy_release_license_material(
+            payload_root=tmp_path / "payload",
+            packaging_windows=windows,
+            asset_cache=cache,
+        )
+    assert not (tmp_path / "payload" / "licenses/TextFlowKit-0.1.13-source-index.json").exists()
+
+
+def test_declared_license_asset_hash_mismatch_fails(tmp_path: Path) -> None:
+    body = b"notices\n"
+    windows, cache = _declared_license_fixture(tmp_path, body)
+    target = cache / "TextFlowKit-0.1.13-source-index.json"
+    assert target.stat().st_size == len(body)
+    target.write_bytes(b"NOTICES\n")  # same size, different bytes
+
+    with pytest.raises(payload.PayloadError, match="SHA-256 mismatch"):
+        payload.copy_release_license_material(
+            payload_root=tmp_path / "payload",
+            packaging_windows=windows,
+            asset_cache=cache,
+        )
+    assert not (tmp_path / "payload" / "licenses/TextFlowKit-0.1.13-source-index.json").exists()

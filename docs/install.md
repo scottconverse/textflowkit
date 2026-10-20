@@ -10,9 +10,11 @@ selected with `--engine whisper`. The ROCm instructions below apply to the
 explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
 or WSL**.
 
-## Windows desktop installer (v0.1.13; public EXE pending)
+## Windows desktop installer (v0.1.13)
 
-The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.13. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending issue #31 corresponding-source verification. No public installer download link is available. Use the Python package for the supported developer and integration install path.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+
+The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). Use the Python package for the supported developer and integration install path.
 
 The installer includes a private embeddable CPython runtime; the
 existing browser UI and its HTTP, export, and streaming dependencies; the pinned

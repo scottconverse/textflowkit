@@ -31,4 +31,16 @@ license files are included in runtime/Lib/site-packages. Installed versions are
 listed in manifest.json. Optional Torch, Whisper and speaker-diarization models
 are not included in this installer.
 
-This local installer candidate is unsigned. It is not a signed public release.
+This installer is unsigned. Windows may show a SmartScreen warning.
+
+Matching source distribution for this exact FFmpeg bundle:
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-source-index.json
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-source-build-instructions.md
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-ffmpeg-sources-1.zip
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-ffmpeg-sources-2.zip
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-ffmpeg-sources-3.zip
+https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-THIRD-PARTY-NOTICES.zip
+
+The complete notices archive, source index and build instructions are also in
+this installation's licenses directory. The matching source archives, pinned
+recipes and patches are offered with the binary on the same release host.

@@ -2,8 +2,8 @@
 
 ## v0.1.13 — 2026-10-19
 
-Core: 0.1.13; unchanged optional fonts: 0.1.6. Local verification of the Whistle
-missing-speech fixes; no push, tag, publication, or rebuilt installer is claimed here.
+Core: 0.1.13; unchanged optional fonts: 0.1.6. Whistle missing-speech fixes and a
+native Windows installer distributed with matching FFmpeg sources and notices.
 
 - Bound native Whistle decode inputs to 15 seconds with 11-second owned cores
   and up to two seconds of context per side. The former 30-second inputs
@@ -32,6 +32,8 @@ missing-speech fixes; no push, tag, publication, or rebuilt installer is claimed
   coverage evidence for one recording, not human WER or perfect accuracy; normal
   spelling errors remain. See
   [the verification note](docs/verification/whistle-coverage-20261019.md).
+
+- Package matching FFmpeg sources, pinned build recipes, dependency archives and full notices alongside the Windows installer; record source hashes and preserve compatible DLL replacement. See [source verification](docs/verification/windows-sources-20261019.md).
 
 ## v0.1.12 — 2026-10-17
 

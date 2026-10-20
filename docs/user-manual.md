@@ -21,9 +21,11 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
-### Windows x86_64 installer (v0.1.13; public EXE pending)
+### Windows x86_64 installer (v0.1.13)
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.13. The installer recipe accompanies v0.1.13; the rebuilt EXE is local-only pending issue #31 corresponding-source verification. No public installer download link is available. It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.13/TextFlowKit-0.1.13-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13)
+
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.13. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.13 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.13). It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -48,7 +50,7 @@ The installer bundle includes third-party license and notice files,
 including FFmpeg's LGPL notices and corresponding-source information. Check the
 exact notices and source-distribution details against the final bundled binaries
 before publication. The candidate is unsigned, so Windows may show a SmartScreen
-warning. See the [install notes](install.md#windows-desktop-installer-v0112-public-exe-pending)
+warning. See the [install notes](install.md#windows-desktop-installer-v0113)
 for its scope and status.
 
 ```mermaid
@@ -528,8 +530,8 @@ passes with Whistle's own real speech output.
 The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second
 decode ceiling, anchored gap checks, and shared-context reconciliation, and it
 records progress schema 2, so old 26-second-core partial jobs must restart. The
-installer recipe accompanies it; the public EXE stays withheld pending the OPEN
-corresponding-source compliance review (issue #31). The local browser
+native Windows installer accompanies it with matching FFmpeg sources and notices.
+The local browser
 interface introduced in v0.1.10 remains in the core package, and
 the v0.1.9 engine change (Whistle default, `openai-whisper` opt-in) is unchanged.
 The local browser interface's own verification boundary is in
