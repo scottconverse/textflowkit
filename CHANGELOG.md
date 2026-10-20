@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — no-telemetry policy
+
+- Disable optional pyannote usage metrics and Hugging Face telemetry before optional imports; retain Whistle's forced-off child settings. Necessary model downloads and explicit media/model requests remain functional.
+- Disable Cloudflare Web Analytics/RUM injection and Network Error Logging for textflowkit.org; document provider settings and verification rather than treating repository HTML as proof of no injected telemetry.
+
 ## Documentation follow-up — 2026-10-20 (no new binary release)
 
 - Check current README, manuals, website, architecture diagrams, packaging and contributor instructions against v0.1.15 interfaces. Correct the HTTP example's engine/model mismatch, GPU selftest selection, export endpoint, broken section anchors and remaining stale installer versions.
