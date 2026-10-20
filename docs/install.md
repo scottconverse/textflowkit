@@ -1,8 +1,8 @@
 # Install notes
 
-Current release: [v0.1.14](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.14).
+Current release: [v0.1.15](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15).
 
-v0.1.14 updates developer workflow documentation only; runtime behavior is unchanged. The latest verified Windows installer remains v0.1.13 with its matching sources and notices.
+v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer remains v0.1.13 with its matching sources and notices.
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -57,7 +57,7 @@ The local browser workspace **ships in the core package as of v0.1.10**. A
 regular install of the current release carries the `textflowkit-ui` command:
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.14'
+python -m pip install 'textflowkit[http,export]==0.1.15'
 textflowkit-ui
 ```
 
@@ -86,14 +86,14 @@ them; cancel a job first to stop it early. See the
 
 ## Live microphone streaming
 
-Live streaming in v0.1.14 (introduced in v0.1.11) is **Windows x86_64 only, opt-in and off by default**.
+Live streaming in v0.1.15 (introduced in v0.1.11) is **Windows x86_64 only, opt-in and off by default**.
 Other live platforms are unsupported; existing standalone platform support and
 Whistle defaults are unchanged. Physical browser microphone capture has not been
 verified; the public website is static documentation and does not accept streams. It needs one extra dependency
 (the WebSocket implementation for the ASGI server):
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.14"
+python -m pip install "textflowkit[streaming]==0.1.15"
 ```
 
 Set `TEXTFLOWKIT_STREAMING=1` to serve it, then open the shipped browser example.

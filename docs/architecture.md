@@ -1,4 +1,4 @@
-# Architecture and job lifecycle — v0.1.14
+# Architecture and job lifecycle — v0.1.15
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment

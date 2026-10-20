@@ -1,6 +1,6 @@
-# TextFlowKit user manual — v0.1.14
+# TextFlowKit user manual — v0.1.15
 
-v0.1.14 is a documentation-only patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer remains v0.1.13. Developer workflow changes are described in the [integration manual](adapters.md).
+v0.1.15 is a developer-tooling patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer remains v0.1.13. Developer workflow changes are described in the [integration manual](adapters.md).
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -81,7 +81,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.14'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.15'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -349,7 +349,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.14'
+python -m pip install 'textflowkit[http,export]==0.1.15'
 textflowkit-ui
 ```
 
@@ -441,7 +441,7 @@ and nowhere else.
 
 It is **off by default**: with the switch unset the endpoint
 does not exist. It needs the `streaming` extra
-(`python -m pip install "textflowkit[streaming]==0.1.14"`). This is a capability of the
+(`python -m pip install "textflowkit[streaming]==0.1.15"`). This is a capability of the
 **servers**, not the command-line `textflowkit` tool — the CLI never opens a
 microphone. See [streaming.md](streaming.md) for the full contract and the
 programmatic API.
@@ -525,8 +525,8 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.14 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.14)
-- [Core package 0.1.14 on PyPI](https://pypi.org/project/textflowkit/0.1.14/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.15 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
+- [Core package 0.1.15 on PyPI](https://pypi.org/project/textflowkit/0.1.15/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
 The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second

@@ -1,4 +1,7 @@
-"""Project-local Ollama coding-worker launcher; no model fallback or thinking."""
+"""Historical opt-in Ollama coding-worker launcher using low reasoning effort and no model fallback.
+
+This does not authorize its use instead of headless Codex.
+"""
 
 import argparse
 import json
@@ -46,13 +49,13 @@ def main():
     }
     meta = {
         "requested_model": MODEL,
-        "think": False,
+        "think": "low",
         "endpoint": ENDPOINT,
         "started_utc": datetime.now(timezone.utc).isoformat(),
         "returned_models": [],
     }
     for turn in range(20):
-        payload = {"model": MODEL, "think": False, "stream": False, "messages": messages}
+        payload = {"model": MODEL, "think": "low", "stream": False, "messages": messages}
         if not args.probe:
             payload["tools"] = [tool]
         request = urllib.request.Request(
@@ -69,8 +72,6 @@ def main():
         if returned not in RESPONSE_MODELS:
             raise RuntimeError(f"Unexpected returned model: {returned!r}; no fallback permitted")
         message = result["message"]
-        if message.get("thinking"):
-            raise RuntimeError("Provider returned thinking despite think=false; stopping")
         messages.append(message)
         calls = message.get("tool_calls", [])
         if not calls:
