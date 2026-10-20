@@ -90,4 +90,3 @@ links and version numbers must be updated only when that release is authorized.
 
 The original Python package, CLI, MCP and HTTP entry points remain supported.
 This installer does not bundle the optional Whisper or diarization stacks.
-
