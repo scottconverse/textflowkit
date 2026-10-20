@@ -1,4 +1,4 @@
-# Architecture and job lifecycle — v0.1.15
+# Architecture and job lifecycle — v0.1.16
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -26,13 +26,13 @@ a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
 
-### Windows desktop installer (v0.1.15)
+### Windows desktop installer (v0.1.16)
 
-The Windows x86_64 installer for core v0.1.15 provisions this same browser door without adding a second pipeline or hosted service. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+The Windows x86_64 installer provisions this same browser door without adding a second pipeline or hosted service. It is built from the immutable v0.1.16 tag and published core wheel after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
 
 ```mermaid
 flowchart LR
-    Installer[Locally tested per-user x86_64 setup] --> Runtime[Private CPython and bundled UI/runtime dependencies]
+    Installer[Per-user x86_64 setup] --> Runtime[Private CPython and bundled UI/runtime dependencies]
     Shortcut[Start Menu or optional desktop shortcut] --> Server[Local HTTP server at 127.0.0.1]
     Runtime --> Server
     Browser[Browser on localhost] <--> Server
@@ -56,9 +56,9 @@ rather than force-kill it. Stop server drains active jobs, so cancel one first i
 it should not finish. The installer bundle includes third-party license
 and notice files, including FFmpeg's LGPL notices and corresponding-source
 information. The unchanged dependency source/notice snapshots retain their original
-v0.1.13 filenames and hashes in the v0.1.15 release. Actual isolated installation,
-version readback, native speech selftest and UI launch are recorded in the
-[v0.1.15 installer verification](verification/windows-installer-v015-20261020.md).
+v0.1.13 filenames and hashes for v0.1.16. The v0.1.16 EXE must pass actual isolated
+installation, version readback, native Whistle speech selftest and UI launch before
+Windows publication. The matching release assets include the build receipt and checksums.
 The installer is unsigned, so Windows may show
 a SmartScreen warning. The Python package remains the supported
 developer and integration path, and Docker remains a separate operator option.
@@ -521,4 +521,4 @@ three chunks at 2026-10-16 17:39:52 UTC, with four changed segments. The canonic
 SQLite JSON/source and segment IDs/timestamps matched, and the browser comparison
 and TXT save were verified. This confirms the local persistence/export path for
 that run only, not correction accuracy; human audio review remains required.
-The optional UI-only cleanup is included in v0.1.15 (introduced in v0.1.12); models are not bundled.
+The optional UI-only cleanup is included in v0.1.16 (introduced in v0.1.12); models are not bundled.

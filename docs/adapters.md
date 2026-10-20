@@ -1,13 +1,14 @@
 # Developer and integration manual
 
-**Privacy:** Website analytics are disabled. The additional pyannote/Hugging Face
-telemetry opt-outs are unreleased after v0.1.15; published installers do not change
-automatically. See the [privacy policy](privacy.md) for the exact controls and
-necessary functional network traffic.
+**Privacy:** v0.1.16 disables pyannote usage metrics and Hugging Face telemetry
+before optional imports; necessary downloads, gated-model authentication and Whistle
+as the default engine remain functional. Website analytics, RUM and NEL are disabled.
+Older artifacts do not change automatically. See the [privacy policy](privacy.md)
+for the exact controls and necessary functional network traffic.
 
-Current release: [v0.1.15](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15).
+Current release: [v0.1.16](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16).
 
-v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer is v0.1.15 with its matching sources and notices.
+v0.1.16 is a no-telemetry release. Transcription and streaming behavior are unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its release process requires isolated install, version, speech and UI acceptance.
 For DeepSeek coding contributions, use the required [headless Codex worker workflow](deepseek-worker.md); this is a development tool, not a transcription-engine setting.
 
 Start with the [user manual](user-manual.md) for everyday use. Harness versions
@@ -31,13 +32,13 @@ API and WebSockets are ephemeral and bypass durable job submission.
    HTTP ───────────►└──────────────────────┘
 ```
 
-## Windows desktop installer (v0.1.15)
+## Windows desktop installer (v0.1.16)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
 
-Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](verification/windows-installer-v015-20261020.md).
+The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. Publication requires actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
 
-The Windows x86_64 installer packages the existing browser interface for core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
+The Windows x86_64 installer packages the existing browser interface for core v0.1.16 and is built after tagged core publication. Its matching FFmpeg source and notice bundles are distributed through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. It requires no separately installed Python, WSL, or Docker. The Python package remains supported for developers and integrations; Docker remains a separate operator deployment example.
 
 The setup installs per user, adds a Start Menu entry, and offers an
 optional desktop shortcut. Launching it will start the local server and open the
@@ -562,7 +563,7 @@ observation rather than forwarding the caller's header, and keep
 
 ## Live microphone streaming (`/stream`, opt-in)
 
-In v0.1.15, native live streaming (introduced in v0.1.11) supports **Windows x86_64 only**. Other live
+In v0.1.16, native live streaming (introduced in v0.1.11) supports **Windows x86_64 only**. Other live
 platforms are unsupported; existing standalone defaults and platform support are
 unchanged. Physical browser microphone capture was not verified. The public site
 is static documentation and serves no streams. Both local server surfaces can
@@ -573,7 +574,7 @@ exist and a connection is refused before any session is allocated - and it needs
 `streaming` extra (`websockets`).
 
 ```powershell
-python -m pip install "textflowkit[streaming]==0.1.15"
+python -m pip install "textflowkit[streaming]==0.1.16"
 # Native Windows PowerShell:
 $env:TEXTFLOWKIT_API_TOKEN="choose-a-long-random-token"
 $env:TEXTFLOWKIT_STREAMING="1"
@@ -613,7 +614,7 @@ supplies FastAPI and uvicorn, and adds no new dependency). It has no public site
 of its own: it is a local app, not a hosted service.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.15'
+python -m pip install 'textflowkit[http,export]==0.1.16'
 textflowkit-ui                 # serve on 127.0.0.1 and open a browser
 textflowkit-ui --no-browser --port 8901
 ```

@@ -271,3 +271,8 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 ## v0.1.15 — LOW-effort developer workflow
 
 - [x] Ship v0.1.15 review follow-ups: require LOW effort for the exact DeepSeek 1017 model in current instructions and historical runner settings; retain headless Codex as the required harness, Whistle as default, fonts 0.1.6 and verified installer v0.1.15.
+
+## v0.1.16 — no-telemetry privacy release
+
+- [x] Ship v0.1.16 review follow-ups: enforce pyannote metrics and Hugging Face telemetry opt-outs before optional imports; preserve functional downloads, gated-model authentication and Whistle as the default engine; disable website RUM and NEL.
+- [ ] Build and accept the v0.1.16 Windows installer from the immutable tag and published core wheel, publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with unchanged dependency-source snapshots, and record isolated install/version/Whistle-speech/UI-launch acceptance. Pending after tagged core publication; v0.1.15 remains the latest completed installer acceptance.

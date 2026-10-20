@@ -7,15 +7,20 @@ exports or shares them. This is distinct from necessary functional traffic.
 
 ## Release boundary
 
-The added pyannote/Hugging Face guard is unreleased after v0.1.15. Previously
-published wheels and Windows installers are immutable and do not acquire this
-source change automatically. Website settings take effect independently.
+The pyannote/Hugging Face opt-outs ship in v0.1.16. They are applied before
+optional dependencies are imported. v0.1.15 and earlier wheels and Windows
+installers are immutable, have no automatic update mechanism, and do not acquire
+this source change; install v0.1.16 or later to receive these controls. This says
+nothing about older downloads changing themselves. Website settings take effect
+independently.
 
 ## Application controls
 
 Before loading optional dependencies, TextFlowKit forces process-local opt-outs
 for pyannote metrics and Hugging Face telemetry, overriding inherited opt-ins.
 The policy does not edit a user's account settings or global machine environment.
+These opt-outs do not change Whistle as the default engine, block necessary model or
+runtime downloads, or disable Hugging Face authentication for gated models.
 Whistle's standalone and streaming child environments already force
 `NEEDLE_TELEMETRY=0`, `DO_NOT_TRACK=1` and `CI=1`; keep those overrides.
 The upstream Python Needle telemetry SDK is not imported or bundled.

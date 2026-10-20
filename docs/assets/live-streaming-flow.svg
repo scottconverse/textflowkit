@@ -10,7 +10,7 @@
     .edge {fill:none;stroke:#3b556e;stroke-width:2;marker-end:url(#arrow)}
   </style>
   <rect x="1" y="1" width="1178" height="488" rx="18" fill="#f7fafc" stroke="#d5e0e9"/>
-  <text x="30" y="42" class="title">Optional local live streaming — v0.1.15</text>
+  <text x="30" y="42" class="title">Optional local live streaming — v0.1.16</text>
   <text x="30" y="70" class="body">Windows x86_64 only · streaming extra + TEXTFLOWKIT_STREAMING=1 · off by default</text>
   <rect x="30" y="105" width="250" height="150" rx="12" fill="#e0e7f8" stroke="#b8c7df"/>
   <text x="46" y="133" class="head">Browser or PCM client</text>
