@@ -54,7 +54,8 @@ passed on Linux and Python 3.13 while failing on Windows Python 3.10-3.12.
 
 ## Working on Whisper / GPU code
 
-`textflowkit` uses `openai-whisper` on PyTorch. On AMD hardware that means a ROCm
+The default engine is Whistle (CPU-only, no PyTorch). The optional
+`--engine whisper` uses `openai-whisper` on PyTorch. On AMD hardware that means a ROCm
 build of torch; see [docs/install.md](docs/install.md) for the torch-pinning trap
 (installing `openai-whisper` naively will replace a ROCm torch with a CPU wheel).
 

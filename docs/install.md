@@ -146,7 +146,7 @@ A plain `python -m pip install textflowkit` gets Whistle:
 `doctor` reports the default engine, the Whistle platform and cache, whether the
 model is cached, offline mode, and the telemetry gate, all with no network. For
 the full engine behaviour — windowing, resume, cancellation — see the
-[user manual](user-manual.md#7-whistle-the-default-engine).
+[user manual](user-manual.md#8-whistle-the-default-engine).
 
 ## AMD GPU support (ROCm) — no WSL required
 
@@ -271,13 +271,13 @@ No hosted CI runner has an AMD GPU, so the ROCm path cannot be covered by CI. Th
 honest substitute is a check you can run anywhere, on demand:
 
 ```bash
-textflowkit selftest              # compute device + a real tiny transcription
-textflowkit selftest --skip-transcribe   # compute device only, no model download
+textflowkit selftest --engine whisper --model tiny  # torch device + real speech
+textflowkit selftest --engine whisper --skip-transcribe  # torch compute only
 ```
 
 `selftest` defaults to Whistle (CPU-only, no torch): it normalizes
 the bundled synthetic speech fixture to the engine's sample rate and runs a real
-transcription. It fails if the engine returns no nonempty, timed speech segment. A
+transcription. It requires a nonempty timed speech segment and the known word "transcribe." A
 PASS proves text generation, not transcription accuracy. `selftest --engine
 whisper --model tiny` checks the openai-whisper/torch stack instead, running a real
 matmul on the selected device and then a real Whisper pass; that path prints
@@ -491,7 +491,7 @@ local tag explicitly (for example `qwen3.8:27b-q4_K_M`). Cloud tags are refused.
 The default cleanup endpoint is `http://127.0.0.1:11434`; optional
 `TEXTFLOWKIT_CLEANUP_OLLAMA_URL` and `TEXTFLOWKIT_CLEANUP_MODEL` affect only the
 process started with those settings. No new Python dependency is required.
-This ships in core v0.1.12 (introduced in v0.1.12; unchanged in v0.1.13); upgrading is required to change an installed app. One final cold
+This is included in core v0.1.15 (introduced in v0.1.12); upgrading is required to change an installed app. One final cold
 full-UI run completed 39 segments in three chunks and verified the separate TXT
 save; this demonstrates workflow completion for that run, not accuracy. The
 original transcript/export is kept; review AI corrections against audio before
