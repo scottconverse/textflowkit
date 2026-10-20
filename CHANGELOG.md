@@ -7,7 +7,7 @@ No-telemetry privacy release; core 0.1.16, unchanged optional fonts 0.1.6.
 - Disable optional pyannote usage metrics and Hugging Face telemetry before optional imports; preserve Whistle as the default engine and its forced-off child settings, necessary model/media downloads, explicit media/model requests and gated-model authentication.
 - Disable Cloudflare Web Analytics/RUM injection and Network Error Logging for textflowkit.org; verified in production on 2026-10-20 and documented separately from repository HTML and necessary provider operational/security logs.
 
-- Windows distribution target: `TextFlowKit-0.1.16-windows-x64-setup.exe`, to be built from the immutable v0.1.16 tag and published core wheel after tagged core publication. It must then pass isolated installation, version readback, native Whistle speech selftest and browser UI launch. The v0.1.15 installer verification remains historical; no v0.1.16 installer test is claimed here.
+- Publish the genuine `TextFlowKit-0.1.16-windows-x64-setup.exe`, built from the immutable tag and published core wheel, with matching checksums, payload manifest and unchanged dependency sources/notices. Actual isolated install, version readback, native Whistle speech selftest, privacy guards and browser UI launch passed. See [acceptance](docs/verification/windows-installer-v016-20261020.md).
 
 ## Documentation follow-up — 2026-10-20 (no new binary release)
 

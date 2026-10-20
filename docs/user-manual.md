@@ -6,7 +6,7 @@ as the default engine remain functional. Website analytics, RUM and NEL are disa
 Older artifacts do not change automatically. See the [privacy policy](privacy.md)
 for the exact controls and necessary functional network traffic.
 
-v0.1.16 is a no-telemetry release. Transcription and streaming behavior are unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its release process requires isolated install, version, speech and UI acceptance.
+v0.1.16 is a no-telemetry release. Transcription and streaming behavior are unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its actual EXE passed isolated install, version, native speech, privacy and UI acceptance.
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -33,7 +33,7 @@ extra selected explicitly with `--engine whisper`. See
 
 [Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
 
-The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. Publication requires actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
+The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. The actual EXE passed isolated installation, version readback, native Whistle speech selftest, installed privacy guards and browser UI launch. See the [v0.1.16 acceptance record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v016-20261020.md). Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
 
 The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.16. It is built after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 

@@ -275,4 +275,4 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 ## v0.1.16 — no-telemetry privacy release
 
 - [x] Ship v0.1.16 review follow-ups: enforce pyannote metrics and Hugging Face telemetry opt-outs before optional imports; preserve functional downloads, gated-model authentication and Whistle as the default engine; disable website RUM and NEL.
-- [ ] Build and accept the v0.1.16 Windows installer from the immutable tag and published core wheel, publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with unchanged dependency-source snapshots, and record isolated install/version/Whistle-speech/UI-launch acceptance. Pending after tagged core publication; v0.1.15 remains the latest completed installer acceptance.
+- [x] Build and accept the v0.1.16 Windows installer from the immutable tag and published core wheel, publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with unchanged dependency-source snapshots, and record isolated install/version/Whistle-speech/UI-launch acceptance. Completed: [v0.1.16 acceptance record](verification/windows-installer-v016-20261020.md); the v0.1.15 record remains historical.

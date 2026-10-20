@@ -65,9 +65,9 @@ the current build has not been installed over the owner's running application.
 
 The Windows distribution is `TextFlowKit-0.1.16-windows-x64-setup.exe`, built
 from the immutable v0.1.16 tag and exact published core wheel while preserving
-the verified dependency payload. Before publication, the actual EXE must pass
+the verified dependency payload. The actual EXE passed
 isolated installation, version readback, native Whistle speech selftest and local
-browser UI launch. Publish its build receipt as WINDOWS-README.md, plus the full
+browser UI launch, plus installed privacy guards. Its published build receipt is WINDOWS-README.md, with the full
 payload manifest and WINDOWS-SHA256SUMS. Do not count an older installer receipt
 as acceptance of this build or upgrade the owner's active installation for a test.
 

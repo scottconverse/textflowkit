@@ -2,7 +2,7 @@
 
 Current release: [v0.1.16](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16).
 
-v0.1.16 is a no-telemetry release: it disables pyannote usage metrics and Hugging Face telemetry before optional imports, preserving functional downloads, gated-model authentication and Whistle as the default engine. Website RUM and NEL are disabled. Transcription and streaming behavior are unchanged from v0.1.15; the Windows release process requires isolated install, version, speech and UI acceptance.
+v0.1.16 is a no-telemetry release: it disables pyannote usage metrics and Hugging Face telemetry before optional imports, preserving functional downloads, gated-model authentication and Whistle as the default engine. Website RUM and NEL are disabled. Transcription and streaming behavior are unchanged from v0.1.15; the Windows installer passed isolated install, version, native speech, privacy and UI acceptance.
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -50,7 +50,7 @@ files, including FFmpeg's LGPL notices and corresponding-source information.
 Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a
 SmartScreen warning.
 
-The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. Publication requires actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
+The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. The actual EXE passed isolated installation, version readback, native Whistle speech selftest, installed privacy guards and browser UI launch. See the [v0.1.16 acceptance record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v016-20261020.md). Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
 
 ## Local browser interface
 
