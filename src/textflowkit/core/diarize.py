@@ -27,6 +27,7 @@ from typing import Protocol
 
 from textflowkit.core.engine import _pick_device
 from textflowkit.core.model import Segment
+from textflowkit.core.privacy import disable_dependency_telemetry
 
 ENV_HF_TOKEN = "HF_TOKEN"
 ENV_PYANNOTE_MODEL = "TEXTFLOWKIT_PYANNOTE_MODEL"
@@ -124,6 +125,7 @@ class PyannoteDiarizer:
         self._lock = threading.RLock()
 
     def _load(self):
+        disable_dependency_telemetry()
         if self._pipeline is not None:
             return self._pipeline
         try:
@@ -191,6 +193,7 @@ class PyannoteDiarizer:
     def diarize(self, audio_path: str | Path) -> list[SpeakerTurn]:
         try:
             with self._lock:
+                disable_dependency_telemetry()
                 pipeline = self._load()
                 annotation = pipeline(self._load_waveform(audio_path))
         except DiarizationError:

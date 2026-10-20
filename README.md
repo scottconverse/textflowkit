@@ -117,6 +117,10 @@ tests, and a physical browser microphone has not yet been captured (the browser 
 drives the page against a fake audio device). See
 [docs/streaming.md](https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md).
 
+## Privacy
+
+TextFlowKit has a no-telemetry policy. Website analytics are disabled; additional optional-dependency opt-outs are on `main` for the next release (not in the published v0.1.15 artifacts). See the [no-telemetry policy](https://github.com/scottconverse/textflowkit/blob/main/docs/privacy.md) for enforced dependency opt-outs, website settings and the necessary network traffic that remains.
+
 ## Recognized sources
 
 YouTube · TikTok · Facebook · Instagram · Vimeo · Twitch · Bilibili · Rumble ·

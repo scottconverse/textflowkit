@@ -1,5 +1,10 @@
 # TextFlowKit user manual — v0.1.15
 
+**Privacy:** Website analytics are disabled. The additional pyannote/Hugging Face
+telemetry opt-outs are unreleased after v0.1.15; published installers do not change
+automatically. See the [privacy policy](privacy.md) for the exact controls and
+necessary functional network traffic.
+
 v0.1.15 is a developer-tooling patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer is v0.1.15. Developer workflow changes are described in the [integration manual](adapters.md).
 
 TextFlowKit turns a local audio/video file or a supported media URL into a

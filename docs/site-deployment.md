@@ -62,3 +62,32 @@ Cloudflare Pages, so this check can only run against the deployed site.
 
 The former GitHub Pages `docs/CNAME` file is intentionally absent. Do not
 recreate it: domain routing now lives in Cloudflare, not GitHub Pages.
+
+## No visitor telemetry
+
+Owner policy: do not enable analytics, visitor tracking or browser telemetry.
+Cloudflare settings are separate from the repository HTML: a clean HTML source
+alone does not prove that the served page has no injected reporting.
+
+For the `textflowkit.org` zone:
+
+- Account **Web Analytics → textflowkit.org → Real User Measurements**: Disable.
+  This prevents automatic `static.cloudflareinsights.com` beacon injection.
+- Domain **Network → Network Error Logging**: Off. This disables browser
+  network-error reports, which otherwise use `NEL`/`Report-To` response headers.
+- Pages project Web Analytics must remain disabled too.
+- Zone Response Header Transform Rule **No browser telemetry headers** removes
+  only NEL and Report-To on all incoming requests. The NEL dashboard toggle
+  alone still left active headers on this Pages deployment; the explicit rule
+  was required and verified on public responses. Keep it enabled.
+
+After changes, verify the canonical HTTPS page still returns 200, the apex still
+redirects correctly, and the served HTML has no analytics script. Inspect response
+headers as well: no active NEL policy or analytics/reporting endpoint should be
+advertised. Existing browser-cached policies may remain until cleared or expired;
+removing future headers is not proof that every old browser cache was erased.
+
+Do not disable TLS, WAF, authentication or other security protections to remove
+analytics. Normal hosting necessarily processes requests and can retain provider
+operational/security logs; this policy removes visitor-side telemetry, not the
+network traffic needed to serve a website. See [privacy policy](privacy.md).

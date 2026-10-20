@@ -1,5 +1,7 @@
 """textflowkit - cross-platform media transcription toolkit."""
 
+# Disable dependency telemetry before importing modules that may cache it.
+from textflowkit.core import privacy as _privacy  # noqa: F401
 from textflowkit.core.model import Segment, Transcript, WordTiming
 from textflowkit.core.pipeline import PipelineError, transcribe
 from textflowkit.core.streaming import (

@@ -1,5 +1,10 @@
 # Developer and integration manual
 
+**Privacy:** Website analytics are disabled. The additional pyannote/Hugging Face
+telemetry opt-outs are unreleased after v0.1.15; published installers do not change
+automatically. See the [privacy policy](privacy.md) for the exact controls and
+necessary functional network traffic.
+
 Current release: [v0.1.15](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15).
 
 v0.1.15 updates developer workflow instructions and the historical runner effort setting; runtime behavior is unchanged. The latest verified Windows installer is v0.1.15 with its matching sources and notices.
