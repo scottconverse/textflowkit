@@ -1,4 +1,4 @@
-# Native Windows installer (v0.1.15)
+# Native Windows installer (v0.1.16)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
@@ -61,18 +61,18 @@ its native Whistle selftest and a real 30-second transcription. The unchanged
 installer bootstrap/upgrade behavior retains its earlier acceptance evidence;
 the current build has not been installed over the owner's running application.
 
-## Current published installer acceptance
+## v0.1.16 installer acceptance
 
-The [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
-contains the rebuilt v0.1.15 EXE, payload manifest and `WINDOWS-SHA256SUMS`.
-It was assembled from the exact v0.1.15 tag and published core wheel, preserving
-the verified dependency payload. An actual isolated EXE install passed version
-readback, native Whistle speech selftest and local browser UI launch. This was
-not an upgrade over the owner's active installation. See the
-[verification record](../../docs/verification/windows-installer-v015-20261020.md).
+The Windows distribution is `TextFlowKit-0.1.16-windows-x64-setup.exe`, built
+from the immutable v0.1.16 tag and exact published core wheel while preserving
+the verified dependency payload. Before publication, the actual EXE must pass
+isolated installation, version readback, native Whistle speech selftest and local
+browser UI launch. Publish its build receipt as WINDOWS-README.md, plus the full
+payload manifest and WINDOWS-SHA256SUMS. Do not count an older installer receipt
+as acceptance of this build or upgrade the owner's active installation for a test.
 
 The unchanged dependency sources/notices retain their original v0.1.13 snapshot
-filenames and hashes and accompany v0.1.15. The pins in `source-materials.json`
+filenames and hashes and accompany v0.1.16. The pins in `source-materials.json`
 identify dependency snapshots, not the application version; do not relabel them.
 
 ## Distribution requirements

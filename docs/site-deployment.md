@@ -81,6 +81,8 @@ For the `textflowkit.org` zone:
   alone still left active headers on this Pages deployment; the explicit rule
   was required and verified on public responses. Keep it enabled.
 
+Verified in production on 2026-10-20: the canonical HTTPS page returned 200 with no analytics script and no active NEL or Report-To reporting policy. This is point-in-time evidence; recheck after any website or provider change. Hosting-provider operational and security logs remain separate from visitor telemetry.
+
 After changes, verify the canonical HTTPS page still returns 200, the apex still
 redirects correctly, and the served HTML has no analytics script. Inspect response
 headers as well: no active NEL policy or analytics/reporting endpoint should be

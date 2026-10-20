@@ -1,11 +1,12 @@
-# TextFlowKit user manual — v0.1.15
+# TextFlowKit user manual — v0.1.16
 
-**Privacy:** Website analytics are disabled. The additional pyannote/Hugging Face
-telemetry opt-outs are unreleased after v0.1.15; published installers do not change
-automatically. See the [privacy policy](privacy.md) for the exact controls and
-necessary functional network traffic.
+**Privacy:** v0.1.16 disables pyannote usage metrics and Hugging Face telemetry
+before optional imports; necessary downloads, gated-model authentication and Whistle
+as the default engine remain functional. Website analytics, RUM and NEL are disabled.
+Older artifacts do not change automatically. See the [privacy policy](privacy.md)
+for the exact controls and necessary functional network traffic.
 
-v0.1.15 is a developer-tooling patch. Transcription behavior is unchanged from v0.1.13; the latest verified Windows installer is v0.1.15. Developer workflow changes are described in the [integration manual](adapters.md).
+v0.1.16 is a no-telemetry release. Transcription and streaming behavior are unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its release process requires isolated install, version, speech and UI acceptance.
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -28,13 +29,13 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
-### Windows x86_64 installer (v0.1.15)
+### Windows x86_64 installer (v0.1.16)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/TextFlowKit-0.1.15-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
 
-Windows v0.1.15 was rebuilt from the published tag and verified by actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. [Checksums](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-SHA256SUMS) · [Build and source-snapshot details](https://github.com/scottconverse/textflowkit/releases/download/v0.1.15/WINDOWS-README.md). Unchanged dependency sources/notices retain their original v0.1.13 snapshot filenames and hashes; the installed application is v0.1.15. See the [verification record](verification/windows-installer-v015-20261020.md).
+The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. Publication requires actual isolated installation, version readback, native Whistle speech selftest and browser UI launch. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.15. The Windows installer and its matching FFmpeg source and notice bundles are distributed together through the [v0.1.15 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15). It requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.16. It is built after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -57,7 +58,7 @@ if it should not finish.
 
 The installer bundle includes third-party license and notice files,
 including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a SmartScreen
-warning. See the [install notes](install.md#windows-desktop-installer-v0115)
+warning. See the [install notes](install.md#windows-desktop-installer-v0116)
 for its scope and status.
 
 ```mermaid
@@ -86,7 +87,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.15'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.16'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -358,7 +359,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.15'
+python -m pip install 'textflowkit[http,export]==0.1.16'
 textflowkit-ui
 ```
 
@@ -450,7 +451,7 @@ and nowhere else.
 
 It is **off by default**: with the switch unset the endpoint
 does not exist. It needs the `streaming` extra
-(`python -m pip install "textflowkit[streaming]==0.1.15"`). This is a capability of the
+(`python -m pip install "textflowkit[streaming]==0.1.16"`). This is a capability of the
 **servers**, not the command-line `textflowkit` tool — the CLI never opens a
 microphone. See [streaming.md](streaming.md) for the full contract and the
 programmatic API.
@@ -534,9 +535,12 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.15 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.15)
-- [Core package 0.1.15 on PyPI](https://pypi.org/project/textflowkit/0.1.15/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.16 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
+- [Core package 0.1.16 on PyPI](https://pypi.org/project/textflowkit/0.1.16/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
+
+The v0.1.16 release adds the optional-dependency telemetry opt-outs described above. Its
+Windows installer is compiled from the tagged source and exact published wheel, with isolated install, version, speech and UI acceptance required before publication.
 
 The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second
 decode ceiling, anchored gap checks, and shared-context reconciliation, and it
