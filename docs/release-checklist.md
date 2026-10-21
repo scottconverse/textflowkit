@@ -1,6 +1,29 @@
 # Release verification checklist
 
-## v0.1.17 contextual proofreading release
+## v0.1.18 full-window comparison release
+
+v0.1.18 opens side-by-side AI comparison across the full browser workspace, with equal Original/AI-cleaned columns and labeled stacking on narrow screens. Back to results, Escape, or Original only exits comparison; switching jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and corrected copy/save remain available. Contextual proofreading and uncertain-source preservation were introduced in v0.1.17. Whistle remains the default; engine, streaming, privacy and fonts 0.1.6 behavior are unchanged. Required exact-commit CI and installed-artifact acceptance remain release gates.
+
+Run from a clean candidate checkout with its development environment:
+
+```powershell
+python scripts/verify_release_versions.py --tag v0.1.18
+python scripts/verify_readme_release.py --version v0.1.18
+python -m ruff check .
+python -m pytest
+```
+
+Require green PR CI and exact merged-main CI before tagging. Verify published hashes, fresh installed versions and the deployed website. Reuse unchanged engine/source evidence with its original identity; do not claim a new meeting-accuracy or live YouTube run unless actually performed.
+
+### Windows v0.1.18 acceptance and final release requirements
+
+After tagged core publication, build the installer from the immutable v0.1.18 tag and that exact published core wheel. Validate the full staged payload, compile and publish `TextFlowKit-0.1.18-windows-x64-setup.exe` under the v0.1.18 release with the payload manifest, `WINDOWS-SHA256SUMS`, `WINDOWS-README.md` and matching unchanged dependency-source/notice snapshots. Do not relabel the v0.1.13 dependency snapshot filenames or hashes.
+
+Before accepting the Windows assets, an actual EXE installation or owner upgrade must pass version readback, native Whistle speech selftest and local browser UI launch, full-workspace comparison with equal columns at 1280px and no horizontal overflow with labeled stacking at 336px, Back/Escape/Original-only exits, job-switch focus reset, and preserved timestamps/review reasons/corrected copy/save. Record only tests actually performed. Acceptance remains required until actual proof is recorded in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md); prior acceptance records remain historical.
+
+Website RUM and NEL were verified disabled in production on 2026-10-20; recheck the deployed page and response headers after publication. Necessary functional network traffic and hosting-provider operational/security logs are distinct from visitor telemetry.
+
+## Historical v0.1.17 contextual proofreading release
 
 v0.1.17 improves optional local AI proofreading: contextual corrections, preserved uncertain source words, highlighted review spans and review markers in corrected text. Whistle remains the default; transcription, streaming, no-telemetry controls and fonts 0.1.6 are unchanged. Required exact-commit CI and installed-artifact acceptance remain release gates.
 

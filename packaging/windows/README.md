@@ -1,4 +1,4 @@
-# Native Windows installer (v0.1.16)
+# Native Windows installer (v0.1.18)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
@@ -61,7 +61,25 @@ its native Whistle selftest and a real 30-second transcription. The unchanged
 installer bootstrap/upgrade behavior retains its earlier acceptance evidence;
 the current build has not been installed over the owner's running application.
 
-## v0.1.16 installer acceptance
+## v0.1.18 installer build and required acceptance
+
+After core publication, rebuild `TextFlowKit-0.1.18-windows-x64-setup.exe` from
+the immutable v0.1.18 tag and exact published core wheel. Fonts remain 0.1.6;
+reuse the unchanged dependency source/notice snapshots with their original
+v0.1.13 filenames and hashes. Do not relabel historical acceptance as v0.1.18 proof.
+
+Before Windows publication, actual EXE installation or authorized owner upgrade
+must pass version readback, native Whistle speech selftest, privacy guards and
+browser UI launch. Verify full-workspace comparison with equal Original/AI-cleaned
+columns at 1280px, a labeled stack without horizontal overflow at 336px,
+Back/Escape/Original-only exits, job-switch focus reset, timestamps, uncertainty
+reasons and corrected copy/save. These are required checks until actual results
+are recorded in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md).
+Publish the installer, payload manifest, [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS)
+and matching unchanged source/notice assets together under the
+[v0.1.18 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18).
+
+## Historical v0.1.16 installer acceptance
 
 The Windows distribution is `TextFlowKit-0.1.16-windows-x64-setup.exe`, built
 from the immutable v0.1.16 tag and exact published core wheel while preserving
