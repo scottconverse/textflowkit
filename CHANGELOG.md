@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix Windows installer upgrades leaving obsolete core `.dist-info` metadata beside the current version; preserve fonts, other dependencies and user data. Correct current documentation to reflect the published v0.1.18 installer receipt. The published executable and historical release evidence are unchanged.
+
 ## v0.1.18 — 2026-10-20
 
 Core and Windows version 0.1.18; unchanged optional fonts 0.1.6. Contextual proofreading remains the prior v0.1.17 feature. No engine, model, transcription, streaming or privacy changes.

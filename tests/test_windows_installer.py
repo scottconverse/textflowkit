@@ -4,7 +4,10 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
+import shutil
 import sys
+from importlib import metadata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -282,6 +285,56 @@ def test_installer_preserves_user_data_and_refuses_running_app():
     assert 'Filename: "{app}\\runtime\\pythonw.exe"' in iss
     assert 'Parameters: """{app}\\launch.py"""' in iss
     assert "CheckForMutexes" in iss  # recheck before copying/removing files
+
+
+@pytest.mark.parametrize("old_versions", [[], ["0.1.17"], ["0.1.11", "0.1.16", "0.1.17"]])
+def test_upgrade_replaces_core_metadata_without_touching_fonts_or_user_data(tmp_path, old_versions):
+    """Model the recipe's delete-before-copy phase; never execute an installer.
+
+    Inno's recursive copy overwrites files but leaves absent versioned directories.
+    Apply the actual InstallDelete entries to an isolated old runtime, then overlay
+    the new payload, and ask importlib.metadata what an installed consumer sees.
+    """
+    app = tmp_path / "app"
+    site = app / "runtime/Lib/site-packages"
+    incoming = tmp_path / "incoming"
+    for root, versions in ((site, old_versions), (incoming, ["0.1.18"])):
+        for version in versions:
+            directory = root / f"textflowkit-{version}.dist-info"
+            directory.mkdir(parents=True)
+            (directory / "METADATA").write_text(
+                f"Metadata-Version: 2.1\nName: textflowkit\nVersion: {version}\n",
+                encoding="utf-8",
+            )
+        module = root / "textflowkit/__init__.py"
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text(f'__version__ = "{versions[-1] if versions else "0.0.0"}"\n')
+    preserved = [
+        site / "textflowkit_fonts-0.1.6.dist-info/METADATA",
+        site / "other-1.0.dist-info/METADATA",
+        site / "textflowkit_extra-1.0.dist-info/METADATA",
+        app / "models/whistle.cact",
+        tmp_path / "user-data/jobs.sqlite3",
+    ]
+    for path in preserved:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"preserve exactly")
+    source = ISS.read_text(encoding="utf-8")
+    section = source.split("[InstallDelete]", 1)[-1].split("\n[", 1)[0]
+    entries = re.findall(r'Type: filesandordirs; Name: "([^"]+)"', section)
+    # Constrain deletion to core metadata in this fixture, including future edits.
+    prefix = "{app}\\runtime\\Lib\\site-packages\\"
+    for entry in entries:
+        assert entry == prefix + "textflowkit-*.dist-info"
+        for directory in site.glob(entry.removeprefix(prefix)):
+            assert site.resolve() in directory.resolve().parents
+            shutil.rmtree(directory)
+    shutil.copytree(incoming, site, dirs_exist_ok=True)
+    versions = [d.version for d in metadata.distributions(path=[str(site)])
+                if d.metadata.get("Name") == "textflowkit"]
+    assert versions == ["0.1.18"], f"Overlay left stale installed core metadata: {versions}"
+    assert '__version__ = "0.1.18"' in (site / "textflowkit/__init__.py").read_text()
+    assert all(path.read_bytes() == b"preserve exactly" for path in preserved)
 
 
 def test_seeded_valid_assets_are_read_only_and_offline(tmp_path, monkeypatch):

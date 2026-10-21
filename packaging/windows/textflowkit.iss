@@ -32,6 +32,11 @@ UninstallDisplayIcon={app}\runtime\pythonw.exe
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
+[InstallDelete]
+; Recursive file overlay does not remove older versioned core metadata. Remove
+; only core dist-info before copying the validated payload's current metadata.
+Type: filesandordirs; Name: "{app}\runtime\Lib\site-packages\textflowkit-*.dist-info"
+
 [Files]
 Source: "{#PayloadDir}\runtime\*"; DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PayloadDir}\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion recursesubdirs createallsubdirs
