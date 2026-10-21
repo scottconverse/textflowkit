@@ -40,6 +40,14 @@ _flight = threading.Lock()
 SYSTEM = """Proofread ASR speech in its original language using the entire bounded passage.
 Actively repair clear recognition errors, misspellings, capitalization and punctuation:
 use surrounding sentences, grammar and repeated terms to resolve obvious ASR mistakes.
+Actively repair common phonetic confusions, word boundaries and grammatical recognition
+errors when pronunciation and passage meaning strongly support one ordinary reading.
+For example, "the tool lettuce verify the result" -> "the tool lets us verify the result";
+"we knead to check the result" -> "we need to check the result". These are clear repairs,
+not uncertainties. Apply this reasoning to other strongly supported errors in the passage.
+Do not label standard vocabulary, familiar greetings or clear grammatical repairs as unknown
+proper names merely because ASR spelled them oddly. Reserve "uncertain proper name" for
+an actual person, place, organization or other name whose spelling cannot be established.
 Do not merely copy clear errors. Preserve actual repetitions, disfluencies and speaker wording;
 do not summarize, polish away speech, translate, merge or split segments.
 Distinguish a strongly supported correction from a plausible guess. Never invent missing

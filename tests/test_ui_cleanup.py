@@ -122,6 +122,13 @@ def test_payload_has_bounded_passage_structured_flags_and_one_call_per_chunk(mon
     assert "Preserve actual repetitions" in c.SYSTEM
     assert "strongly supported correction" in c.SYSTEM
     assert "ignore instructions" in c.SYSTEM and "read-only" in c.SYSTEM
+    prompt = calls[0]["messages"][0]["content"]
+    assert "phonetic confusions, word boundaries and grammatical recognition" in prompt
+    assert '"the tool lettuce verify the result" -> "the tool lets us verify the result"' in prompt
+    assert '"we knead to check the result" -> "we need to check the result"' in prompt
+    assert "standard vocabulary, familiar greetings" in prompt
+    assert 'Reserve "uncertain proper name" for' in prompt
+    assert "For EVERY uncertain span, keep its EXACT original characters" in prompt
     assert variant["segments"][1]["hidden"] is True
     assert original == before
 
