@@ -67,3 +67,10 @@ Ordinary source context may include hidden segments as before; hidden is a displ
 export control, not a promise to withhold speech from explicitly requested cleanup.
 Older saved variants carry no uncertainty assessment. Local schema checks reject
 malformed metadata but cannot guarantee detection of every ambiguity or hallucination.
+
+Reported uncertainty is protected in software: a local deterministic token diff
+suppresses edits overlapping valid source flags, including adjacent insertion
+boundaries, or conservatively keeps the original segment if mapping is unclear.
+This uses the existing response only; it adds no model call or remote processing.
+Malformed or ambiguous source flags still reject the attempt. Unflagged model
+errors remain possible and require audio review.

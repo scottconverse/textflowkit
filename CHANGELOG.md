@@ -2,6 +2,8 @@
 
 ## UNRELEASED
 
+- Enforce reported uncertainty preservation with a deterministic source-token diff: suppress whole overlapping edits and boundary insertions, keep independent corrections, and fall back to original segment text when precise mapping is unavailable. Invalid source flags still fail closed; no extra inference pass.
+
 - Improve opt-in local transcript proofreading with a bounded neighboring passage and explicit uncertainty metadata. Derive exact offsets from model-reported source wording; preserve unclear wording verbatim, highlight review spans and retain review markers in corrected TXT and clipboard. Existing saved variants remain usable with an unassessed notice; canonical source, timings, hidden-segment exports and local-only safeguards remain unchanged. One inference per chunk; no accuracy guarantee, version bump or binary release.
 
 ## v0.1.16 — 2026-10-20

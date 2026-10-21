@@ -624,8 +624,13 @@ are labelled as not assessed for uncertainty; they are not silently reprocessed.
 The model supplies exact source text and a bounded reason, with a 1-based
 occurrence number only for repeated text. Python derives source/corrected offsets
 (zero-based Unicode code points, exclusive ends); the model does no offset
-arithmetic. Absent or ambiguous spans, changed flagged wording, overlaps, invalid
-reasons, and missing metadata reject the whole attempt. At most 20 spans per
+arithmetic. Absent or ambiguous source spans, overlaps, invalid reasons and missing
+metadata reject the whole attempt. If the model flags source wording but also
+rewrites it, deterministic token-level comparison suppresses the entire overlapping
+edit and retains the exact original region; separate nonoverlapping corrections
+survive. Insertions at protected boundaries and adjacent whitespace/punctuation are
+suppressed too. If a span cannot be mapped precisely through the copied regions,
+the segment falls back to its original text with flags, without another model call. At most 20 spans per
 segment, each 1–200 characters, are accepted. Stored offsets are revalidated
 against the original on retrieval. A failed retry retains an earlier valid variant.
 These checks protect reported spans, but cannot guarantee that the model detects

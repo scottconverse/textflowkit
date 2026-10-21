@@ -16,6 +16,7 @@ import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -141,6 +142,61 @@ def validate_uncertainties(flags, source, corrected):
                 or flag["reason"] not in UNCERTAINTY_REASONS):
             raise ValueError("Uncertain source span must be preserved verbatim; original preserved")
         source_end, corrected_end = b, y
+
+
+def preserve_uncertainties(flags, source, proposed):
+    """Suppress whole token edits touching validated source uncertainty spans.
+
+    Offsets come only from literal source tokens copied into the result. Adjacent
+    whitespace/punctuation and inclusive insertion boundaries are protected too,
+    so an insertion cannot reintroduce a guessed word beside a retained span.
+    Ambiguous mappings fall back to the entire original segment, with its flags.
+    """
+    original_flags = resolve_uncertainties(flags, source, source)
+    if not original_flags:
+        return proposed, []
+    tokens = list(re.finditer(r"\s+|\w+|[^\w\s]", source))
+    proposed_tokens = list(re.finditer(r"\s+|\w+|[^\w\s]", proposed))
+    boundaries = [token.start() for token in tokens] + [len(source)]
+    guards = []
+    for flag in original_flags:
+        first = next(i for i, token in enumerate(tokens) if token.end() > flag["start"])
+        last = next(i for i, token in enumerate(tokens) if token.end() >= flag["end"])
+        while first > 0 and not re.search(r"\w", tokens[first - 1].group()):
+            first -= 1
+        while last + 1 < len(tokens) and not re.search(r"\w", tokens[last + 1].group()):
+            last += 1
+        guards.append((boundaries[first], boundaries[last + 1]))
+
+    parts, copied_ranges, length = [], [], 0
+    matcher = SequenceMatcher(None, [t.group() for t in tokens],
+                              [t.group() for t in proposed_tokens], autojunk=False)
+    for kind, i, j, x, y in matcher.get_opcodes():
+        start, end = boundaries[i], boundaries[j]
+        protected = any((a <= start <= b if i == j else start < b and end > a)
+                        for a, b in guards)
+        if kind == "equal" or protected:
+            piece = source[start:end]
+            copied_ranges.append((start, end, length))
+        else:
+            piece = "".join(token.group() for token in proposed_tokens[x:y])
+        parts.append(piece)
+        length += len(piece)
+    text = "".join(parts)
+    mapped = []
+    for flag in original_flags:
+        ranges = [(a, offset) for a, b, offset in copied_ranges
+                  if a <= flag["start"] and flag["end"] <= b]
+        if len(ranges) != 1:
+            return source, original_flags
+        start, offset = ranges[0]
+        mapped.append({**flag, "corrected_start": offset + flag["start"] - start,
+                       "corrected_end": offset + flag["end"] - start})
+    try:
+        validate_uncertainties(mapped, source, text)
+    except ValueError:
+        return source, original_flags
+    return text, mapped
 
 
 def corrected_text(variant):
@@ -305,7 +361,7 @@ def validate_response(raw, expected):
                 or (source["text"].strip() and not row["text"].strip())
                 or len(row["text"]) > max(100, len(source["text"]) * 2 + 30)):
             raise ValueError("Invalid segment identity, coverage or text; original preserved")
-        row["uncertainties"] = resolve_uncertainties(
+        row["text"], row["uncertainties"] = preserve_uncertainties(
             row["uncertainties"], source["text"], row["text"])
     return rows
 

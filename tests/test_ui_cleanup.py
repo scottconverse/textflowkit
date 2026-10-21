@@ -22,6 +22,22 @@ def uncertain_row():
         "text": "zorbles", "reason": "ambiguous recognition"}]}
 
 
+@pytest.mark.parametrize("proposed", [
+    "we need to ask victims today", "we need to ask victims zorbles today",
+    "we need to ask zorbles victims today", "we need to ask zorbles, victims today",
+    "we need to ask zorbles (victims) today", "we need to ask zor bles today",
+    "we need to ask today",
+])
+def test_reported_uncertainty_suppresses_overlapping_edits_not_independent_repairs(proposed):
+    source = [{"id": 0, "text": "we knead to ask zorbles today"}]
+    row = {"id": 0, "text": proposed, "uncertainties": [
+        {"text": "zorbles", "reason": "garbled speech"}]}
+    result = c.validate_response(json.dumps({"segments": [row]}), source)[0]
+    assert result["text"] == "we need to ask zorbles today"
+    assert result["uncertainties"][0]["corrected_start"] == 15
+    assert "victims" not in c.corrected_text({"segments": [result]})
+
+
 def test_uncertain_source_preserved_with_changed_neighboring_context():
     source = [{"id": 0, "text": "we seen zorbles yesterday"}]
     rows = c.validate_response(json.dumps({"segments": [uncertain_row()]}), source)
@@ -45,7 +61,7 @@ def test_uncertainty_malformed_flags_fail_closed(change):
         c.validate_response(json.dumps({"segments": [row]}), [{"id": 0, "text": row["text"]}])
 
 
-def test_uncertainty_cannot_replace_source_or_overlap_or_disappear():
+def test_uncertainty_replacement_is_suppressed_but_invalid_flags_fail_closed():
     source = [{"id": 0, "text": "We saw zorbles yesterday."}]
     for flags in (None, {}, [uncertain_row()["uncertainties"][0]] * 2,
                   [uncertain_row()["uncertainties"][0]] * 21):
@@ -55,8 +71,9 @@ def test_uncertainty_cannot_replace_source_or_overlap_or_disappear():
             c.validate_response(json.dumps({"segments": [row]}), source)
     row = uncertain_row()
     row["text"] = "We saw victims yesterday."
-    with pytest.raises(ValueError):
-        c.validate_response(json.dumps({"segments": [row]}), source)
+    restored = c.validate_response(json.dumps({"segments": [row]}), source)[0]
+    assert restored["text"] == source[0]["text"]
+    assert restored["uncertainties"][0]["text"] == "zorbles"
     del row["uncertainties"]
     with pytest.raises(ValueError):
         c.validate_response(json.dumps({"segments": [row]}), source)
@@ -72,8 +89,9 @@ def test_uncertainty_repeated_text_requires_explicit_occurrence_and_preserves_re
     flag = c.validate_response(json.dumps({"segments": [row]}), source)[0]["uncertainties"][0]
     assert flag["start"] == 12 and flag["corrected_start"] == 13
     row["text"] = "zorbles."
-    with pytest.raises(ValueError):
-        c.validate_response(json.dumps({"segments": [row]}), source)
+    restored = c.validate_response(json.dumps({"segments": [row]}), source)[0]
+    assert restored["text"] == source[0]["text"]
+    assert restored["uncertainties"][0]["corrected_start"] == 12
 
 
 def test_uncertainty_unicode_codepoint_offsets_and_multiple_markers():
@@ -83,9 +101,10 @@ def test_uncertainty_unicode_codepoint_offsets_and_multiple_markers():
         {"text": "blarg", "reason": "uncertain proper name"}]}
     rows = c.validate_response(json.dumps({"segments": [row]}), source)
     assert rows[0]["uncertainties"][0]["start"] == 2
-    assert rows[0]["uncertainties"][0]["corrected_start"] == 6
+    # Inserted words and punctuation at uncertainty boundaries are suppressed too.
+    assert rows[0]["uncertainties"][0]["corrected_start"] == 2
     assert c.corrected_text({"segments": rows}) == (
-        "\U0001f600 Saw zorbles [REVIEW: garbled speech], blarg [REVIEW: uncertain proper name].")
+        "\U0001f600 zorbles [REVIEW: garbled speech] blarg [REVIEW: uncertain proper name]")
     row["uncertainties"].reverse()
     with pytest.raises(ValueError):
         c.validate_response(json.dumps({"segments": [row]}), source)
@@ -646,7 +665,7 @@ def test_routes_flagged_txt_and_hidden_preservation(route_client, monkeypatch):
     assert client.get(f"/ui/jobs/{job.id}/cleanup/download").status_code == 409
 
 
-def test_failed_uncertainty_retry_preserves_previous_variant(tmp_path, monkeypatch):
+def test_retry_suppresses_guess_and_invalid_flags_preserve_previous_variant(tmp_path, monkeypatch):
     original = {"segments": [{"text": "We saw zorbles yesterday.", "start": 0, "end": 1}]}
     output = uncertain_row()
 
@@ -663,8 +682,14 @@ def test_failed_uncertainty_retry_preserves_previous_variant(tmp_path, monkeypat
     output["text"] = "We saw victims yesterday."
     service.start("job", original, "local:9b", c.DEFAULT_ENDPOINT)
     service.wait()
+    preserved = service.status("job", original)
+    assert preserved["state"] == "done"
+    assert preserved["variant"]["segments"] == previous["segments"]
+    output["uncertainties"][0]["text"] = "nonexistent source"
+    service.start("job", original, "local:9b", c.DEFAULT_ENDPOINT)
+    service.wait()
     result = service.status("job", original)
-    assert result["state"] == "error" and result["variant"] == previous
+    assert result["state"] == "error" and result["variant"] == preserved["variant"]
 
 
 def test_flagged_whitespace_survives_corrected_export():
@@ -686,3 +711,40 @@ def test_stored_canonical_span_schema_is_enforced(changes):
     flags[0].update(changes)
     with pytest.raises(ValueError):
         c.validate_uncertainties(flags, "we seen zorbles yesterday", rows[0]["text"])
+
+
+@pytest.mark.parametrize("source, proposed", [
+    ("zorbles", "victims"), ("zorbles", "victims zorbles"),
+    ("zorbles", "zorbles victims"), ("zorbles", "(victims) zorbles"),
+    ("(zorbles)", "(zorbles victims)"), ("zorbles.", "zorbles. victims"),
+    ("zorbles?", "zorbles? victims"), ("say zorbles", "say victims zorbles"),
+    ("say zorbles", "say zorbles victims"), ("zorbles next", "victims zorbles next"),
+])
+def test_uncertainty_insertions_at_segment_and_punctuation_boundaries_are_suppressed(source, proposed):
+    row = {"id": 0, "text": proposed, "uncertainties": [
+        {"text": "zorbles", "reason": "garbled speech"}]}
+    result = c.validate_response(json.dumps({"segments": [row]}), [{"id": 0, "text": source}])[0]
+    assert result["text"] == source
+    c.validate_uncertainties(result["uncertainties"], source, result["text"])
+
+
+def test_uncertainty_preservation_maps_repeated_unicode_spans_without_fuzzy_matching():
+    source = "we knead to ask \U0001f600 zorbles and zorbles tomorrow"
+    proposed = "we need to ask \U0001f600 zorbles and victims tomorrow"
+    row = {"id": 0, "text": proposed, "uncertainties": [
+        {"text": "zorbles", "reason": "garbled speech", "occurrence": 2}]}
+    result = c.validate_response(json.dumps({"segments": [row]}), [{"id": 0, "text": source}])[0]
+    assert result["text"] == source.replace("knead", "need")
+    flag = result["uncertainties"][0]
+    assert flag["start"] == source.rindex("zorbles")
+    assert flag["corrected_start"] == result["text"].rindex("zorbles")
+    assert "victims" not in c.corrected_text({"segments": [result]})
+
+
+def test_uncertainty_crossing_diff_regions_falls_back_to_original_with_flags():
+    source = "we knead to ask zor bles today"
+    row = {"id": 0, "text": "we need to ask zor victims bles today", "uncertainties": [
+        {"text": "zor bles", "reason": "garbled speech"}]}
+    result = c.validate_response(json.dumps({"segments": [row]}), [{"id": 0, "text": source}])[0]
+    assert result["text"] == source
+    assert result["uncertainties"][0]["corrected_start"] == source.index("zor bles")
