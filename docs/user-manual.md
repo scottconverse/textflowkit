@@ -1,6 +1,6 @@
 # TextFlowKit user manual — v0.1.19
 
-**Release preparation:** v0.1.19 is the current source candidate. Core publication, the rebuilt Windows installer, installed/browser acceptance, website deployment and the owner app upgrade are pending coordinator verification. Versioned v0.1.19 release/download links identify the planned artifacts; they are not publication receipts.
+v0.1.19 packages the checkpoint, translation, browser-recovery and Windows metadata fixes. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 **Privacy:** v0.1.19 retains the existing opt-outs for pyannote usage metrics and Hugging Face telemetry
 before optional imports; necessary downloads, gated-model authentication and Whistle
@@ -8,7 +8,7 @@ as the default engine remain functional. Website analytics, RUM and NEL are disa
 Older artifacts do not change automatically. See the [privacy policy](privacy.md)
 for the exact controls and necessary functional network traffic.
 
-v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged. The v0.1.19 Windows installer is planned; its build and installed/browser acceptance remain pending.
+v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -33,11 +33,11 @@ extra selected explicitly with `--engine whisper`. See
 
 ### Windows x86_64 installer (v0.1.19)
 
-[Planned Windows x64 setup (publication pending)](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
 
 **Historical v0.1.18 publication receipt.** The published v0.1.18 Windows installer was built from immutable tag v0.1.18 (commit `d2bbcfc`) and the exact published core wheel. The publication receipt records actual EXE installation in an isolated directory, installed version 0.1.18, native Whistle timed-speech selftest, privacy guards and browser workspace launch (HTTP 200 and version 0.1.18). That receipt describes acceptance at publication time; it does not attest to a later owner upgrade or metadata repair. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md) and [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS) for the publication receipt and checksums.
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.19. The planned v0.1.19 installer must be built after tagged core publication, and its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.19. The v0.1.19 installer must be built after tagged core publication, and its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -59,7 +59,7 @@ rather than force-kill it; Stop server drains active jobs, so cancel a job first
 if it should not finish.
 
 The installer bundle includes third-party license and notice files,
-including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums must accompany the planned release. The installer is unsigned, so Windows may show a SmartScreen
+including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums must accompany the release. The installer is unsigned, so Windows may show a SmartScreen
 warning. See the [install notes](install.md#windows-desktop-installer-v0119)
 for its scope and status.
 
@@ -550,11 +550,11 @@ passes with Whistle's own real speech output.
 ## 9. Release and help
 
 - [v0.1.19 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
-- [Core package 0.1.19 on PyPI (publication pending)](https://pypi.org/project/textflowkit/0.1.19/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [Core package 0.1.19 on PyPI](https://pypi.org/project/textflowkit/0.1.19/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
 v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged.
-The v0.1.19 Windows installer rebuild, publication and installed/browser acceptance remain pending. The v0.1.18 receipt above is historical evidence only.
+For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The v0.1.18 receipt above is historical evidence only.
 
 The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second
 decode ceiling, anchored gap checks, and shared-context reconciliation, and it

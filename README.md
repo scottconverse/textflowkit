@@ -10,7 +10,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 
 **Current release: [v0.1.19](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).**
 
-**Release preparation:** v0.1.19 is the current source candidate. Core publication, the rebuilt Windows installer, installed/browser acceptance, website deployment and the owner app upgrade are pending coordinator verification. Versioned v0.1.19 release/download links identify the planned artifacts; they are not publication receipts.
+v0.1.19 packages the checkpoint, translation, browser-recovery and Windows metadata fixes. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). Starting with v0.1.13, Windows distributions have their own checksum manifest; distributions before that change do not carry it.
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -176,11 +176,11 @@ python -m pip install 'textflowkit[export]'
 
 ## Windows desktop installer (v0.1.19)
 
-[Planned Windows x64 setup (publication pending)](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
 
 **Historical v0.1.18 publication receipt.** The published v0.1.18 Windows installer was built from immutable tag v0.1.18 (commit `d2bbcfc`) and the exact published core wheel. The publication receipt records actual EXE installation in an isolated directory, installed version 0.1.18, native Whistle timed-speech selftest, privacy guards and browser workspace launch (HTTP 200 and version 0.1.18). That receipt describes acceptance at publication time; it does not attest to a later owner upgrade or metadata repair. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md) and [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS) for the publication receipt and checksums. Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
 
-The planned v0.1.19 Windows distribution packages the existing local browser workspace for core v0.1.19 and must be built after tagged core publication. Its matching FFmpeg source and notice bundles must be distributed together through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The Python package remains supported for developers and integrations.
+The v0.1.19 Windows distribution packages the existing local browser workspace for core v0.1.19 and must be built after tagged core publication. Its matching FFmpeg source and notice bundles must be distributed together through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The Python package remains supported for developers and integrations.
 
 The installer is designed to run without a separately installed Python, WSL, or
 Docker. Its bundle includes a private embeddable CPython runtime, the
@@ -497,7 +497,7 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.19 release.** v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged. The v0.1.19 Windows installer rebuild, publication and installed/browser acceptance remain pending. No new four-hour accuracy claim is made.
+**v0.1.19 release.** v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). No new four-hour accuracy claim is made. Starting with v0.1.13, Windows distributions have their own checksum manifest; distributions before that change do not carry it.
 
 **Whistle behavior introduced in v0.1.13.** Fixes reproduced Whistle speech omissions. Native decode
 inputs are now bounded to 15 seconds (11-second owned cores with up to 2 seconds

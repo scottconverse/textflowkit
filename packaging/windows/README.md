@@ -1,13 +1,13 @@
-# Native Windows installer (v0.1.19 preparation)
+# Native Windows installer (v0.1.19)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
 desktop shortcuts run a private pythonw.exe and open the loopback-only workspace.
 The installer does not replace or register a global Python or modify global PATH.
 
-## v0.1.19 build and acceptance — pending
+## v0.1.19 build and acceptance
 
-Build from immutable tag v0.1.19 and the exact published core wheel after core publication. Actual build, installation/upgrade metadata cleanup, installed version/native speech/privacy/browser acceptance, owner app upgrade and asset publication remain coordinator work. Follow the [v0.1.19 checklist](../../docs/release-checklist.md#v0119-audit-remediation-release-preparation); source tests and the historical v0.1.18 receipt below do not prove these outcomes. Fonts remain 0.1.6; unchanged dependency-source/notice snapshots retain their v0.1.13 names and hashes. Preserve saved jobs/transcripts, backups and output hashes.
+Build from immutable tag v0.1.19 and the exact published core wheel after core publication. Require installation/upgrade metadata cleanup, installed version/native speech/privacy/browser checks, data-preservation and owner-app acceptance before recording their results. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). Follow the [v0.1.19 checklist](../../docs/release-checklist.md#v0119-audit-remediation-release); source tests and the historical v0.1.18 receipt below do not prove these outcomes. Fonts remain 0.1.6; unchanged dependency-source/notice snapshots retain their v0.1.13 names and hashes. Preserve saved jobs/transcripts, backups and output hashes.
 
 ## Build prerequisites
 

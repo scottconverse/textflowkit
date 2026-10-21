@@ -2,7 +2,7 @@
 
 Current release: [v0.1.19](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
-**Release preparation:** v0.1.19 is the current source candidate. Core publication, the rebuilt Windows installer, installed/browser acceptance, website deployment and the owner app upgrade are pending coordinator verification. Versioned v0.1.19 release/download links identify the planned artifacts; they are not publication receipts.
+v0.1.19 packages the checkpoint, translation, browser-recovery and Windows metadata fixes. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged.
 Use `textflowkit --version` to confirm the installed version. For everyday
@@ -16,7 +16,7 @@ or WSL**.
 
 ## Windows desktop installer (v0.1.19)
 
-[Planned Windows x64 setup (publication pending)](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
 
 The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.19 and must be built after tagged core publication. Its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). Use the Python package for the supported developer and integration install path.
 
@@ -39,9 +39,9 @@ dependencies separately.
 
 UI data uses the per-user data directory outside the application install
 directory; the existing Windows UI default is `%LOCALAPPDATA%\TextFlowKit\ui`.
-The installer candidate is designed to preserve that data during upgrades and
+The installer is designed to preserve that data during upgrades and
 uninstall. Before an upgrade or uninstall, use **Stop server** and wait for the
-server to exit. The candidate will block while the server is running rather than
+server to exit. The installer will block while the server is running rather than
 force-kill it; Stop server drains active jobs, so cancel a job first if it should
 not finish.
 

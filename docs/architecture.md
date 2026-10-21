@@ -1,6 +1,6 @@
 # Architecture and job lifecycle — v0.1.19
 
-**Release preparation:** v0.1.19 is the current source candidate. Core publication, the rebuilt Windows installer, installed/browser acceptance, website deployment and the owner app upgrade are pending coordinator verification. Versioned v0.1.19 release/download links identify the planned artifacts; they are not publication receipts.
+v0.1.19 packages the checkpoint, translation, browser-recovery and Windows metadata fixes. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -30,7 +30,7 @@ app: the published website is static documentation and never runs the pipeline.
 
 ### Windows desktop installer (v0.1.19)
 
-The Windows x86_64 installer provisions this same browser door without adding a second pipeline or hosted service. The planned v0.1.19 installer must be built from its immutable tag and exact published core wheel after tagged core publication, and its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+The Windows x86_64 installer provisions this same browser door without adding a second pipeline or hosted service. The v0.1.19 installer must be built from its immutable tag and exact published core wheel after tagged core publication, and its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
 
 ```mermaid
 flowchart LR

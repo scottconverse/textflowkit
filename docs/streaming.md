@@ -2,7 +2,7 @@
 
 v0.1.19 repairs saved-job, translation, browser recovery and installer metadata
 behavior. Live streaming and its existing verification limits below are unchanged.
-This is source release preparation; publication and installer acceptance are pending.
+For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 TextFlowKit can transcribe a **live microphone** as you speak: audio is captured in
 the browser, resampled to 16 kHz mono, and streamed to a local WebSocket, and the
