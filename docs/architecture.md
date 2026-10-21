@@ -292,6 +292,12 @@ finished. The rule keys on the marker, never on whatever the transcript metadata
 happens to contain: a snapshot can hold speaker labels or translated text
 without the stage having been recorded complete, and that is not reuse.
 
+**Direct Python reuse.** `transcribe(..., resume_checkpoint=...)` checks source,
+model, requested language and canonical engine before adopting transcript or
+partial progress and before publishing a checkpoint. A mismatch raises
+`PipelineError`. Optional-stage changes remain permitted and use the per-stage
+rules above; completed transcripts are hydrated before a replacement snapshot.
+
 **Matching.** Resume matches source, model, language, engine, device, and
 processing options. Matching a model *string* is not validation of a supported
 model identifier; upstream loading remains responsible for that. Local reuse also

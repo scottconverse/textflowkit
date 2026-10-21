@@ -803,6 +803,11 @@ The result length is checked against the input, so a misbehaving model cannot
 shift text onto the wrong segment. An unreachable backend raises; it never
 returns the source text as a translation.
 
+Ollama translation requires a successful completion envelope (`done: true`,
+`done_reason: "stop"`) with string response text. Incomplete or malformed
+generations fail before caching or segment updates. Per-item fallback recovers
+numbering/format errors only; it does not hide terminal generation failures.
+
 `translation` metadata is recorded on the transcript (backend, route, target, how many
 segments were translated).
 
