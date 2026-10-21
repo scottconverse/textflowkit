@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Validate direct Python checkpoint recognition identity before reuse or checkpoint writes, while retaining per-stage optional processing and hydrated transcripts. Reject incomplete Ollama translation generations before caching or format fallback.
+- Recover from failed transcript-page retrieval with a reopen instruction; discard stale searches; retain staged uploads for rejected submission retries and invalidate them on source changes. Announce terminal job errors once through the live status region, and validate browser HTTP(S) URLs before selection/submission (shared APIs retain local-path support).
+
 - Fix Windows installer upgrades leaving obsolete core `.dist-info` metadata beside the current version; preserve fonts, other dependencies and user data. Correct current documentation to reflect the published v0.1.18 installer receipt. The published executable and historical release evidence are unchanged.
 
 ## v0.1.18 — 2026-10-20

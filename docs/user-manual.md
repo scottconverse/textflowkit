@@ -395,6 +395,14 @@ per-user data directory and shown in a message box rather than failing silently.
   per-user durable folder, capped at 2 GiB by default
   (`TEXTFLOWKIT_UI_MAX_UPLOAD_BYTES` overrides it); the workspace shows the limit
   and refuses a larger file before uploading.
+- The browser URL field accepts HTTP/HTTPS URLs. Use the file picker for local
+  files; the Python/CLI/developer APIs still accept local paths. If submission
+  is refused after upload (for example, a busy queue), correct the issue and
+  press Transcribe again to reuse that staged upload. Choosing another source
+  clears the staged selection.
+- If transcript retrieval fails, reopen that completed job from Recent jobs to
+  retry. Search responses belong to the selected job and current query; terminal
+  job failures are announced through the workspace status region.
 - **Durable by default, with cancel and resume.** Jobs and checkpoints live under
   `%LOCALAPPDATA%\TextFlowKit\ui` on Windows (the conventional per-user data
   directory elsewhere). An explicit `TEXTFLOWKIT_DB` / `TEXTFLOWKIT_WORK_ROOT` /
