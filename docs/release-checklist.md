@@ -1,25 +1,25 @@
 # Release verification checklist
 
-## v0.1.16 no-telemetry privacy release
+## v0.1.17 contextual proofreading release
 
-Core 0.1.16; fonts 0.1.6 reused. This release adds the optional-dependency telemetry guard and updates current metadata/documentation. It does not change transcription behavior, dependency pins, workflows or fonts; Whistle remains the default engine. The privacy fix passed the full suite plus real native Whistle transcription, a Hugging Face download/auth-header check and installed pyannote telemetry-hook checks before release preparation. Required exact-commit CI and installed-artifact acceptance remain release gates.
+v0.1.17 improves optional local AI proofreading: contextual corrections, preserved uncertain source words, highlighted review spans and review markers in corrected text. Whistle remains the default; transcription, streaming, no-telemetry controls and fonts 0.1.6 are unchanged. Required exact-commit CI and installed-artifact acceptance remain release gates.
 
 Run from a clean candidate checkout with its development environment:
 
 ```powershell
-python scripts/verify_release_versions.py --tag v0.1.16
-python scripts/verify_readme_release.py --version v0.1.16
+python scripts/verify_release_versions.py --tag v0.1.17
+python scripts/verify_readme_release.py --version v0.1.17
 python -m ruff check .
 python -m pytest
 ```
 
 Require green PR CI and exact merged-main CI before tagging. Verify published hashes, fresh installed versions and the deployed website. Reuse unchanged engine/source evidence with its original identity; do not claim a new meeting-accuracy or live YouTube run unless actually performed.
 
-### Windows v0.1.16 acceptance and final release requirements
+### Windows v0.1.17 acceptance and final release requirements
 
-After tagged core publication, build the installer from the immutable v0.1.16 tag and that exact published core wheel. Validate the full staged payload, compile and publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with the payload manifest, `WINDOWS-SHA256SUMS`, `WINDOWS-README.md` and matching unchanged dependency-source/notice snapshots. Do not relabel the v0.1.13 dependency snapshot filenames or hashes.
+After tagged core publication, build the installer from the immutable v0.1.17 tag and that exact published core wheel. Validate the full staged payload, compile and publish `TextFlowKit-0.1.17-windows-x64-setup.exe` under the v0.1.17 release with the payload manifest, `WINDOWS-SHA256SUMS`, `WINDOWS-README.md` and matching unchanged dependency-source/notice snapshots. Do not relabel the v0.1.13 dependency snapshot filenames or hashes.
 
-Before accepting the Windows assets, an actual isolated EXE installation must pass version readback, native Whistle speech selftest and local browser UI launch. Record only tests actually performed. Completed for this release: [v0.1.16 acceptance record](verification/windows-installer-v016-20261020.md). The v0.1.15 record remains historical.
+Before accepting the Windows assets, an actual EXE installation or owner upgrade must pass version readback, native Whistle speech selftest and local browser UI launch. Record only tests actually performed. Record completed results in the release WINDOWS-README.md; prior acceptance records remain historical.
 
 Website RUM and NEL were verified disabled in production on 2026-10-20; recheck the deployed page and response headers after publication. Necessary functional network traffic and hosting-provider operational/security logs are distinct from visitor telemetry.
 

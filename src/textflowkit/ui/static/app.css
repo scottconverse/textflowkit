@@ -290,3 +290,6 @@ mark { background: var(--focus); color: #000; }
 .cleanup-row > div { white-space: pre-wrap; overflow-wrap: anywhere; }
 #cleanup-provenance { overflow-wrap: anywhere; }
 @media (max-width: 600px) { .cleanup-row { grid-template-columns: 1fr; } }
+
+.cleanup-uncertain { background: #fff0b3; color: #352600; text-decoration: underline dotted; }
+.cleanup-reasons { font-size: .9rem; margin-block: .5rem 0; white-space: normal; }

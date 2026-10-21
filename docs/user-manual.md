@@ -1,12 +1,12 @@
-# TextFlowKit user manual — v0.1.16
+# TextFlowKit user manual — v0.1.17
 
-**Privacy:** v0.1.16 disables pyannote usage metrics and Hugging Face telemetry
+**Privacy:** v0.1.17 disables pyannote usage metrics and Hugging Face telemetry
 before optional imports; necessary downloads, gated-model authentication and Whistle
 as the default engine remain functional. Website analytics, RUM and NEL are disabled.
 Older artifacts do not change automatically. See the [privacy policy](privacy.md)
 for the exact controls and necessary functional network traffic.
 
-v0.1.16 is a no-telemetry release. Transcription and streaming behavior are unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its actual EXE passed isolated install, version, native speech, privacy and UI acceptance.
+v0.1.17 improves optional local AI proofreading: contextual corrections, preserved uncertain source words, highlighted review spans and review markers in corrected text. Whistle remains the default; transcription, streaming, no-telemetry controls and fonts 0.1.6 are unchanged. The v0.1.17 Windows installer is built from the tagged source and published core wheel; Windows publication requires actual upgrade, version, native speech, privacy and UI acceptance.
 
 TextFlowKit turns a local audio/video file or a supported media URL into a
 timestamped transcript. It is a **self-hosted developer tool**, not a hosted
@@ -29,13 +29,13 @@ extra selected explicitly with `--engine whisper`. See
 
 ## 1. Install and check the machine
 
-### Windows x86_64 installer (v0.1.16)
+### Windows x86_64 installer (v0.1.17)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.17/TextFlowKit-0.1.17-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17)
 
-The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. The actual EXE passed isolated installation, version readback, native Whistle speech selftest, installed privacy guards and browser UI launch. See the [v0.1.16 acceptance record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v016-20261020.md). Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
+The v0.1.17 installer is compiled from the immutable tag and exact published core wheel. Before Windows publication, the rebuilt EXE must pass actual upgrade, version readback, native Whistle speech selftest, privacy guards and browser UI launch. See WINDOWS-README.md in the matching release for the completed Windows build and acceptance receipt. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums.
 
-The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.16. It is built after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
+The per-user Windows x86_64 installer packages the existing browser workspace for core v0.1.17. It is built after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.17 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17). The installed app requires no separately installed Python, WSL, or Docker. Its bundle includes private embeddable CPython, the UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, plus ffmpeg, ffprobe, and Node.
 
 The setup is per user. It will create a Start Menu entry and offer an
 optional desktop shortcut; opening either will start the local server and open the
@@ -58,7 +58,7 @@ if it should not finish.
 
 The installer bundle includes third-party license and notice files,
 including FFmpeg's LGPL notices and corresponding-source information. Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a SmartScreen
-warning. See the [install notes](install.md#windows-desktop-installer-v0116)
+warning. See the [install notes](install.md#windows-desktop-installer-v0117)
 for its scope and status.
 
 ```mermaid
@@ -87,7 +87,7 @@ Install Python 3.10 or later and `ffmpeg`/`ffprobe` on `PATH`. For a standard
 CPU setup, install the current release from PyPI:
 
 ```bash
-python -m pip install 'textflowkit[export,mcp,http]==0.1.16'
+python -m pip install 'textflowkit[export,mcp,http]==0.1.17'
 textflowkit --version
 textflowkit doctor
 textflowkit selftest
@@ -359,7 +359,7 @@ point from the developer HTTP API, reuses the same pipeline and job store, and i
 served on loopback only.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.16'
+python -m pip install 'textflowkit[http,export]==0.1.17'
 textflowkit-ui
 ```
 
@@ -451,7 +451,7 @@ and nowhere else.
 
 It is **off by default**: with the switch unset the endpoint
 does not exist. It needs the `streaming` extra
-(`python -m pip install "textflowkit[streaming]==0.1.16"`). This is a capability of the
+(`python -m pip install "textflowkit[streaming]==0.1.17"`). This is a capability of the
 **servers**, not the command-line `textflowkit` tool — the CLI never opens a
 microphone. See [streaming.md](streaming.md) for the full contract and the
 programmatic API.
@@ -535,12 +535,12 @@ passes with Whistle's own real speech output.
 
 ## 9. Release and help
 
-- [v0.1.16 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
-- [Core package 0.1.16 on PyPI](https://pypi.org/project/textflowkit/0.1.16/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
+- [v0.1.17 GitHub release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17)
+- [Core package 0.1.17 on PyPI](https://pypi.org/project/textflowkit/0.1.17/) and [unchanged optional font package 0.1.6](https://pypi.org/project/textflowkit-fonts/0.1.6/)
 - [Release verification procedure](release-checklist.md), [security policy](../SECURITY.md), and [issues](https://github.com/scottconverse/textflowkit/issues)
 
-The v0.1.16 release adds the optional-dependency telemetry opt-outs described above. Its
-Windows installer is compiled from the tagged source and exact published wheel, with isolated install, version, speech and UI acceptance required before publication.
+The v0.1.17 release adds contextual proofreading and explicit uncertainty review. Its
+Windows installer is compiled from the tagged source and exact published wheel, with actual upgrade, version, speech and UI acceptance required before publication.
 
 The v0.1.13 release fixes reproduced Whistle speech omissions with a 15-second
 decode ceiling, anchored gap checks, and shared-context reconciliation, and it
@@ -611,6 +611,31 @@ plausible but wrong corrections, including names and facts: review against the
 original and audio before using it. Prompt instructions reduce errors but do not
 guarantee accuracy or resistance to instructions embedded in speech.
 
+**Contextual proofreading in v0.1.17:** clear ASR mistakes are corrected using
+surrounding sentences; unclear words, names, garbled phrases and facts should be
+flagged instead of guessed. Flagged source wording must remain verbatim even when
+neighboring context is corrected. The comparison highlights those spans on both
+sides and lists review reasons. Corrected TXT and clipboard include inline
+`[REVIEW: reason]` markers after each flagged span. Hidden segments stay excluded
+from comparison/copy/export. Empty flag lists mean the model reported none, not
+that the text is verified. Older saved variants remain readable/exportable and
+are labelled as not assessed for uncertainty; they are not silently reprocessed.
+
+The model supplies exact source text and a bounded reason, with a 1-based
+occurrence number only for repeated text. Python derives source/corrected offsets
+(zero-based Unicode code points, exclusive ends); the model does no offset
+arithmetic. Absent or ambiguous source spans, overlaps, invalid reasons and missing
+metadata reject the whole attempt. If the model flags source wording but also
+rewrites it, deterministic token-level comparison suppresses the entire overlapping
+edit and retains the exact original region; separate nonoverlapping corrections
+survive. Insertions at protected boundaries and adjacent whitespace/punctuation are
+suppressed too. If a span cannot be mapped precisely through the copied regions,
+the segment falls back to its original text with flags, without another model call. At most 20 spans per
+segment, each 1–200 characters, are accepted. Stored offsets are revalidated
+against the original on retrieval. A failed retry retains an earlier valid variant.
+These checks protect reported spans, but cannot guarantee that the model detects
+every ambiguity or avoids an unflagged hallucination. Check the audio before use.
+
 Corrected segments retain source start/end timestamps and stable zero-based
 original segment indices. They have no inherited word alignment or translation;
 **corrected word timing is not verified**. A separate persisted variant records
@@ -640,8 +665,10 @@ Configuration is process-local environment, consistent with the existing UI:
 
 One cleanup runs at a time; the browser polls a background worker and remains
 usable. Limits: 2,000 segments, 120,000 source characters, 60 chunks, at most
-1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. A small read-only
-neighboring context helps with sentences spanning segments without merging them.
+1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. Read-only neighboring
+segments supply up to 6,000 additional source characters from the bounded passage,
+helping resolve cross-segment sentences without merging them.
+Each chunk uses one local inference; no automatic AI review pass is added.
 Generation requests use temperature 0, thinking disabled, context 8,192 and at
 most 4,096 generated tokens per chunk. Requests have a 180-second socket timeout,
 bounded response reads (1 MiB), and strict 64 KiB model JSON limits. The overall

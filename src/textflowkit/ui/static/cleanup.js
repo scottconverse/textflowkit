@@ -14,6 +14,23 @@
   }
   const base = () => `/ui/jobs/${encodeURIComponent(jobId)}/cleanup`;
   function status(text) { $("cleanup-status").textContent = text; }
+  function annotatedText(element, text, flags, corrected) {
+    // Python/model offsets are Unicode code points; JS string offsets are UTF-16.
+    const chars = Array.from(text);
+    let cursor = 0;
+    for (const flag of flags) {
+      const start = corrected ? flag.corrected_start : flag.start;
+      const end = corrected ? flag.corrected_end : flag.end;
+      element.appendChild(document.createTextNode(chars.slice(cursor, start).join("")));
+      const mark = document.createElement("mark");
+      mark.className = "cleanup-uncertain";
+      mark.textContent = chars.slice(start, end).join("");
+      mark.title = `Review: ${flag.reason}`;
+      element.appendChild(mark);
+      cursor = end;
+    }
+    element.appendChild(document.createTextNode(chars.slice(cursor).join("")));
+  }
   function showVariant() {
     const box = $("cleanup-comparison");
     box.replaceChildren();
@@ -29,9 +46,21 @@
       const source = document.createElement("div");
       // The shared retrieval API excludes hidden segments. Canonical IDs stay
       // on the variant; visible originals align by their preserved order.
-      source.appendChild(document.createTextNode(original.segments[visibleIndex++].text));
+      const sourceText = original.segments[visibleIndex++].text;
+      const flags = seg.uncertainties || [];
+      annotatedText(source, sourceText, flags, false);
       const corrected = document.createElement("div");
-      corrected.textContent = seg.text;
+      annotatedText(corrected, seg.text, flags, true);
+      if (flags.length) {
+        const reasons = document.createElement("ul");
+        reasons.className = "cleanup-reasons";
+        for (const flag of flags) {
+          const item = document.createElement("li");
+          item.textContent = `Review "${flag.text}": ${flag.reason}. Original wording retained.`;
+          reasons.appendChild(item);
+        }
+        corrected.appendChild(reasons);
+      }
       row.append(timestamp, source, corrected);
       box.appendChild(row);
     }
@@ -51,8 +80,13 @@
         $("cleanup-provenance").textContent =
           `${p.provider} · requested ${p.model_requested} · returned ${p.model_returned} · ${p.created_at} · original SHA-256 ${p.original_sha256}`;
       } else $("cleanup-provenance").textContent = "";
-      status(running ? "Proofreading locally… original remains available." :
-        data.error || (variant ? "AI correction saved. Review against the original/audio before use." :
+      const reviewCount = variant ? variant.segments.filter(s => !s.hidden)
+        .reduce((count, s) => count + (s.uncertainties || []).length, 0) : 0;
+      const assessed = variant && variant.segments.every(s => Array.isArray(s.uncertainties));
+      status(running ? "Proofreading locally... original remains available." :
+        data.error || (variant ? (assessed ?
+          `AI correction saved. ${reviewCount} span(s) flagged for review. Review all text against the audio; unflagged text can also be wrong.` :
+          "Older AI correction: uncertainty was not assessed. Review all text against the original/audio.") :
           "Optional: select a local model, then proofread."));
       showVariant();
       if (running) timer = setTimeout(() => poll(expected, version), 1500);
@@ -129,8 +163,14 @@
   $("cleanup-copy").addEventListener("click", async () => {
     if (!variant) return;
     try {
-      await navigator.clipboard.writeText(variant.segments.filter(s => !s.hidden).map(s => s.text).join("\n"));
-      status("Copied AI-corrected text. Original copy/export is unchanged.");
+      const expected = jobId, version = generation;
+      // Use the same server formatter as TXT so review markers cannot be dropped.
+      const response = await fetch(base() + "/download");
+      if (!response.ok) throw new Error("No valid corrected transcript available");
+      const text = await response.text();
+      if (expected !== jobId || version !== generation) return;
+      await navigator.clipboard.writeText(text);
+      status("Copied AI-corrected text with any review markers. Review against the audio.");
     } catch (_) { status("Clipboard unavailable; use Save corrected TXT."); }
   });
   $("cleanup-save").addEventListener("click", async () => {

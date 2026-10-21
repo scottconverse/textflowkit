@@ -276,3 +276,9 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 
 - [x] Ship v0.1.16 review follow-ups: enforce pyannote metrics and Hugging Face telemetry opt-outs before optional imports; preserve functional downloads, gated-model authentication and Whistle as the default engine; disable website RUM and NEL.
 - [x] Build and accept the v0.1.16 Windows installer from the immutable tag and published core wheel, publish `TextFlowKit-0.1.16-windows-x64-setup.exe` under the v0.1.16 release with unchanged dependency-source snapshots, and record isolated install/version/Whistle-speech/UI-launch acceptance. Completed: [v0.1.16 acceptance record](verification/windows-installer-v016-20261020.md); the v0.1.15 record remains historical.
+
+## v0.1.17 — contextual proofreading
+
+- [x] Ship v0.1.17 review follow-ups: contextual proofreading, deterministic uncertain-source preservation and side-by-side review/export annotations.
+
+Contextual corrections, deterministic preservation of flagged source spans, highlighted side-by-side review and marked corrected TXT/clipboard. Original transcript and timings remain unchanged. Release gates cover exact-commit CI, publication, rebuilt installer with matching sources/notices, owner upgrade and website verification.
