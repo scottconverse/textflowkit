@@ -279,4 +279,6 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 
 ## v0.1.17 — contextual proofreading
 
+- [x] Ship v0.1.17 review follow-ups: contextual proofreading, deterministic uncertain-source preservation and side-by-side review/export annotations.
+
 Contextual corrections, deterministic preservation of flagged source spans, highlighted side-by-side review and marked corrected TXT/clipboard. Original transcript and timings remain unchanged. Release gates cover exact-commit CI, publication, rebuilt installer with matching sources/notices, owner upgrade and website verification.

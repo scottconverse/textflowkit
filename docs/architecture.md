@@ -522,3 +522,7 @@ SQLite JSON/source and segment IDs/timestamps matched, and the browser compariso
 and TXT save were verified. This confirms the local persistence/export path for
 that run only, not correction accuracy; human audio review remains required.
 The optional UI-only cleanup is included in v0.1.17 (introduced in v0.1.12); models are not bundled.
+
+### v0.1.17 proofreading uncertainty flow
+
+The existing local-only cleanup path now supplies bounded neighboring context. The model reports exact source spans and reasons, not character offsets. Python validates spans and derives offsets, then suppresses proposed edits overlapping those flagged source words while retaining independent corrections. The saved variant keeps review metadata separately from the canonical transcript; both comparison panes highlight it, and corrected TXT/clipboard retain review markers. Legacy variants remain readable with an uncertainty-not-assessed notice. No extra inference pass or transcription-engine change is introduced.
