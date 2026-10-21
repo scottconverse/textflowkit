@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.18 — 2026-10-20
+
+Core and Windows version 0.1.18; unchanged optional fonts 0.1.6. Contextual proofreading remains the prior v0.1.17 feature. No engine, model, transcription, streaming or privacy changes.
+
+- Open AI comparison across the full browser workspace with equal Original/AI-cleaned columns, labeled narrow-screen stacking, and Back/Escape navigation. Preserve timestamps, review reasons and corrected exports.
+
+- Windows installer rebuild from the immutable tag and published core wheel, required installed comparison/navigation acceptance, and publication remain release gates. Record actual proof in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md).
+
 ## v0.1.17 — 2026-10-20
 
 - Enforce reported uncertainty preservation with a deterministic source-token diff: suppress whole overlapping edits and boundary insertions, keep independent corrections, and fall back to original segment text when precise mapping is unavailable. Invalid source flags still fail closed; no extra inference pass.

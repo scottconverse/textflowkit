@@ -282,3 +282,8 @@ in the active repair goal. See the [changelog](../CHANGELOG.md).
 - [x] Ship v0.1.17 review follow-ups: contextual proofreading, deterministic uncertain-source preservation and side-by-side review/export annotations.
 
 Contextual corrections, deterministic preservation of flagged source spans, highlighted side-by-side review and marked corrected TXT/clipboard. Original transcript and timings remain unchanged. Release gates cover exact-commit CI, publication, rebuilt installer with matching sources/notices, owner upgrade and website verification.
+
+## v0.1.18 — full-window comparison
+
+- [x] Ship v0.1.18 review follow-ups: implement focused full-workspace AI comparison, equal Original/AI-cleaned columns, labeled narrow-screen stacking, compact Back/Escape/Original-only navigation and job-switch focus reset; preserve timestamps, uncertainty reasons and corrected copy/save.
+- [ ] Complete exact-commit CI, tagged core publication, installer rebuild from that tag and published wheel, actual installed acceptance, Windows asset publication and live website verification. Record performed checks in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md). Fonts remain 0.1.6; prior engine, privacy and dependency evidence retains its original identity.

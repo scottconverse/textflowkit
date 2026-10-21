@@ -206,7 +206,7 @@
   <main id="main">
     <div class="wrap hero">
       <div>
-        <span class="eyebrow">Open source · Apache 2.0 · v0.1.17</span>
+        <span class="eyebrow">Open source · Apache 2.0 · v0.1.18</span>
         <h1>Media in.<br><em>Useful text</em> out.</h1>
         <p class="lead">Transcribe video and audio into timestamped, searchable text. One shared core for your command line, AI harness, and application.</p>
         <div class="actions">
@@ -214,8 +214,8 @@
           <a class="button secondary" href="https://pypi.org/project/textflowkit/">Install from PyPI <span aria-hidden="true">&nbsp;↗</span></a>
         </div>
         <p class="micro">Self-hosted toolkit · Native Windows, macOS, Linux · No account required</p>
-        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17">v0.1.17</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
-        <p class="micro">v0.1.17 improves optional local AI proofreading: contextual corrections, preserved uncertain source words, highlighted review spans and review markers in corrected text. Whistle remains the default; transcription, streaming, no-telemetry controls and fonts 0.1.6 are unchanged. The v0.1.17 Windows installer is built and accepted after tagged core publication.</p>
+        <p class="micro">Latest verified release: <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18">v0.1.18</a> · <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">User manual</a></p>
+        <p class="micro">v0.1.18 opens side-by-side AI comparison across the full browser workspace, with equal Original/AI-cleaned columns and labeled stacking on narrow screens. Back to results, Escape, or Original only exits comparison; switching jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and corrected copy/save remain available. Contextual proofreading and uncertain-source preservation were introduced in v0.1.17. Whistle remains the default; engine, streaming, privacy and fonts 0.1.6 behavior are unchanged. The v0.1.18 Windows installer requires a rebuild and actual installed acceptance after tagged core publication, before Windows publication.</p>
       </div>
       <div class="terminal" aria-label="Example transcription command and output">
         <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-label">textflowkit / terminal</span></div>
@@ -291,7 +291,7 @@
         </figure>
         <figure class="figure">
           <img src="assets/live-streaming-flow.svg" alt="Optional Windows x86_64 streaming: bounded PCM passes through an authenticated loopback WebSocket to an ephemeral StreamingSession and one owned native child; incremental events return, finish flushes to a canonical Transcript, and cancel releases the session. No durable job or resume; off by default; physical microphone capture not verified; the public site serves no streams." loading="lazy" width="1180" height="490">
-          <figcaption>Optional live path in v0.1.17 (introduced in v0.1.11): authenticated loopback WebSockets feed an ephemeral <code>StreamingSession</code> and one owned native child. Windows x86_64 only, off by default; no durable job or resume. Existing file/URL jobs follow the separate diagrams. Physical microphone capture has not been verified; this public site serves no streams.</figcaption>
+          <figcaption>Optional live path in v0.1.18 (introduced in v0.1.11): authenticated loopback WebSockets feed an ephemeral <code>StreamingSession</code> and one owned native child. Windows x86_64 only, off by default; no durable job or resume. Existing file/URL jobs follow the separate diagrams. Physical microphone capture has not been verified; this public site serves no streams.</figcaption>
         </figure>
         <figure class="figure">
           <img src="assets/local-ui-flow.svg" alt="TextFlowKit local browser interface request flow: the operator opens the workspace from a desktop shortcut or the textflowkit-ui command, which launches a loopback-only server on 127.0.0.1 that holds an exclusive owner lock on the durable SQLite database; the operator drops a file or pastes a URL, a file is streamed to a per-user upload folder capped at 2 GiB by default; both become a submission through the same shared submission contract the CLI, MCP, and HTTP doors use, writing a durable job that runs through the shared core (Whistle by default or an explicit optional engine) decoding with ffmpeg and transcribing on this machine; a finished transcript is searchable, copyable, downloadable in a fixed format list, and playable with the browser's native player on the currently selected media." loading="lazy" width="1180" height="660">
@@ -309,28 +309,28 @@
       <div class="install-grid">
         <div>
           <ul>
-            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.17"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
+            <li><strong>Install and launch:</strong> <code>python -m pip install "textflowkit[http,export]==0.1.18"</code> then <code>textflowkit-ui</code>. It adds no dependency beyond the <code>http</code> extra.</li>
             <li><strong>Desktop shortcut (Windows):</strong> <code>textflowkit-ui --create-shortcut</code> makes a Start Menu entry that launches with <code>pythonw</code> (no console) and needs no <code>pywin32</code>. That shortcut is the normal way to open it.</li>
             <li><strong>Loopback only:</strong> it binds <code>127.0.0.1</code> and is never reachable off the machine, whatever <code>TEXTFLOWKIT_ALLOW_REMOTE</code> is set to.</li>
             <li><strong>Durable jobs, cancel, and resume:</strong> jobs and checkpoints are stored durably; you can cancel a running job and resume a saved one. Shutdown <em>drains</em> — it waits for current jobs to finish rather than cancelling them.</li>
             <li><strong>Uploads and downloads:</strong> dropped files are streamed and capped at 2 GiB by default; results download as TXT, Markdown, SRT, VTT, JSON, DOCX, or PDF. Playback uses the browser's native player on the currently selected media.</li>
             <li><strong>No UI analytics:</strong> the page loads no CDN asset and no analytics. URL acquisition, first-use transcription model downloads, optional translation, and explicitly requested loopback Ollama cleanup use the network.</li>
-            <li><strong>Live microphone streaming is optional in v0.1.17 and Windows x86_64 only.</strong> The standalone <code>textflowkit</code> CLI does <em>not</em> open a microphone or a streaming socket — its native audio-stream path stays disabled. Live transcription is a distinct capability of the two <em>servers</em> (the HTTP API's <code>/stream</code> and the UI's <code>/api/stream</code>), off unless <code>TEXTFLOWKIT_STREAMING=1</code> is set, loopback-only, and verified with paced PCM through the native core (65 s and 300 s), plus a separate 12 s UI WebSocket PCM run; physical browser microphone capture has not been verified. It ships in the same wheel; see <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md">the streaming guide</a>.</li>
+            <li><strong>Live microphone streaming is optional in v0.1.18 and Windows x86_64 only.</strong> The standalone <code>textflowkit</code> CLI does <em>not</em> open a microphone or a streaming socket — its native audio-stream path stays disabled. Live transcription is a distinct capability of the two <em>servers</em> (the HTTP API's <code>/stream</code> and the UI's <code>/api/stream</code>), off unless <code>TEXTFLOWKIT_STREAMING=1</code> is set, loopback-only, and verified with paced PCM through the native core (65 s and 300 s), plus a separate 12 s UI WebSocket PCM run; physical browser microphone capture has not been verified. It ships in the same wheel; see <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/streaming.md">the streaming guide</a>.</li>
           </ul>
           <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md#7-local-browser-interface">Read the local UI guide ↗</a>
         </div>
         <div>
-          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.17"
+          <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[http,export]==0.1.18"
 <span class="prompt">$ </span>textflowkit-ui --create-shortcut
 <span class="comment"># then open it from the Start Menu shortcut</span></pre>
           <p class="note"><strong>Public page vs. local app.</strong> This landing page is the public, static site. The browser workspace is a separate, local program: it never runs here and is not reachable from the internet. v0.1.12 added optional UI-only local Ollama cleanup and native Windows packaging (that cleanup remains as introduced in v0.1.12); existing standalone defaults, file/URL jobs, CLI, and MCP behavior remain unchanged. This public site serves no streaming endpoint.</p>
         </div>
       </div>
       <div class="installer-candidate" aria-labelledby="installer-candidate-title">
-        <span class="kicker">Windows x86_64 · v0.1.17 installer</span>
+        <span class="kicker">Windows x86_64 · v0.1.18 installer</span>
         <h3 id="installer-candidate-title">The same local workspace, packaged for Windows.</h3>
-        <p><a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.17/TextFlowKit-0.1.17-windows-x64-setup.exe">Download Windows x64 installer</a> · <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17">Matching sources and notices</a></p>
-        <p>The native Windows installer packages core v0.1.17. Before publication, the actual EXE must pass upgrade, version, native speech, privacy and browser-launch checks. The installer and matching FFmpeg source archives, notices and build instructions are published together in the v0.1.17 GitHub release. It requires no separately installed Python, WSL, or Docker.</p>
+        <p><a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/TextFlowKit-0.1.18-windows-x64-setup.exe">Download Windows x64 installer</a> · <a href="https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18">Matching sources and notices</a></p>
+        <p>The native Windows installer packages core v0.1.18. Before publication, the actual EXE must pass upgrade, version, native speech, privacy and browser-launch checks, including full-width comparison, Back/Escape navigation and labeled narrow-screen stacking. The installer and matching FFmpeg source archives, notices and build instructions are published together in the v0.1.18 GitHub release. It requires no separately installed Python, WSL, or Docker.</p>
         <ol class="installer-flow" aria-label="Windows installer architecture">
           <li class="installer-step"><b>01 / SETUP</b><strong>Per-user installer</strong><span>Per-user x86_64 installer</span></li>
           <li class="installer-step"><b>02 / RUNTIME</b><strong>Private local runtime</strong><span>CPython, UI/HTTP, exports, streaming dependencies, pinned Whistle assets, ffmpeg, ffprobe, Node</span></li>
@@ -345,7 +345,7 @@
           <li>Optional <code>openai-whisper</code> and diarization dependencies are not bundled; those documented features remain available through the Python package with their required dependencies. Streaming remains opt-in, and physical browser microphone capture has not been verified.</li>
           <li>The installer bundle includes third-party license and notice files, including FFmpeg LGPL notices and corresponding-source information; matching dependency source snapshots and their checksums accompany this release. The unsigned installer may show a Windows SmartScreen warning.</li>
         </ul>
-        <p class="note">The v0.1.17 installer is built from the immutable tag and published core wheel after core publication, then must pass actual installation or owner upgrade, version readback, native speech selftest and browser UI launch before Windows acceptance. <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.17/WINDOWS-SHA256SUMS">Windows checksums</a> · <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.17/WINDOWS-README.md">Build and source details</a>. Unchanged dependency source/notice snapshots retain v0.1.13 filenames and hashes; the app is v0.1.17.</p>
+        <p class="note">The v0.1.18 installer is built from the immutable tag and published core wheel after core publication, then must pass actual installation or owner upgrade, version readback, native speech selftest, privacy guards and browser comparison/navigation checks before Windows acceptance. This remains required until the matching receipt records actual proof. <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS">Windows checksums</a> · <a href="https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md">Build and source details</a>. Unchanged dependency source/notice snapshots retain v0.1.13 filenames and hashes; the app is v0.1.18.</p>
         <p class="note">The Python package remains supported for developers and integrations. Docker is a separate operator deployment option.</p>
       </div>
     </section>
@@ -356,7 +356,7 @@
       <h2 id="ai-cleanup-title">Keep the original. Review a separate correction.</h2>
       <p>After transcription, explicitly choose an installed local Ollama model and
       proofread source speech. Compare timestamp-anchored original and AI-corrected
-      rows, return to original-only view, or copy/save separate corrected TXT.
+      rows across the full browser workspace in equal Original/AI-cleaned columns. Narrow screens stack labeled sections. Use Back to results, Escape or Original only to exit; switching jobs resets the view and focus. Timestamps, review reasons and corrected copy/save remain available.
       Original transcripts and existing exports stay unchanged.</p>
       <p>The optional default preference <code>qwen3.5:9b</code> is used only if
       installed; its size/performance fit is unverified. Otherwise choose an installed
@@ -367,7 +367,7 @@
       against the original and audio. Source timestamps are preserved; corrected
       word timing is not verified. A separate persisted variant records provider,
       requested/returned model, time and original hash. Bounded background work
-      publishes no partial correction. Optional UI-only cleanup is included in core v0.1.17 (introduced in v0.1.12). Version 0.1.17 uses neighboring context to correct clear errors and preserves flagged uncertain source words. Both panes highlight review spans; corrected TXT and clipboard retain review markers. Older saved variants are labeled uncertainty not assessed. Unflagged words can still be wrong.</p>
+      publishes no partial correction. Optional UI-only cleanup is included in core v0.1.18 (introduced in v0.1.12). Contextual proofreading introduced in v0.1.17 uses neighboring context to correct clear errors and preserves flagged uncertain source words. Both panes highlight review spans; corrected TXT and clipboard retain review markers. Older saved variants are labeled uncertainty not assessed. Unflagged words can still be wrong.</p>
       <p class="note">Validation history: the first cold full-UI attempt ended in a
       generic error; a later hot full run returned zero edits despite clear spelling
       errors. The final cold run, started with the model unloaded, completed all 39
@@ -389,7 +389,7 @@
           <li>Find the right setup for AMD ROCm in the install guide before installing dependencies — this applies to the optional <code>openai-whisper</code> engine and to diarization.</li>
         </ul>
         <a class="button secondary" href="https://github.com/scottconverse/textflowkit/blob/main/docs/install.md">Read install guide ↗</a>
-        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.17 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
+        <p class="note">New here? Follow the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md">v0.1.18 user manual</a> for CLI, MCP, HTTP, the local browser interface, export, and troubleshooting examples, or the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md">developer and integration manual</a> for harness configuration and production settings.</p>
       </div>
       <div>
         <pre class="codebox"><span class="prompt">$ </span>python -m pip install "textflowkit[mcp,http]"
@@ -402,7 +402,7 @@
       <div class="wrap truth-inner">
         <h2 id="truth-title">A clear line between support and proof.</h2>
         <p><strong>YouTube has a maintained live Windows release check.</strong> The other 12 named platforms are recognized through yt-dlp, not independently verified on every release. This page is a landing page for a self-hosted developer tool, <strong>not a hosted upload or transcription service</strong>. See the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/release-checklist.md">release checklist</a> and <a href="https://github.com/scottconverse/textflowkit/blob/main/SECURITY.md">security policy</a>.</p>
-        <p><strong>No telemetry.</strong> v0.1.17 disables pyannote usage metrics and Hugging Face telemetry before optional imports without blocking necessary downloads, gated-model authentication or Whistle as the default engine. Cloudflare RUM and NEL are disabled. Older artifacts do not change automatically. See the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/privacy.md">privacy policy</a>.</p>
+        <p><strong>No telemetry.</strong> v0.1.18 retains the existing opt-outs for pyannote usage metrics and Hugging Face telemetry before optional imports without blocking necessary downloads, gated-model authentication or Whistle as the default engine. Cloudflare RUM and NEL are disabled. Older artifacts do not change automatically. See the <a href="https://github.com/scottconverse/textflowkit/blob/main/docs/privacy.md">privacy policy</a>.</p>
       </div>
     </aside>
   </main>

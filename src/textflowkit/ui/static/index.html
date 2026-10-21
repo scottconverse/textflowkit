@@ -62,7 +62,7 @@
 
   <!-- Results column -->
   <section class="panel results-panel" aria-labelledby="results-heading">
-    <h2 id="results-heading">3 &middot; Results</h2>
+    <h2 id="results-heading" tabindex="-1">3 &middot; Results</h2>
 
     <div class="results-toolbar">
       <input id="search-input" type="search" placeholder="Search the transcript&hellip;"
@@ -93,26 +93,36 @@
     <div id="search-results" class="search-results" hidden></div>
 
     <section id="cleanup-panel" hidden aria-labelledby="cleanup-heading">
-      <h3 id="cleanup-heading">Optional local AI proofreading</h3>
+      <div class="cleanup-heading-bar">
+        <h3 id="cleanup-heading" tabindex="-1">Optional local AI proofreading</h3>
+        <button id="cleanup-back" type="button" class="secondary" hidden>Back to results</button>
+      </div>
       <p class="notice">AI may make plausible but incorrect corrections, including names and facts.
         Review against the original and audio. Source segment timestamps are retained;
         corrected word timing is not verified. Highlighted spans retain the original wording and need
         audio review; reasons and [REVIEW: ...] markers accompany corrected TXT and clipboard.
         Unflagged text may also be wrong. Proofreads source speech, not translated text.</p>
-      <label for="cleanup-model">Installed local Ollama model</label>
-      <select id="cleanup-model"></select>
-      <button id="cleanup-start" type="button" class="secondary" disabled>Proofread with local AI</button>
-      <p id="cleanup-config" class="hint"></p>
+      <div class="cleanup-setup">
+        <label for="cleanup-model">Installed local Ollama model</label>
+        <select id="cleanup-model"></select>
+        <button id="cleanup-start" type="button" class="secondary" disabled>Proofread with local AI</button>
+        <p id="cleanup-config" class="hint"></p>
+      </div>
       <p id="cleanup-status" class="hint" role="status" aria-live="polite"></p>
-      <label for="cleanup-view">View
-        <select id="cleanup-view">
-          <option value="original">Original only</option>
-          <option value="compare">Compare source original (left) and AI corrected (right)</option>
-        </select>
-      </label>
-      <button id="cleanup-copy" type="button" class="secondary" disabled>Copy corrected text</button>
-      <button id="cleanup-save" type="button" class="secondary" disabled>Save corrected TXT</button>
+      <div class="cleanup-toolbar">
+        <label for="cleanup-view">View
+          <select id="cleanup-view">
+            <option value="original">Original only</option>
+            <option value="compare">Side-by-side AI comparison</option>
+          </select>
+        </label>
+        <button id="cleanup-copy" type="button" class="secondary" disabled>Copy corrected text</button>
+        <button id="cleanup-save" type="button" class="secondary" disabled>Save corrected TXT</button>
+      </div>
       <p id="cleanup-provenance" class="hint"></p>
+      <div id="cleanup-columns" class="cleanup-columns" hidden aria-hidden="true">
+        <span>Original</span><span>AI-cleaned</span>
+      </div>
       <div id="cleanup-comparison" hidden aria-label="Original and AI correction comparison"></div>
     </section>
     <div id="transcript" class="transcript" aria-label="Transcript"></div>
