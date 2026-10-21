@@ -23,6 +23,7 @@ from textflowkit.core.cancel import CancelledError
 from textflowkit.core.checkpoint import (
     CheckpointRecord,
     local_source_identity,
+    matches,
     parse_checkpoint,
     validate_local_resume,
 )
@@ -270,7 +271,8 @@ def transcribe(
     the run. Model inference and optional postprocessors still only stop at
     their next stage boundary.
 
-    `resume_checkpoint` carries a validated snapshot from an earlier run.
+    `resume_checkpoint` carries a snapshot from an earlier run. Its source,
+    model, language and canonical engine must match this request before reuse.
     Completed transcript work is reused; acquisition and engine work are skipped.
     `on_checkpoint` receives an atomic snapshot after each completed stage.
 
@@ -441,6 +443,15 @@ def transcribe(
         validate_model(model, engine)
     except ValueError as exc:
         raise PipelineError(str(exc)) from exc
+
+    # Match recognition identity before adopting any paths, progress or transcript,
+    # and before the first checkpoint write. Optional stages may change on resume;
+    # their own completion/configuration checks decide what must run again.
+    if resumed is not None and not matches(
+        resumed, source=source, model=model, language=language, engine=engine,
+        device=resumed.device,
+    ):
+        raise PipelineError("resume request does not match the saved checkpoint")
 
     # A local path may be confined; a URL is guarded separately by the SSRF
     # check inside resolve_source. `input_root=None` means "use the configured

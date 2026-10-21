@@ -4,7 +4,10 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
+import shutil
 import sys
+from importlib import metadata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -256,19 +259,31 @@ def test_selftest_invokes_existing_cli_without_ui(monkeypatch):
     assert events == [["selftest", "--engine", "whistle"]]
 
 
-def test_native_mutex_shared_handles_and_release():
+def test_native_mutex_shared_handles_and_release(monkeypatch):
     bootstrap = load(BOOTSTRAP)
     if os.name != "nt":
         pytest.skip("Windows named mutex integration")
     import ctypes
+    import uuid
+    unique = uuid.uuid4().hex
+    monkeypatch.setattr(bootstrap, "APP_MUTEX", rf"Local\TextFlowKit.Test.App.{unique}")
+    monkeypatch.setattr(bootstrap, "SETUP_MUTEX", rf"Local\TextFlowKit.Test.Setup.{unique}")
     with bootstrap.app_mutex(), bootstrap.app_mutex():
         api = ctypes.WinDLL("kernel32", use_last_error=True)
         api.OpenMutexW.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_wchar_p]
         api.OpenMutexW.restype = ctypes.c_void_p
         api.CloseHandle.argtypes = [ctypes.c_void_p]
         handle = api.OpenMutexW(0x100000, False, bootstrap.APP_MUTEX)
-        assert handle
-        assert api.CloseHandle(handle)
+        try:
+            assert handle
+        finally:
+            assert api.CloseHandle(handle)
+    handle = api.OpenMutexW(0x100000, False, bootstrap.APP_MUTEX)
+    try:
+        assert not handle, "Application presence survived its last isolated handle"
+    finally:
+        if handle:
+            api.CloseHandle(handle)
 
 
 def test_installer_preserves_user_data_and_refuses_running_app():
@@ -282,6 +297,56 @@ def test_installer_preserves_user_data_and_refuses_running_app():
     assert 'Filename: "{app}\\runtime\\pythonw.exe"' in iss
     assert 'Parameters: """{app}\\launch.py"""' in iss
     assert "CheckForMutexes" in iss  # recheck before copying/removing files
+
+
+@pytest.mark.parametrize("old_versions", [[], ["0.1.17"], ["0.1.11", "0.1.16", "0.1.17"]])
+def test_upgrade_replaces_core_metadata_without_touching_fonts_or_user_data(tmp_path, old_versions):
+    """Model the recipe's delete-before-copy phase; never execute an installer.
+
+    Inno's recursive copy overwrites files but leaves absent versioned directories.
+    Apply the actual InstallDelete entries to an isolated old runtime, then overlay
+    the new payload, and ask importlib.metadata what an installed consumer sees.
+    """
+    app = tmp_path / "app"
+    site = app / "runtime/Lib/site-packages"
+    incoming = tmp_path / "incoming"
+    for root, versions in ((site, old_versions), (incoming, ["0.1.18"])):
+        for version in versions:
+            directory = root / f"textflowkit-{version}.dist-info"
+            directory.mkdir(parents=True)
+            (directory / "METADATA").write_text(
+                f"Metadata-Version: 2.1\nName: textflowkit\nVersion: {version}\n",
+                encoding="utf-8",
+            )
+        module = root / "textflowkit/__init__.py"
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text(f'__version__ = "{versions[-1] if versions else "0.0.0"}"\n')
+    preserved = [
+        site / "textflowkit_fonts-0.1.6.dist-info/METADATA",
+        site / "other-1.0.dist-info/METADATA",
+        site / "textflowkit_extra-1.0.dist-info/METADATA",
+        app / "models/whistle.cact",
+        tmp_path / "user-data/jobs.sqlite3",
+    ]
+    for path in preserved:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"preserve exactly")
+    source = ISS.read_text(encoding="utf-8")
+    section = source.split("[InstallDelete]", 1)[-1].split("\n[", 1)[0]
+    entries = re.findall(r'Type: filesandordirs; Name: "([^"]+)"', section)
+    # Constrain deletion to core metadata in this fixture, including future edits.
+    prefix = "{app}\\runtime\\Lib\\site-packages\\"
+    for entry in entries:
+        assert entry == prefix + "textflowkit-*.dist-info"
+        for directory in site.glob(entry.removeprefix(prefix)):
+            assert site.resolve() in directory.resolve().parents
+            shutil.rmtree(directory)
+    shutil.copytree(incoming, site, dirs_exist_ok=True)
+    versions = [d.version for d in metadata.distributions(path=[str(site)])
+                if d.metadata.get("Name") == "textflowkit"]
+    assert versions == ["0.1.18"], f"Overlay left stale installed core metadata: {versions}"
+    assert '__version__ = "0.1.18"' in (site / "textflowkit/__init__.py").read_text()
+    assert all(path.read_bytes() == b"preserve exactly" for path in preserved)
 
 
 def test_seeded_valid_assets_are_read_only_and_offline(tmp_path, monkeypatch):
@@ -453,16 +518,20 @@ def test_setup_presence_is_checked_after_app_presence_and_handle_released(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows installer mutex integration")
-def test_real_setup_presence_refuses_bootstrap_and_releases_app_handle():
+def test_real_setup_presence_refuses_bootstrap_and_releases_app_handle(monkeypatch):
     bootstrap = load(BOOTSTRAP)
     import ctypes
+    import uuid
+    unique = uuid.uuid4().hex
+    monkeypatch.setattr(bootstrap, "APP_MUTEX", rf"Local\TextFlowKit.Test.App.{unique}")
+    monkeypatch.setattr(bootstrap, "SETUP_MUTEX", rf"Local\TextFlowKit.Test.Setup.{unique}")
     api = ctypes.WinDLL("kernel32", use_last_error=True)
     api.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
     api.CreateMutexW.restype = ctypes.c_void_p
     api.OpenMutexW.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_wchar_p]
     api.OpenMutexW.restype = ctypes.c_void_p
     api.CloseHandle.argtypes = [ctypes.c_void_p]
-    handle = api.CreateMutexW(None, False, r"Local\TextFlowKit.Setup")
+    handle = api.CreateMutexW(None, False, bootstrap.SETUP_MUTEX)
     assert handle
     try:
         with pytest.raises(OSError, match="install|setup"), bootstrap.app_mutex():
@@ -472,7 +541,13 @@ def test_real_setup_presence_refuses_bootstrap_and_releases_app_handle():
             api.CloseHandle(app)
         assert not app, "Refused startup leaked its application presence handle"
     finally:
-        api.CloseHandle(handle)
+        assert api.CloseHandle(handle)
+    setup = api.OpenMutexW(0x100000, False, bootstrap.SETUP_MUTEX)
+    try:
+        assert not setup, "Isolated setup presence handle leaked"
+    finally:
+        if setup:
+            api.CloseHandle(setup)
 
 
 def test_uninstall_locks_setup_before_checking_running_app():

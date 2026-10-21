@@ -24,6 +24,9 @@
   const $ = (id) => document.getElementById(id);
 
   const state = {
+    sourceGeneration: 0,
+    searchGeneration: 0,
+    terminalNotice: null,
     upload: null,      // { upload_id, path, bytes, name }
     source: "",        // a URL typed by the operator
     jobId: null,       // the job currently being watched/rendered
@@ -178,7 +181,36 @@
     }
   }
 
+  function browserUrl(raw) {
+    try {
+      const url = new URL(raw);
+      return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
+    } catch (_) { return false; }
+  }
+
+  function validatedBrowserUrl() {
+    const input = $("source-input");
+    const raw = input.value.trim();
+    if (!browserUrl(raw) || !input.checkValidity()) {
+      input.reportValidity();
+      setStatus($("preflight"), "Enter a valid HTTP or HTTPS URL.", "error");
+      return null;
+    }
+    return raw;
+  }
+
+  function selectBrowserSource(source) {
+    state.sourceGeneration++;
+    state.source = source;
+    state.upload = null;
+    state.pendingFile = null;
+    clearLocalMedia();
+    renderTranscript();
+  }
+
   function setUpload(file) {
+    state.sourceGeneration++;
+    state.pendingFile = file || null;
     state.upload = null;
     state.source = "";
     $("source-input").value = "";
@@ -274,6 +306,9 @@
     setStatus($("preflight"), "");
     button.disabled = true;
     try {
+      const generation = state.sourceGeneration;
+      // Validate typed browser text even when it has not become a selected source.
+      if ($("source-input").value.trim() && !validatedBrowserUrl()) return;
       const payload = buildSubmission();
       let fromLocalFile = false;
 
@@ -285,25 +320,40 @@
           throw new Error(`File is larger than the ${formatBytes(caps.max_upload_bytes)} limit.`);
         }
         const uploaded = await uploadFile(state.pendingFile);
+        if (state.sourceGeneration !== generation) return;
         state.upload = uploaded;
         state.pendingFile = null;
         payload.mode = "upload";
         payload.upload_id = uploaded.upload_id;
         fromLocalFile = true;
+      } else if (state.upload && !state.source) {
+        payload.mode = "upload";
+        payload.upload_id = state.upload.upload_id;
+        fromLocalFile = true;
       } else if (state.source) {
         const confirmed = await maybeConfirmAssetDownload();
         if (!confirmed) return;
+        if (!validatedBrowserUrl()) return;
         payload.mode = "source";
         payload.source = state.source;
       } else {
         throw new Error("Choose a file or enter a URL first.");
       }
 
+      if (state.sourceGeneration !== generation) return;
       const job = await apiJson("/ui/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      // Acceptance may arrive after another file/URL was selected. Keep the
+      // accepted job in Recent jobs without binding the new source's preview to it.
+      if (state.sourceGeneration !== generation) {
+        loadRecent();
+        return;
+      }
+      // A staged upload remains retryable until the server accepts the job.
+      state.upload = null;
       // Tie the current blob URL to this job only when it came from the selected
       // local file, so timestamps keep seeking for that file; a URL job has none.
       state.mediaJobId = fromLocalFile && state.mediaEl ? job.id : null;
@@ -319,6 +369,8 @@
   // --- job watching ------------------------------------------------------
 
   function watchJob(jobId) {
+    state.searchGeneration++;
+    state.terminalNotice = null;
     state.jobId = jobId;
     state.transcript = null;
     window.dispatchEvent(new CustomEvent("textflowkit-transcript", {
@@ -393,6 +445,14 @@
   };
 
   function renderJob(job) {
+    const notice = ["error", "cancelled"].includes(job.state)
+      ? `${job.id}:${job.state}:${job.error || ""}` : null;
+    if (notice && notice !== state.terminalNotice) {
+      setStatus($("results-status"),
+        job.state === "error" ? `Job failed: ${job.error || "Unknown error"}` : "Job cancelled.",
+        job.state === "error" ? "error" : undefined);
+    }
+    state.terminalNotice = notice;
     const box = $("current-job");
     box.replaceChildren();
     const stage = STAGE_LABEL[job.state] || STAGE_LABEL[job.progress] || job.progress || job.state;
@@ -469,28 +529,34 @@
     // Page if needed so an hour-long meeting is never truncated. The server
     // caps inline JSON pages under the production profile; read the first page,
     // then keep requesting while has_more is true.
-    const segments = [];
-    let offset = 0;
-    const limit = 500;
-    let meta = null;
-    for (;;) {
-      const page = await apiJson(
-        `/api/jobs/${encodeURIComponent(jobId)}/transcript?format=json&offset=${offset}&limit=${limit}`
-      );
-      if (state.jobId !== jobId) return; // job changed mid-load
-      meta = page;
-      const tr = page.transcript || {};
-      const batch = tr.segments || [];
-      segments.push(...batch);
-      if (!page.has_more || batch.length === 0) break;
-      offset += batch.length;
+    try {
+      const segments = [];
+      let offset = 0;
+      const limit = 500;
+      let meta = null;
+      for (;;) {
+        const page = await apiJson(
+          `/api/jobs/${encodeURIComponent(jobId)}/transcript?format=json&offset=${offset}&limit=${limit}`
+        );
+        if (state.jobId !== jobId) return; // job changed mid-load
+        meta = page;
+        const tr = page.transcript || {};
+        const batch = tr.segments || [];
+        segments.push(...batch);
+        if (!page.has_more || batch.length === 0) break;
+        offset += batch.length;
+      }
+      state.transcript = { ...(meta?.transcript || {}), segments };
+      renderTranscript();
+      window.dispatchEvent(new CustomEvent("textflowkit-transcript", {
+        detail: { jobId, transcript: state.transcript }
+      }));
+      setStatus($("results-status"), `${segments.length} segments loaded.`);
+    } catch (err) {
+      if (state.jobId !== jobId) return;
+      setStatus($("results-status"),
+        `Could not load transcript: ${err.message}. Reopen this job from Recent jobs to retry.`, "error");
     }
-    state.transcript = { ...(meta?.transcript || {}), segments };
-    renderTranscript();
-    window.dispatchEvent(new CustomEvent("textflowkit-transcript", {
-      detail: { jobId, transcript: state.transcript }
-    }));
-    setStatus($("results-status"), `${segments.length} segments loaded.`);
   }
 
   function renderTranscript() {
@@ -547,14 +613,20 @@
   }
 
   async function searchTranscript() {
+    const generation = ++state.searchGeneration;
+    const jobId = state.jobId;
     const q = $("search-input").value.trim();
+    const isCurrent = () => state.jobId === jobId &&
+      state.searchGeneration === generation && $("search-input").value.trim() === q;
     const box = $("search-results");
     box.replaceChildren();
     if (!q || !state.jobId) { box.hidden = true; return; }
     try {
       const res = await apiJson(
-        `/api/jobs/${encodeURIComponent(state.jobId)}/search?q=${encodeURIComponent(q)}&limit=100&context=1`
+        `/api/jobs/${encodeURIComponent(jobId)}/search?q=${encodeURIComponent(q)}&limit=100&context=1`
       );
+      if (!isCurrent()) return;
+      box.replaceChildren();
       box.hidden = false;
       const hits = res.matches || [];
       if (hits.length === 0) {
@@ -579,6 +651,7 @@
         box.appendChild(b);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       setStatus($("results-status"), err.message, "error");
     }
   }
@@ -718,23 +791,21 @@
     });
 
     $("source-use").addEventListener("click", () => {
-      const url = $("source-input").value.trim();
-      if (url) {
-        state.source = url;
-        state.pendingFile = null;
-        // A URL source has no local file to play, so drop the blob URL and any
-        // seek target it provided.
-        clearLocalMedia();
-        renderTranscript();
-        setStatus($("preflight"), `Using URL: ${shorten(url, 60)}`);
-      }
+      const url = validatedBrowserUrl();
+      if (!url) return;
+      selectBrowserSource(url);
+      setStatus($("preflight"), `Using URL: ${shorten(url, 60)}`);
     });
     $("source-input").addEventListener("input", () => {
-      state.source = $("source-input").value.trim();
-      if (state.source) {
-        state.pendingFile = null;
-        if (state.mediaEl) { clearLocalMedia(); renderTranscript(); }
-      }
+      // Editing switches away from a staged upload even before a URL is valid.
+      // Keep the text for correction, but never select a filesystem path here.
+      const raw = $("source-input").value.trim();
+      selectBrowserSource(browserUrl(raw) ? raw : "");
+    });
+    $("search-input").addEventListener("input", () => {
+      state.searchGeneration++;
+      $("search-results").replaceChildren();
+      $("search-results").hidden = true;
     });
 
     $("transcribe").addEventListener("click", submitJob);

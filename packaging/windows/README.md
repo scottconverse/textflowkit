@@ -1,9 +1,13 @@
-# Native Windows installer (v0.1.18)
+# Native Windows installer (v0.1.19)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
 desktop shortcuts run a private pythonw.exe and open the loopback-only workspace.
 The installer does not replace or register a global Python or modify global PATH.
+
+## v0.1.19 build and acceptance
+
+Build from immutable tag v0.1.19 and the exact published core wheel after core publication. Require installation/upgrade metadata cleanup, installed version/native speech/privacy/browser checks, data-preservation and owner-app acceptance before recording their results. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). Follow the [v0.1.19 checklist](../../docs/release-checklist.md#v0119-audit-remediation-release); source tests and the historical v0.1.18 receipt below do not prove these outcomes. Fonts remain 0.1.6; unchanged dependency-source/notice snapshots retain their v0.1.13 names and hashes. Preserve saved jobs/transcripts, backups and output hashes.
 
 ## Build prerequisites
 
@@ -45,6 +49,10 @@ The installer compiler wrapper validates that manifest before compiling.
   replacement while the desktop application is running; no jobs are force-killed.
 - The private runtime is isolated from user/global site-packages. Bundled tools
   are added only to the application process PATH.
+- The installer recipe removes core `textflowkit-*.dist-info` directories before
+  copying the new payload, so upgrades leave one current core distribution.
+  Fonts metadata, other dependencies, models and user data are outside this cleanup.
+  This source fix does not change the already published v0.1.18 executable.
 - No background update service, startup-at-login task, public HTTP listener, or
   Docker service is installed.
 
@@ -61,23 +69,24 @@ its native Whistle selftest and a real 30-second transcription. The unchanged
 installer bootstrap/upgrade behavior retains its earlier acceptance evidence;
 the current build has not been installed over the owner's running application.
 
-## v0.1.18 installer build and required acceptance
+## Published v0.1.18 installer acceptance
 
-After core publication, rebuild `TextFlowKit-0.1.18-windows-x64-setup.exe` from
-the immutable v0.1.18 tag and exact published core wheel. Fonts remain 0.1.6;
-reuse the unchanged dependency source/notice snapshots with their original
-v0.1.13 filenames and hashes. Do not relabel historical acceptance as v0.1.18 proof.
+`TextFlowKit-0.1.18-windows-x64-setup.exe` was built from immutable tag v0.1.18,
+commit `d2bbcfcf77d07f7254a6b2f0f4790d67a5857bd5`, and the exact published core
+wheel. The publication [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md)
+records actual EXE installation into an isolated directory, installed version
+0.1.18, native Whistle timed-speech selftest, privacy guards and browser workspace
+launch (HTTP 200 and version 0.1.18). It records no owner binary upgrade for that
+release at publication time; it does not attest to a later owner upgrade or
+metadata repair. It does not enumerate installed comparison/navigation checks,
+so those are not claimed here as newly verified.
 
-Before Windows publication, actual EXE installation or authorized owner upgrade
-must pass version readback, native Whistle speech selftest, privacy guards and
-browser UI launch. Verify full-workspace comparison with equal Original/AI-cleaned
-columns at 1280px, a labeled stack without horizontal overflow at 336px,
-Back/Escape/Original-only exits, job-switch focus reset, timestamps, uncertainty
-reasons and corrected copy/save. These are required checks until actual results
-are recorded in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md).
-Publish the installer, payload manifest, [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS)
-and matching unchanged source/notice assets together under the
+The installer, payload manifest, [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS)
+and matching unchanged source/notice assets accompany the
 [v0.1.18 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18).
+Fonts remain 0.1.6; unchanged dependency source/notice snapshots retain their
+original v0.1.13 filenames and hashes. The publication receipt and asset hashes
+remain historical evidence; this documentation and recipe fix does not replace them.
 
 ## Historical v0.1.16 installer acceptance
 

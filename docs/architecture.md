@@ -1,4 +1,6 @@
-# Architecture and job lifecycle — v0.1.18
+# Architecture and job lifecycle — v0.1.19
+
+v0.1.19 packages the checkpoint, translation, browser-recovery and Windows metadata fixes. For actual installer acceptance, immutable candidate identity, checksums and matching sources, see the versioned [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md), [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) and [release assets](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
 This guide describes how textflowkit is put together and how a job moves through
 it. It is orientation for maintainers and integrators; it is not a deployment
@@ -26,9 +28,9 @@ a streamed upload, and a capability endpoint. It **ships in the core package as
 of v0.1.10** and adds no new dependency beyond the `http` extra. It is a local
 app: the published website is static documentation and never runs the pipeline.
 
-### Windows desktop installer (v0.1.18)
+### Windows desktop installer (v0.1.19)
 
-The Windows x86_64 installer provisions this same browser door without adding a second pipeline or hosted service. It is built from the immutable v0.1.18 tag and published core wheel after tagged core publication, and its matching FFmpeg source and notice bundles are distributed through the [v0.1.18 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
+The Windows x86_64 installer provisions this same browser door without adding a second pipeline or hosted service. The v0.1.19 installer must be built from its immutable tag and exact published core wheel after tagged core publication, and its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). The bundle contains private embeddable CPython, the existing UI and HTTP, export, and streaming dependencies, the pinned Whistle model and runtime, and ffmpeg, ffprobe, and Node. Per-user setup creates a Start Menu entry and offers an optional desktop shortcut. Launching it starts the loopback server and opens the browser at localhost. Normal use needs no administrator rights or global PATH changes; there is no automatic update mechanism.
 
 ```mermaid
 flowchart LR
@@ -56,9 +58,9 @@ rather than force-kill it. Stop server drains active jobs, so cancel one first i
 it should not finish. The installer bundle includes third-party license
 and notice files, including FFmpeg's LGPL notices and corresponding-source
 information. The unchanged dependency source/notice snapshots retain their original
-v0.1.13 filenames and hashes for v0.1.18. The v0.1.18 EXE must pass actual isolated
+v0.1.13 filenames and hashes for v0.1.19. The v0.1.19 EXE must pass actual isolated
 installation, version readback, native Whistle speech selftest and UI launch before
-Windows publication. Full-width comparison, Back/Escape navigation and labeled narrow-screen stacking must also pass installed acceptance. Record actual results in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md); [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS) identifies the built assets.
+Windows publication. Full-width comparison, Back/Escape navigation and labeled narrow-screen stacking must also pass installed acceptance. Record actual results in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-README.md); [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/WINDOWS-SHA256SUMS) identifies the built assets.
 The installer is unsigned, so Windows may show
 a SmartScreen warning. The Python package remains the supported
 developer and integration path, and Docker remains a separate operator option.
@@ -151,6 +153,14 @@ session is ephemeral, owns no job row, and is driven by its own transport-neutra
 `StreamingSession`. It is off unless `TEXTFLOWKIT_STREAMING=1`. The dotted edges are
 that opt-in, loopback-only path, running in parallel with the batch pipeline above
 and sharing only the native engine library, never a job row.
+
+The browser tags transcript/search requests with the selected job and query generation,
+so stale successes or failures cannot replace current results. Failed transcript-page
+fetches show a reopen instruction. Admission failures retain staged uploads for retry;
+source changes invalidate stale upload/submission callbacks, while accepted older jobs
+remain in Recent jobs. HTTP(S) URL validation runs before browser selection/submission;
+shared API local-path support remains unchanged. Terminal errors and cancellations
+are announced once through a polite status region.
 
 ## Components
 
@@ -291,6 +301,12 @@ record that ran `diarize=True` and no translation does not mark translation
 finished. The rule keys on the marker, never on whatever the transcript metadata
 happens to contain: a snapshot can hold speaker labels or translated text
 without the stage having been recorded complete, and that is not reuse.
+
+**Direct Python reuse.** `transcribe(..., resume_checkpoint=...)` checks source,
+model, requested language and canonical engine before adopting transcript or
+partial progress and before publishing a checkpoint. A mismatch raises
+`PipelineError`. Optional-stage changes remain permitted and use the per-stage
+rules above; completed transcripts are hydrated before a replacement snapshot.
 
 **Matching.** Resume matches source, model, language, engine, device, and
 processing options. Matching a model *string* is not validation of a supported
@@ -521,13 +537,13 @@ three chunks at 2026-10-16 17:39:52 UTC, with four changed segments. The canonic
 SQLite JSON/source and segment IDs/timestamps matched, and the browser comparison
 and TXT save were verified. This confirms the local persistence/export path for
 that run only, not correction accuracy; human audio review remains required.
-The optional UI-only cleanup is included in v0.1.18 (introduced in v0.1.12); models are not bundled.
+The optional UI-only cleanup is included in v0.1.19 (introduced in v0.1.12); models are not bundled.
 
 ### Proofreading uncertainty flow (introduced in v0.1.17)
 
 The existing local-only cleanup path now supplies bounded neighboring context. The model reports exact source spans and reasons, not character offsets. Python validates spans and derives offsets, then suppresses proposed edits overlapping those flagged source words while retaining independent corrections. The saved variant keeps review metadata separately from the canonical transcript; both comparison panes highlight it, and corrected TXT/clipboard retain review markers. Legacy variants remain readable with an uncertainty-not-assessed notice. No extra inference pass or transcription-engine change is introduced.
 
-### Full-window comparison (v0.1.18)
+### Full-window comparison (introduced in v0.1.18)
 
 `cleanup.js` toggles a browser-only focused workspace layout for a saved variant.
 The results panel spans the workspace; timestamps anchor equal Original/AI-cleaned

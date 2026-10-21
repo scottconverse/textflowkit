@@ -1,6 +1,31 @@
 # Release verification checklist
 
-## v0.1.18 full-window comparison release
+## v0.1.19 audit-remediation release
+
+Core 0.1.19; fonts remain 0.1.6 unchanged. Whistle remains the default and the no-telemetry policy is unchanged. Repairs cover checkpoint recognition identity, complete Ollama translation envelopes, browser recovery/races/URL validation, import-free optional-package reporting in `doctor`, isolated native mutex tests and stale installed core metadata cleanup.
+
+**Reusable evidence:** the remediation baseline at `2a5e747` records 2189 passed, 18 skipped, Ruff and a fresh non-editable wheel smoke across CLI, MCP, HTTP and served UI. That wheel was built at `4dd8bcc`; the final baseline commit changes tests only. Reuse this evidence for unchanged behavior; it is not v0.1.19 publication, installed EXE, screen-reader or owner-app acceptance. See [the documentation preparation note](verification/documentation-surfaces-20261021.md) for this unit's affected checks.
+
+Run the affected release checks from the candidate root, with `LOCALAPPDATA`, temp and pytest basetemp isolated outside the repository:
+
+```powershell
+python scripts/verify_release_versions.py --tag v0.1.19
+python scripts/verify_readme_release.py --version v0.1.19
+python -m pytest -p no:cacheprovider --basetemp "C:\path\outside-checkout\pytest-v019" tests/test_release_surfaces.py tests/test_verify_release_versions.py tests/test_readme_release_guard.py tests/test_release_manifest.py tests/test_publish_manifest_wiring.py tests/test_readme_layout.py
+python -m ruff check .
+```
+
+### Required delivery and Windows acceptance
+
+- Require green PR CI and exact merged-main CI before tagging v0.1.19. Publish the exact tagged core artifacts, verify uploaded hashes/versions and reuse the unchanged published fonts 0.1.6 bytes under the existing drift guard.
+- Build `TextFlowKit-0.1.19-windows-x64-setup.exe` after core publication from the immutable v0.1.19 tag and exact published wheel. Validate the complete staged payload; keep original v0.1.13 dependency-source/notice snapshot filenames and hashes. Publish the EXE, payload manifest, `WINDOWS-SHA256SUMS`, actual `WINDOWS-README.md` receipt and matching sources/notices together only after acceptance.
+- Exercise actual isolated EXE installation and upgrade metadata cleanup: one current core distribution/version, fonts 0.1.6 unchanged, native Whistle timed-speech selftest, privacy guards and browser workspace launch. Preserve/recheck saved databases, jobs, transcript/output hashes and recovery backups. Record separately any authorized owner app upgrade and its observed installed version/behavior.
+- In the installed browser, check full-workspace comparison at 1280px, labeled stacking without horizontal overflow at 336px, Back/Escape/Original-only exits, job-switch focus, timestamps, uncertainty reasons and corrected copy/save. Check visible transcript-fetch recovery, stale-search/source/upload/submission guards, retained retry upload and HTTP(S) URL validation. Record polite terminal error/cancellation behavior; automated live-region assertions do not establish real screen-reader acceptance.
+- Verify the deployed website and its v0.1.19 links after publication; recheck RUM/NEL-disabled settings and response headers. Record actual results, immutable candidate identity, checksums and matching sources in the versioned release assets; keep tagged documentation durable and do not infer acceptance from a download link. Historical v0.1.18 acceptance does not establish these results.
+
+No new full-suite, long-media accuracy, physical microphone, optional-model quality or additional platform run is implied by this metadata/docs unit. Require CI and changed-artifact acceptance for the release.
+
+## Historical v0.1.18 full-window comparison release
 
 v0.1.18 opens side-by-side AI comparison across the full browser workspace, with equal Original/AI-cleaned columns and labeled stacking on narrow screens. Back to results, Escape, or Original only exits comparison; switching jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and corrected copy/save remain available. Contextual proofreading and uncertain-source preservation were introduced in v0.1.17. Whistle remains the default; engine, streaming, privacy and fonts 0.1.6 behavior are unchanged. Required exact-commit CI and installed-artifact acceptance remain release gates.
 
@@ -15,11 +40,11 @@ python -m pytest
 
 Require green PR CI and exact merged-main CI before tagging. Verify published hashes, fresh installed versions and the deployed website. Reuse unchanged engine/source evidence with its original identity; do not claim a new meeting-accuracy or live YouTube run unless actually performed.
 
-### Windows v0.1.18 acceptance and final release requirements
+### Published Windows v0.1.18 acceptance
 
-After tagged core publication, build the installer from the immutable v0.1.18 tag and that exact published core wheel. Validate the full staged payload, compile and publish `TextFlowKit-0.1.18-windows-x64-setup.exe` under the v0.1.18 release with the payload manifest, `WINDOWS-SHA256SUMS`, `WINDOWS-README.md` and matching unchanged dependency-source/notice snapshots. Do not relabel the v0.1.13 dependency snapshot filenames or hashes.
+The published `TextFlowKit-0.1.18-windows-x64-setup.exe` was built from immutable tag v0.1.18, commit `d2bbcfc`, and the exact published core wheel. The publication [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md) records actual isolated EXE installation, version 0.1.18, native Whistle timed speech, privacy guards and browser workspace launch (HTTP 200 and version 0.1.18). It records no owner binary upgrade for that release at publication time and does not attest to later owner operations. The payload manifest, `WINDOWS-SHA256SUMS` and matching dependency-source/notice assets accompany that release; original v0.1.13 dependency snapshot filenames and hashes are unchanged.
 
-Before accepting the Windows assets, an actual EXE installation or owner upgrade must pass version readback, native Whistle speech selftest and local browser UI launch, full-workspace comparison with equal columns at 1280px and no horizontal overflow with labeled stacking at 336px, Back/Escape/Original-only exits, job-switch focus reset, and preserved timestamps/review reasons/corrected copy/save. Record only tests actually performed. Acceptance remains required until actual proof is recorded in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md); prior acceptance records remain historical.
+For future Windows candidates, build after tagged core publication from the immutable tag and exact published wheel; validate the staged payload and publish the installer with its manifest, checksums, receipt and matching source/notice assets. Actual EXE installation or authorized owner upgrade must pass version readback, native Whistle speech selftest and local browser UI launch, full-workspace comparison with equal columns at 1280px and no horizontal overflow with labeled stacking at 336px, Back/Escape/Original-only exits, job-switch focus reset, and preserved timestamps/review reasons/corrected copy/save. Record only tests actually performed. The v0.1.18 publication receipt does not enumerate those installed comparison/navigation checks; do not treat it as proof of them or of a later owner upgrade. Preserve historical receipts and hashes.
 
 Website RUM and NEL were verified disabled in production on 2026-10-20; recheck the deployed page and response headers after publication. Necessary functional network traffic and hosting-provider operational/security logs are distinct from visitor telemetry.
 

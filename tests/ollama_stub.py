@@ -72,7 +72,7 @@ class _Handler(BaseHTTPRequestHandler):
                 tail = prompt.splitlines()[-1].strip()
                 response = f"x-{tail}"
 
-        self._json({"response": response, "done": True})
+        self._json({"response": response, "done": True, "done_reason": "stop"})
 
     def _json(self, obj, status: int = 200):
         body = json.dumps(obj).encode("utf-8")

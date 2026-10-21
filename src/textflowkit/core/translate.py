@@ -47,6 +47,10 @@ class TranslationError(RuntimeError):
     """Raised when translation was requested but could not be performed."""
 
 
+class GenerationError(TranslationError):
+    """Transport or completion failed; per-item format fallback cannot recover it."""
+
+
 class Translator(Protocol):
     """Translates text into a target language."""
 
@@ -122,21 +126,28 @@ class OllamaTranslator:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = self._read_error_body(exc)
-            raise TranslationError(
+            raise GenerationError(
                 f"Ollama rejected the request ({exc.code}) for model '{self.model}'. "
                 f"Is the model pulled? {detail}"
             ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise TranslationError(
+            raise GenerationError(
                 f"could not reach Ollama at {self.host}: {exc}. "
                 f"Start Ollama, or set {ENV_OLLAMA_HOST}."
             ) from exc
         except json.JSONDecodeError as exc:
-            raise TranslationError(f"Ollama returned a non-JSON response: {exc}") from exc
+            raise GenerationError(f"Ollama returned a non-JSON response: {exc}") from exc
 
-        if "response" not in body:
-            raise TranslationError(f"Ollama response had no 'response' field: {body}")
-        return str(body["response"])
+        if not isinstance(body, dict):
+            raise GenerationError("Ollama returned an invalid completion envelope")
+        if body.get("done") is not True or body.get("done_reason") != "stop":
+            raise GenerationError(
+                "Ollama generation did not complete successfully "
+                f"(done={body.get('done')!r}, done_reason={body.get('done_reason')!r})"
+            )
+        if not isinstance(body.get("response"), str):
+            raise GenerationError(f"Ollama response had no 'response' field: {body}")
+        return body["response"]
 
     # -- translation -------------------------------------------------------
 
@@ -217,6 +228,8 @@ class OllamaTranslator:
                 continue
             try:
                 batch = self._translate_batch(chunk, target)
+            except GenerationError:
+                raise
             except TranslationError:
                 # Correctness beats speed: redo this chunk one at a time rather
                 # than trust a malformed batch.
