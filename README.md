@@ -8,7 +8,7 @@ Cross-platform media transcription toolkit. **One core, one CLI, thin adapters.*
 [User manual](https://github.com/scottconverse/textflowkit/blob/main/docs/user-manual.md) ·
 [Developer and integration manual](https://github.com/scottconverse/textflowkit/blob/main/docs/adapters.md)
 
-**Current release: [v0.1.16](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16).**
+**Current release: [v0.1.17](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17).**
 
 The [static site deployment](https://github.com/scottconverse/textflowkit/blob/main/docs/site-deployment.md) is hosted on Cloudflare
 Pages. GitHub remains the source and CI host; the website does not run the
@@ -93,7 +93,7 @@ see [docs/architecture.md](https://github.com/scottconverse/textflowkit/blob/mai
 
 ## Live microphone streaming (opt-in)
 
-In v0.1.16, live streaming supports **Windows x86_64 only**. When
+In v0.1.17, live streaming supports **Windows x86_64 only**. When
 `TEXTFLOWKIT_STREAMING=1` is set, the developer HTTP app serves a `/stream`
 WebSocket and the local UI serves `/api/stream`, both transcribing a live microphone
 as you speak. A **runnable, self-hosted browser example** ships at
@@ -102,7 +102,7 @@ as you speak. A **runnable, self-hosted browser example** ships at
 No CDN, no analytics, no external fetch. Requires the `streaming` extra:
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.16"
+python -m pip install "textflowkit[streaming]==0.1.17"
 ```
 
 It is **off by default** — with the switch unset the endpoint does not exist — and
@@ -119,7 +119,7 @@ drives the page against a fake audio device). See
 
 ## Privacy
 
-TextFlowKit has a no-telemetry policy. v0.1.16 disables pyannote usage metrics and Hugging Face telemetry before optional imports, while preserving necessary model/media downloads, gated-model authentication and Whistle as the default engine. Website analytics, RUM and NEL are disabled. Older artifacts do not acquire these controls automatically. See the [no-telemetry policy](https://github.com/scottconverse/textflowkit/blob/main/docs/privacy.md) for enforced dependency opt-outs, website settings and the necessary functional network traffic that remains.
+TextFlowKit has a no-telemetry policy. v0.1.17 disables pyannote usage metrics and Hugging Face telemetry before optional imports, while preserving necessary model/media downloads, gated-model authentication and Whistle as the default engine. Website analytics, RUM and NEL are disabled. Older artifacts do not acquire these controls automatically. See the [no-telemetry policy](https://github.com/scottconverse/textflowkit/blob/main/docs/privacy.md) for enforced dependency opt-outs, website settings and the necessary functional network traffic that remains.
 
 ## Recognized sources
 
@@ -172,13 +172,13 @@ installs `textflowkit-fonts` for offline multilingual PDF rendering:
 python -m pip install 'textflowkit[export]'
 ```
 
-## Windows desktop installer (v0.1.16)
+## Windows desktop installer (v0.1.17)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.16/TextFlowKit-0.1.16-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16)
+[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.17/TextFlowKit-0.1.17-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17)
 
-The v0.1.16 installer is compiled from the immutable tag and exact published core wheel. The actual EXE passed isolated installation, version readback, native Whistle speech selftest, installed privacy guards and browser UI launch. See the [v0.1.16 acceptance record](https://github.com/scottconverse/textflowkit/blob/main/docs/verification/windows-installer-v016-20261020.md). Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums. Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
+The v0.1.17 installer is compiled from the immutable tag and exact published core wheel. Before Windows publication, the rebuilt EXE must pass actual upgrade, version readback, native Whistle speech selftest, privacy guards and browser UI launch. See WINDOWS-README.md in the matching release for the completed Windows build and acceptance receipt. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release assets WINDOWS-README.md and WINDOWS-SHA256SUMS for the build receipt and checksums. Starting with the v0.1.13 public Windows distribution, Windows assets have their own checksum manifest; distributions before that change do not carry it.
 
-The v0.1.16 Windows distribution packages the existing local browser workspace for core v0.1.16 and is built after tagged core publication. Its matching FFmpeg source and notice bundles are distributed together through the [v0.1.16 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.16). The Python package remains supported for developers and integrations.
+The v0.1.17 Windows distribution packages the existing local browser workspace for core v0.1.17 and is built after tagged core publication. Its matching FFmpeg source and notice bundles are distributed together through the [v0.1.17 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.17). The Python package remains supported for developers and integrations.
 
 The installer is designed to run without a separately installed Python, WSL, or
 Docker. Its bundle includes a private embeddable CPython runtime, the
@@ -303,7 +303,7 @@ textflowkit export ./transcript.json --format vtt
 needs no PyTorch, so a fresh `pip install textflowkit` stays small and pulls no
 torch; `openai-whisper` is an explicitly selectable opt-in engine.
 
-![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 11-second cores with up to 2 seconds of context (each clip ≤ 15 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.16/docs/assets/whistle-resume.svg)
+![Whistle bounded block run and durable resume: a decoded PCM WAV is split into 11-second cores with up to 2 seconds of context (each clip ≤ 15 s), each core runs as one owned child with forced telemetry-off flags, a partial checkpoint is written after each core, and a resume validates the source and decoded-WAV hashes then re-runs only the unfinished cores.](https://raw.githubusercontent.com/scottconverse/textflowkit/v0.1.17/docs/assets/whistle-resume.svg)
 
 - **CPU only, no torch.** It runs a pinned native binary and downloads one pinned
   model on first use. Naming a GPU device is refused rather than silently
@@ -424,7 +424,7 @@ its own beyond the `http` extra. It ships with the core package as of v0.1.10:
 a regular install of the current release carries it.
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.16'
+python -m pip install 'textflowkit[http,export]==0.1.17'
 textflowkit-ui
 ```
 
@@ -495,7 +495,7 @@ browser interface share the job contract without blocking a request.
 
 ## Status
 
-**v0.1.16 release.** No-telemetry release: disables pyannote usage metrics and Hugging Face telemetry before optional imports, while preserving necessary downloads, gated-model authentication and Whistle as the default engine. Website RUM and NEL are disabled. Transcription and streaming behavior are otherwise unchanged from v0.1.15; fonts remain 0.1.6. The v0.1.16 Windows installer is built from the tagged source and published core wheel; its actual EXE passed isolated install, version, native speech, privacy and UI acceptance. No new four-hour accuracy claim is made.
+**v0.1.17 release.** v0.1.17 improves optional local AI proofreading: contextual corrections, preserved uncertain source words, highlighted review spans and review markers in corrected text. Whistle remains the default; transcription, streaming, no-telemetry controls and fonts 0.1.6 are unchanged. The rebuilt Windows installer requires actual installed acceptance before Windows publication. No new four-hour accuracy claim is made.
 
 **Whistle behavior introduced in v0.1.13.** Fixes reproduced Whistle speech omissions. Native decode
 inputs are now bounded to 15 seconds (11-second owned cores with up to 2 seconds
@@ -644,7 +644,7 @@ plausible but wrong corrections, including names and facts: review against the
 original and audio before using it. Prompt instructions reduce errors but do not
 guarantee accuracy or resistance to instructions embedded in speech.
 
-**Unreleased contextual proofreading:** clear ASR mistakes are corrected using
+**Contextual proofreading in v0.1.17:** clear ASR mistakes are corrected using
 surrounding sentences; unclear words, names, garbled phrases and facts should be
 flagged instead of guessed. Flagged source wording must remain verbatim even when
 neighboring context is corrected. The comparison highlights those spans on both

@@ -53,7 +53,7 @@ The local browser UI is a separate app and serves only its packaged assets.
 Hosting providers still process requests and may keep operational/security logs;
 this project cannot truthfully promise that an external host keeps no logs.
 
-## Unreleased local proofreading uncertainty annotations
+## Local proofreading uncertainty annotations (v0.1.17)
 
 Explicit cleanup sends requested source segments and up to 6,000 characters of
 read-only neighboring speech to the configured local Ollama service, once per
