@@ -206,7 +206,7 @@ includes third-party license and notice files, including FFmpeg's LGPL notices
 and corresponding-source information. Check exact notices and source-distribution
 details in the matching source bundles distributed with this release. The installer is
 unsigned, so Windows may show a SmartScreen warning. See the [installer
-notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0116).
+notes](https://github.com/scottconverse/textflowkit/blob/main/docs/install.md#windows-desktop-installer-v0118).
 
 ## Python API
 
