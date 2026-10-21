@@ -559,6 +559,7 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
         DEFAULT_MODEL,
         CleanupBusy,
         CleanupService,
+        corrected_text,
         installed_models,
         is_remote,
         local_endpoint,
@@ -645,7 +646,7 @@ def create_app(*, host: str = "127.0.0.1", port: int = 8756) -> FastAPI:
         variant = cleanup_service.status(job_id, job.transcript).get("variant")
         if not variant:
             return JSONResponse({"error": "No validated correction available"}, status_code=409)
-        text = "\n".join(s["text"].strip() for s in variant["segments"] if not s.get("hidden"))
+        text = corrected_text(variant)
         return Response(text, media_type="text/plain; charset=utf-8", headers={
             "Content-Disposition": 'attachment; filename="transcript-ai-corrected.txt"'})
 

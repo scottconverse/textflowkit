@@ -52,3 +52,18 @@ Cloudflare's RUM and NEL separately, following [site deployment](site-deployment
 The local browser UI is a separate app and serves only its packaged assets.
 Hosting providers still process requests and may keep operational/security logs;
 this project cannot truthfully promise that an external host keeps no logs.
+
+## Unreleased local proofreading uncertainty annotations
+
+Explicit cleanup sends requested source segments and up to 6,000 characters of
+read-only neighboring speech to the configured local Ollama service, once per
+chunk. It adds no cloud call, automatic second review, telemetry or new provider.
+The canonical transcript is unchanged. The separate local cleanup sidecar stores
+corrected text, exact uncertainty spans/reasons and provenance; include it in
+backups and handle it as transcript data. Reasons use bounded categories rather
+than model-written replacement suggestions. Comparison markup uses text nodes;
+corrected clipboard and TXT carry review markers and exclude hidden segments.
+Ordinary source context may include hidden segments as before; hidden is a display/
+export control, not a promise to withhold speech from explicitly requested cleanup.
+Older saved variants carry no uncertainty assessment. Local schema checks reject
+malformed metadata but cannot guarantee detection of every ambiguity or hallucination.

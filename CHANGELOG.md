@@ -1,5 +1,9 @@
 # Changelog
 
+## UNRELEASED
+
+- Improve opt-in local transcript proofreading with a bounded neighboring passage and explicit uncertainty metadata. Derive exact offsets from model-reported source wording; preserve unclear wording verbatim, highlight review spans and retain review markers in corrected TXT and clipboard. Existing saved variants remain usable with an unassessed notice; canonical source, timings, hidden-segment exports and local-only safeguards remain unchanged. One inference per chunk; no accuracy guarantee, version bump or binary release.
+
 ## v0.1.16 — 2026-10-20
 
 No-telemetry privacy release; core 0.1.16, unchanged optional fonts 0.1.6.

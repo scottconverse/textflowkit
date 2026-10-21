@@ -644,6 +644,26 @@ plausible but wrong corrections, including names and facts: review against the
 original and audio before using it. Prompt instructions reduce errors but do not
 guarantee accuracy or resistance to instructions embedded in speech.
 
+**Unreleased contextual proofreading:** clear ASR mistakes are corrected using
+surrounding sentences; unclear words, names, garbled phrases and facts should be
+flagged instead of guessed. Flagged source wording must remain verbatim even when
+neighboring context is corrected. The comparison highlights those spans on both
+sides and lists review reasons. Corrected TXT and clipboard include inline
+`[REVIEW: reason]` markers after each flagged span. Hidden segments stay excluded
+from comparison/copy/export. Empty flag lists mean the model reported none, not
+that the text is verified. Older saved variants remain readable/exportable and
+are labelled as not assessed for uncertainty; they are not silently reprocessed.
+
+The model supplies exact source text and a bounded reason, with a 1-based
+occurrence number only for repeated text. Python derives source/corrected offsets
+(zero-based Unicode code points, exclusive ends); the model does no offset
+arithmetic. Absent or ambiguous spans, changed flagged wording, overlaps, invalid
+reasons, and missing metadata reject the whole attempt. At most 20 spans per
+segment, each 1–200 characters, are accepted. Stored offsets are revalidated
+against the original on retrieval. A failed retry retains an earlier valid variant.
+These checks protect reported spans, but cannot guarantee that the model detects
+every ambiguity or avoids an unflagged hallucination. Check the audio before use.
+
 Corrected segments retain source start/end timestamps and stable zero-based
 original segment indices. They have no inherited word alignment or translation;
 **corrected word timing is not verified**. A separate persisted variant records
@@ -673,8 +693,10 @@ Configuration is process-local environment, consistent with the existing UI:
 
 One cleanup runs at a time; the browser polls a background worker and remains
 usable. Limits: 2,000 segments, 120,000 source characters, 60 chunks, at most
-1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. A small read-only
-neighboring context helps with sentences spanning segments without merging them.
+1,000 UTF-8 encoded bytes per chunk and 40 segments per chunk. Read-only neighboring
+segments supply up to 6,000 additional source characters from the bounded passage,
+helping resolve cross-segment sentences without merging them.
+Each chunk uses one local inference; no automatic AI review pass is added.
 Generation requests use temperature 0, thinking disabled, context 8,192 and at
 most 4,096 generated tokens per chunk. Requests have a 180-second socket timeout,
 bounded response reads (1 MiB), and strict 64 KiB model JSON limits. The overall

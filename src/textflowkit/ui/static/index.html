@@ -96,7 +96,9 @@
       <h3 id="cleanup-heading">Optional local AI proofreading (Unreleased)</h3>
       <p class="notice">AI may make plausible but incorrect corrections, including names and facts.
         Review against the original and audio. Source segment timestamps are retained;
-        corrected word timing is not verified. Proofreads source speech, not translated text.</p>
+        corrected word timing is not verified. Highlighted spans retain the original wording and need
+        audio review; reasons and [REVIEW: ...] markers accompany corrected TXT and clipboard.
+        Unflagged text may also be wrong. Proofreads source speech, not translated text.</p>
       <label for="cleanup-model">Installed local Ollama model</label>
       <select id="cleanup-model"></select>
       <button id="cleanup-start" type="button" class="secondary" disabled>Proofread with local AI</button>
