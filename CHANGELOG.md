@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Open AI comparison across the full browser workspace with equal Original/AI-cleaned columns, labeled narrow-screen stacking, and Back/Escape navigation. Preserve timestamps, review reasons and corrected exports.
+
 ## v0.1.17 — 2026-10-20
 
 - Enforce reported uncertainty preservation with a deterministic source-token diff: suppress whole overlapping edits and boundary insertions, keep independent corrections, and fall back to original segment text when precise mapping is unavailable. Invalid source flags still fail closed; no extra inference pass.

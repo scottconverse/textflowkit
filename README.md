@@ -626,6 +626,11 @@ adapter.
 
 ## Optional local AI transcript cleanup (introduced in v0.1.12)
 
+Select **Side-by-side AI comparison** to read Original and AI-cleaned text across
+the full browser width (stacked with labels on narrow screens). Use **Back to
+results**, **Escape**, or **Original only** to leave comparison mode. Switching jobs
+resets the view; timestamps, review reasons, and corrected copy/save remain available.
+
 v0.1.12 adds **opt-in proofreading in the local browser UI only** (introduced in v0.1.12; unchanged in v0.1.13). After a transcription finishes, choose an
 installed local Ollama model and click **Proofread with local AI**. Cleanup never
 runs automatically. Ollama and cleanup models are not bundled in the installer.

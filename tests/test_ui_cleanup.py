@@ -519,6 +519,8 @@ class Element {
   addEventListener(name, fn) { this.listeners.set(name, fn); }
   async fire(name) { await this.listeners.get(name)?.(); }
   click() { links.push(this); }
+  focus() { context.document.activeElement=this; }
+  contains(node) { return this===node || this.children.some(child=>child.contains?.(node)); }
   set innerHTML(value) { throw new Error('HTML injection sink used'); }
 }
 const $ = id => { if (!nodes.has(id)) nodes.set(id,new Element()); return nodes.get(id); };
@@ -534,7 +536,9 @@ const flags = flagged ? [{text:attack, reason:'garbled speech',
 const variant = {segments:[{id:0,start:0,end:1,text:'hidden',hidden:true},
   {id:1,start:1,end:2,text:correctedText,...(flagged ? {uncertainties:flags} : {})}],provenance:{provider:'Ollama (local)',
   model_requested:'local:9b',model_returned:'local:9b',created_at:'now',original_sha256:'hash'}};
+const classes = new Set();
 const context = {console, Blob, document:{getElementById:$,
+  body:{classList:{toggle:(name,on)=>on ? classes.add(name) : classes.delete(name)}},
   querySelector:()=>({content:'test-capability'}), createElement:tag=>new Element(tag),
   createTextNode:text=>({textContent:text})}, window:{addEventListener:(name,fn)=>events.set(name,fn)},
   navigator:{clipboard:{writeText:async text=>{copied=text}}},
@@ -550,21 +554,30 @@ vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),context);
   events.get('textflowkit-transcript')({detail:{jobId:'test-job',
     transcript:{segments:[{start:1,end:2,text:sourceText}]}}});
   for(let i=0;i<5;i++) await new Promise(resolve=>setImmediate(resolve));
+  $('cleanup-panel').append($('cleanup-heading'),$('cleanup-back'),$('cleanup-view'));
+  assert(!classes.has('cleanup-focused'));
   $('cleanup-view').value='compare';
   await $('cleanup-view').fire('change');
+  assert(classes.has('cleanup-focused'));
+  assert.equal(context.document.activeElement,$('cleanup-heading'));
+  assert.equal($('cleanup-back').hidden,false);
+  assert.equal($('cleanup-columns').hidden,false);
   const rows=$('cleanup-comparison').children;
   assert.equal(rows.length,1);
+  assert.equal(rows[0].children[0].textContent,'1.00–2.00s');
+  assert.equal(rows[0].children[1].children[0].textContent,'Original');
+  assert.equal(rows[0].children[2].children[0].textContent,'AI-cleaned');
   if (flagged) {
-    assert.equal(rows[0].children[1].children[0].textContent,'\u{1f600} original ');
-    assert.equal(rows[0].children[1].children[1].tag,'mark');
-    assert.equal(rows[0].children[1].children[1].textContent,attack);
-    assert.equal(rows[0].children[2].children[0].textContent,'\u{1f600} repaired ');
-    assert.equal(rows[0].children[2].children[1].textContent,attack);
-    assert.equal(rows[0].children[2].children[3].children[0].textContent,
+    assert.equal(rows[0].children[1].children[1].textContent,'\u{1f600} original ');
+    assert.equal(rows[0].children[1].children[2].tag,'mark');
+    assert.equal(rows[0].children[1].children[2].textContent,attack);
+    assert.equal(rows[0].children[2].children[1].textContent,'\u{1f600} repaired ');
+    assert.equal(rows[0].children[2].children[2].textContent,attack);
+    assert.equal(rows[0].children[2].children[4].children[0].textContent,
       `Review "${attack}": garbled speech. Original wording retained.`);
   } else {
-    assert.equal(rows[0].children[1].children[0].textContent,sourceText);
-    assert.equal(rows[0].children[2].children[0].textContent,attack);
+    assert.equal(rows[0].children[1].children[1].textContent,sourceText);
+    assert.equal(rows[0].children[2].children[1].textContent,attack);
     assert($('cleanup-status').textContent.includes('uncertainty was not assessed'));
   }
   await $('cleanup-copy').fire('click');
@@ -574,7 +587,57 @@ vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),context);
   assert.equal(links[0].download,'transcript-ai-corrected.txt');
   assert.equal(blobs[0].type,'text/plain;charset=utf-8');
   assert.equal(await blobs[0].text(),exported);
-  console.log('DOM text rendering, hidden source IDs, corrected copy and TXT save PASS');
+  // Re-rendering must not steal focus from a reading/export control.
+  $('cleanup-back').focus();
+  await $('cleanup-view').fire('change');
+  assert.equal(context.document.activeElement,$('cleanup-back'));
+  await $('cleanup-back').fire('click');
+  assert(!classes.has('cleanup-focused'));
+  assert.equal($('cleanup-view').value,'original');
+  assert.equal($('cleanup-comparison').hidden,true);
+  assert.equal($('cleanup-back').hidden,true);
+  assert.equal(context.document.activeElement,$('cleanup-view'));
+  async function enter() {
+    $('cleanup-view').value='compare';
+    await $('cleanup-view').fire('change');
+    assert(classes.has('cleanup-focused'));
+  }
+  await enter();
+  let prevented=false;
+  events.get('keydown')({key:'Escape',preventDefault:()=>{prevented=true}});
+  assert(prevented);
+  assert(!classes.has('cleanup-focused'));
+  assert.equal(context.document.activeElement,$('cleanup-view'));
+  await enter();
+  $('cleanup-view').value='original';
+  await $('cleanup-view').fire('change');
+  assert(!classes.has('cleanup-focused'));
+  assert.equal(context.document.activeElement,$('cleanup-view'));
+  await enter();
+  events.get('textflowkit-transcript')({detail:{jobId:'next-job',transcript:null}});
+  assert(!classes.has('cleanup-focused'));
+  assert.equal($('cleanup-panel').hidden,true);
+  assert.equal($('cleanup-comparison').children.length,0);
+  assert.equal($('cleanup-view').value,'original');
+  assert.equal(context.document.activeElement,$('results-heading'));
+  // Without a loaded correction, selecting compare cannot restore old content.
+  $('cleanup-view').value='compare';
+  await $('cleanup-view').fire('change');
+  assert(!classes.has('cleanup-focused'));
+  assert.equal($('cleanup-comparison').hidden,true);
+  events.get('textflowkit-transcript')({detail:{jobId:'next-job',
+    transcript:{segments:[{start:1,end:2,text:sourceText}]}}});
+  for(let i=0;i<5;i++) await new Promise(resolve=>setImmediate(resolve));
+  assert.equal($('cleanup-view').value,'original');
+  assert.equal($('cleanup-comparison').hidden,true);
+  assert(!classes.has('cleanup-focused'));
+  await enter();
+  // A job switch should preserve focus if it is already outside the cleanup panel.
+  $('results-heading').focus();
+  events.get('textflowkit-transcript')({detail:{jobId:'third-job',transcript:null}});
+  assert(!classes.has('cleanup-focused'));
+  assert.equal(context.document.activeElement,$('results-heading'));
+  console.log('Comparison enter/back/Escape/original/reset and DOM text rendering, hidden source IDs, corrected copy and TXT save PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
     js = Path(__file__).parents[1] / "src/textflowkit/ui/static/cleanup.js"
@@ -748,3 +811,52 @@ def test_uncertainty_crossing_diff_regions_falls_back_to_original_with_flags():
     result = c.validate_response(json.dumps({"segments": [row]}), [{"id": 0, "text": source}])[0]
     assert result["text"] == source
     assert result["uncertainties"][0]["corrected_start"] == source.index("zor bles")
+
+
+def test_comparison_layout_and_accessible_navigation_contract():
+    """Pin full-width/shrinkable tracks and labeled stacking without a browser dependency.
+
+    Actual pixel widths are checked separately in the coordinator's browser acceptance.
+    """
+    import re
+    from html.parser import HTMLParser
+
+    root = Path(__file__).parents[1] / "src/textflowkit/ui/static"
+    css = (root / "app.css").read_text(encoding="utf-8")
+
+    def rule(selector):
+        match = re.search(r"(?m)^" + re.escape(selector) + r"\s*\{([^{}]*)\}", css)
+        assert match, selector
+        return match.group(1)
+
+    workspace = rule(".cleanup-focused .workspace")
+    assert "display: block" in workspace  # no remaining results grid column
+    assert "width: 100%" in workspace and "min-width: 0" in workspace
+    assert "min-width: 0" in rule(".cleanup-focused .results-panel")
+    assert "min-width: 0" in rule(".cleanup-row > div")
+    assert "minmax(0, 1fr) minmax(0, 1fr)" in rule(".cleanup-columns, .cleanup-row")
+    assert "grid-column: 1 / -1" in rule(".cleanup-timestamp")
+    narrow = css[css.index("@media (max-width: 600px)"):]
+    assert ".cleanup-row { grid-template-columns: minmax(0, 1fr); }" in narrow
+    assert "clip-path: none" in narrow  # repeated text headings become visible
+    assert "var(--border)" not in css
+    assert "border-bottom: 1px solid var(--line)" in rule(".cleanup-row")
+
+    class Shell(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.elements = {}
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if "id" in attrs:
+                self.elements[attrs["id"]] = (tag, attrs)
+
+    shell = Shell()
+    shell.feed((root / "index.html").read_text(encoding="utf-8"))
+    for heading in ("cleanup-heading", "results-heading"):
+        tag, attrs = shell.elements[heading]
+        assert tag in ("h2", "h3") and attrs["tabindex"] == "-1"
+    tag, attrs = shell.elements["cleanup-back"]
+    assert tag == "button" and attrs["type"] == "button" and "hidden" in attrs
+    assert shell.elements["cleanup-panel"][1]["aria-labelledby"] == "cleanup-heading"

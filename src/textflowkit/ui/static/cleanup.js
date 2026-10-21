@@ -31,10 +31,26 @@
     }
     element.appendChild(document.createTextNode(chars.slice(cursor).join("")));
   }
+  let comparing = false;
+  function comparisonMode(active) {
+    const changed = comparing !== active;
+    comparing = active;
+    document.body.classList.toggle("cleanup-focused", active);
+    $("cleanup-back").hidden = !active;
+    $("cleanup-columns").hidden = !active;
+    $("cleanup-heading").textContent = active ? "Original / AI-cleaned comparison" : "Optional local AI proofreading";
+    if (changed && active) $("cleanup-heading").focus();
+  }
+  function exitComparison() {
+    $("cleanup-view").value = "original";
+    showVariant();
+    $("cleanup-view").focus();
+  }
   function showVariant() {
     const box = $("cleanup-comparison");
     box.replaceChildren();
     box.hidden = !variant || $("cleanup-view").value !== "compare";
+    comparisonMode(!box.hidden);
     if (box.hidden) return;
     let visibleIndex = 0;
     for (const seg of variant.segments) {
@@ -42,14 +58,25 @@
       const row = document.createElement("div");
       row.className = "cleanup-row";
       const timestamp = document.createElement("span");
+      timestamp.className = "cleanup-timestamp";
       timestamp.textContent = `${seg.start.toFixed(2)}–${seg.end.toFixed(2)}s`;
       const source = document.createElement("div");
+      source.className = "cleanup-source";
+      const sourceLabel = document.createElement("h4");
+      sourceLabel.className = "cleanup-cell-label";
+      sourceLabel.textContent = "Original";
+      source.appendChild(sourceLabel);
       // The shared retrieval API excludes hidden segments. Canonical IDs stay
       // on the variant; visible originals align by their preserved order.
       const sourceText = original.segments[visibleIndex++].text;
       const flags = seg.uncertainties || [];
       annotatedText(source, sourceText, flags, false);
       const corrected = document.createElement("div");
+      corrected.className = "cleanup-corrected";
+      const correctedLabel = document.createElement("h4");
+      correctedLabel.className = "cleanup-cell-label";
+      correctedLabel.textContent = "AI-cleaned";
+      corrected.appendChild(correctedLabel);
       annotatedText(corrected, seg.text, flags, true);
       if (flags.length) {
         const reasons = document.createElement("ul");
@@ -125,6 +152,10 @@
     }
   }
   window.addEventListener("textflowkit-transcript", (event) => {
+    // A new/cleared job must not retain comparison layout or focus in hidden content.
+    const restoreFocus = comparing && $("cleanup-panel").contains(document.activeElement);
+    comparisonMode(false);
+    if (restoreFocus) $("results-heading").focus();
     clearTimeout(timer);
     generation++;
     jobId = event.detail.jobId;
@@ -159,7 +190,18 @@
   $("cleanup-model").addEventListener("change", () => {
     $("cleanup-start").disabled = !$("cleanup-model").value;
   });
-  $("cleanup-view").addEventListener("change", showVariant);
+  $("cleanup-view").addEventListener("change", () => {
+    const leaving = comparing;
+    showVariant();
+    if (leaving && !comparing) $("cleanup-view").focus();
+  });
+  $("cleanup-back").addEventListener("click", exitComparison);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && comparing) {
+      event.preventDefault();
+      exitComparison();
+    }
+  });
   $("cleanup-copy").addEventListener("click", async () => {
     if (!variant) return;
     try {
