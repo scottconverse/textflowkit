@@ -110,6 +110,8 @@ def test_resumed_media_under_an_input_root_decodes_confined(tmp_path, recorded_d
 
     pipeline.transcribe(
         str(media),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=output_dir,
         work_dir=tmp_path / "work",
@@ -140,6 +142,8 @@ def test_resumed_media_without_an_input_root_decodes_unconfined(tmp_path, record
     os.environ.pop("TEXTFLOWKIT_INPUT_ROOT", None)
     pipeline.transcribe(
         str(media),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=output_dir,
         work_dir=tmp_path / "work",

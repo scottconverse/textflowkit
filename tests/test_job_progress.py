@@ -224,6 +224,8 @@ def test_resume_does_not_claim_a_stage_whose_work_is_skipped(monkeypatch, tmp_pa
         source=SOURCE,
         formats=["json"],
         output_dir=tmp_path,
+        engine="whisper",
+        model="small",
         resume_checkpoint=checkpoint.to_dict(),
     )
 

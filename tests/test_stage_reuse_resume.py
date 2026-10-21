@@ -1066,6 +1066,8 @@ def test_direct_resume_reruns_translation_when_legacy_options_enabled_none(
 
     result = pipeline.transcribe(
         str(source),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=out_dir,
         work_dir=tmp_path / "work",
@@ -1126,6 +1128,8 @@ def test_direct_resume_reruns_translation_for_a_different_target(
 
     result = pipeline.transcribe(
         str(source),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=out_dir,
         work_dir=tmp_path / "work",
@@ -1188,6 +1192,8 @@ def test_direct_resume_reruns_translation_for_a_different_backend(
 
     result = pipeline.transcribe(
         str(source),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=out_dir,
         work_dir=tmp_path / "work",
@@ -1247,6 +1253,8 @@ def test_direct_resume_reruns_diarization_for_a_different_backend(
 
     result = pipeline.transcribe(
         str(source),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=out_dir,
         work_dir=tmp_path / "work",
@@ -1302,6 +1310,8 @@ def test_direct_resume_reuses_a_matching_stage_without_consulting_the_provider(
 
     result = pipeline.transcribe(
         str(source),
+        engine="whisper",
+        model="small",
         formats=["json"],
         output_dir=out_dir,
         work_dir=tmp_path / "work",
