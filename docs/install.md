@@ -1,8 +1,10 @@
 # Install notes
 
-Current release: [v0.1.18](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18).
+Current release: [v0.1.19](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19).
 
-v0.1.18 opens side-by-side AI comparison across the full browser workspace, with equal Original/AI-cleaned columns and labeled stacking on narrow screens. Back to results, Escape, or Original only exits comparison; switching jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and corrected copy/save remain available. Contextual proofreading and uncertain-source preservation were introduced in v0.1.17. Whistle remains the default; engine, streaming, privacy and fonts 0.1.6 behavior are unchanged.
+**Release preparation:** v0.1.19 is the current source candidate. Core publication, the rebuilt Windows installer, installed/browser acceptance, website deployment and the owner app upgrade are pending coordinator verification. Versioned v0.1.19 release/download links identify the planned artifacts; they are not publication receipts.
+
+v0.1.19 fixes checkpoint identity validation, incomplete translations, transcript-fetch errors, stale search results, upload/retry and source-selection races, terminal status announcements and browser URL validation. `doctor` reports optional package presence without importing backends; presence is not runtime validation. Windows upgrade metadata cleanup preserves fonts, dependencies and user data. Full-workspace AI comparison introduced in v0.1.18 and contextual proofreading introduced in v0.1.17 remain available. Whistle remains the default; no-telemetry controls, streaming and fonts 0.1.6 are unchanged.
 Use `textflowkit --version` to confirm the installed version. For everyday
 commands and outputs, start with the [user manual](user-manual.md).
 
@@ -12,11 +14,11 @@ selected with `--engine whisper`. The ROCm instructions below apply to the
 explicit `whisper` engine and to diarization — **Whistle itself never needs ROCm
 or WSL**.
 
-## Windows desktop installer (v0.1.18)
+## Windows desktop installer (v0.1.19)
 
-[Download Windows x64 setup](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/TextFlowKit-0.1.18-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18)
+[Planned Windows x64 setup (publication pending)](https://github.com/scottconverse/textflowkit/releases/download/v0.1.19/TextFlowKit-0.1.19-windows-x64-setup.exe) · [Matching sources and notices](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19)
 
-The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.18 and is built after tagged core publication. Its matching FFmpeg source and notice bundles are distributed through the [v0.1.18 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.18). Use the Python package for the supported developer and integration install path.
+The per-user Windows x86_64 installer packages the existing local browser interface for core v0.1.19 and must be built after tagged core publication. Its matching FFmpeg source and notice bundles must be distributed through the [v0.1.19 release](https://github.com/scottconverse/textflowkit/releases/tag/v0.1.19). Use the Python package for the supported developer and integration install path.
 
 The installer includes a private embeddable CPython runtime; the
 existing browser UI and its HTTP, export, and streaming dependencies; the pinned
@@ -50,7 +52,7 @@ files, including FFmpeg's LGPL notices and corresponding-source information.
 Matching dependency source snapshots and their checksums accompany this release. The installer is unsigned, so Windows may show a
 SmartScreen warning.
 
-The published v0.1.18 Windows installer was built from immutable tag v0.1.18 (commit `d2bbcfc`) and the exact published core wheel. The publication receipt records actual EXE installation in an isolated directory, installed version 0.1.18, native Whistle timed-speech selftest, privacy guards and browser workspace launch (HTTP 200 and version 0.1.18). That receipt describes acceptance at publication time; it does not attest to a later owner upgrade or metadata repair. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md) and [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS) for the publication receipt and checksums.
+**Historical v0.1.18 publication receipt.** The published v0.1.18 Windows installer was built from immutable tag v0.1.18 (commit `d2bbcfc`) and the exact published core wheel. The publication receipt records actual EXE installation in an isolated directory, installed version 0.1.18, native Whistle timed-speech selftest, privacy guards and browser workspace launch (HTTP 200 and version 0.1.18). That receipt describes acceptance at publication time; it does not attest to a later owner upgrade or metadata repair. Unchanged dependency source/notice snapshots retain their original v0.1.13 filenames and hashes. See the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md) and [WINDOWS-SHA256SUMS](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-SHA256SUMS) for the publication receipt and checksums.
 
 ## Local browser interface
 
@@ -58,7 +60,7 @@ The local browser workspace **ships in the core package as of v0.1.10**. A
 regular install of the current release carries the `textflowkit-ui` command:
 
 ```bash
-python -m pip install 'textflowkit[http,export]==0.1.18'
+python -m pip install 'textflowkit[http,export]==0.1.19'
 textflowkit-ui
 ```
 
@@ -87,14 +89,14 @@ them; cancel a job first to stop it early. See the
 
 ## Live microphone streaming
 
-Live streaming in v0.1.18 (introduced in v0.1.11) is **Windows x86_64 only, opt-in and off by default**.
+Live streaming in v0.1.19 (introduced in v0.1.11) is **Windows x86_64 only, opt-in and off by default**.
 Other live platforms are unsupported; existing standalone platform support and
 Whistle defaults are unchanged. Physical browser microphone capture has not been
 verified; the public website is static documentation and does not accept streams. It needs one extra dependency
 (the WebSocket implementation for the ASGI server):
 
 ```bash
-python -m pip install "textflowkit[streaming]==0.1.18"
+python -m pip install "textflowkit[streaming]==0.1.19"
 ```
 
 Set `TEXTFLOWKIT_STREAMING=1` to serve it, then open the shipped browser example.
@@ -483,7 +485,7 @@ transcript and needs no engine.
 
 ## Optional AI proofreading (introduced in v0.1.12)
 
-In v0.1.18, select **Side-by-side AI comparison** for full-workspace reading with
+In v0.1.19, select **Side-by-side AI comparison** for full-workspace reading with
 equal **Original** / **AI-cleaned** columns. Narrow screens stack the two with visible
 labels. Use **Back to results**, **Escape**, or **Original only** to exit; switching
 jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and
@@ -497,7 +499,7 @@ local tag explicitly (for example `qwen3.8:27b-q4_K_M`). Cloud tags are refused.
 The default cleanup endpoint is `http://127.0.0.1:11434`; optional
 `TEXTFLOWKIT_CLEANUP_OLLAMA_URL` and `TEXTFLOWKIT_CLEANUP_MODEL` affect only the
 process started with those settings. No new Python dependency is required.
-This is included in core v0.1.18 (introduced in v0.1.12); upgrading is required to change an installed app. One final cold
+This is included in core v0.1.19 (introduced in v0.1.12); upgrading is required to change an installed app. One final cold
 full-UI run completed 39 segments in three chunks and verified the separate TXT
 save; this demonstrates workflow completion for that run, not accuracy. The
 original transcript/export is kept; review AI corrections against audio before

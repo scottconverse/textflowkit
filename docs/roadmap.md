@@ -287,3 +287,8 @@ Contextual corrections, deterministic preservation of flagged source spans, high
 
 - [x] Ship v0.1.18 review follow-ups: implement focused full-workspace AI comparison, equal Original/AI-cleaned columns, labeled narrow-screen stacking, compact Back/Escape/Original-only navigation and job-switch focus reset; preserve timestamps, uncertainty reasons and corrected copy/save.
 - [ ] Complete exact-commit CI, tagged core publication, installer rebuild from that tag and published wheel, actual installed acceptance, Windows asset publication and live website verification. Record performed checks in the release [WINDOWS-README.md](https://github.com/scottconverse/textflowkit/releases/download/v0.1.18/WINDOWS-README.md). Fonts remain 0.1.6; prior engine, privacy and dependency evidence retains its original identity.
+
+## v0.1.19 — audit remediation
+
+- [x] Ship v0.1.19 review follow-ups in the local source candidate: checkpoint identity, complete translations, browser transcript/search/upload/retry/source guards, polite terminal announcements, URL validation, import-free doctor metadata, isolated mutex tests and installer core metadata cleanup. Current release metadata/docs are prepared; Whistle, no-telemetry controls and fonts 0.1.6 are unchanged.
+- [ ] Complete required PR/main CI, tagged core publication, exact-tag/published-wheel installer rebuild, installed/browser acceptance, owner app verification and deployed-site verification. See the [current release checklist](release-checklist.md#v0119-audit-remediation-release-preparation). Prior published receipts remain historical.

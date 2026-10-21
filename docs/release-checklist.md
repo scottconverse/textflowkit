@@ -1,6 +1,31 @@
 # Release verification checklist
 
-## v0.1.18 full-window comparison release
+## v0.1.19 audit-remediation release preparation
+
+Core 0.1.19; fonts remain 0.1.6 unchanged. Whistle remains the default and the no-telemetry policy is unchanged. Repairs cover checkpoint recognition identity, complete Ollama translation envelopes, browser recovery/races/URL validation, import-free optional-package reporting in `doctor`, isolated native mutex tests and stale installed core metadata cleanup.
+
+**Status:** local source candidate only. The supplied remediation baseline at `2a5e747` records 2189 passed, 18 skipped, Ruff and a fresh non-editable wheel smoke across CLI, MCP, HTTP and served UI. That wheel was built at `4dd8bcc`; the final baseline commit changes tests only. Reuse this evidence for unchanged behavior; it is not v0.1.19 publication, installed EXE, screen-reader or owner-app acceptance. See [the documentation preparation note](verification/documentation-surfaces-20261021.md) for this unit's affected checks.
+
+Run the affected release checks from the candidate root, with `LOCALAPPDATA`, temp and pytest basetemp isolated outside the repository:
+
+```powershell
+python scripts/verify_release_versions.py --tag v0.1.19
+python scripts/verify_readme_release.py --version v0.1.19
+python -m pytest -p no:cacheprovider --basetemp "C:\path\outside-checkout\pytest-v019" tests/test_release_surfaces.py tests/test_verify_release_versions.py tests/test_readme_release_guard.py tests/test_release_manifest.py tests/test_publish_manifest_wiring.py tests/test_readme_layout.py
+python -m ruff check .
+```
+
+### Required delivery and Windows acceptance — pending
+
+- Require green PR CI and exact merged-main CI before tagging v0.1.19. Publish the exact tagged core artifacts, verify uploaded hashes/versions and reuse the unchanged published fonts 0.1.6 bytes under the existing drift guard.
+- Build `TextFlowKit-0.1.19-windows-x64-setup.exe` after core publication from the immutable v0.1.19 tag and exact published wheel. Validate the complete staged payload; keep original v0.1.13 dependency-source/notice snapshot filenames and hashes. Publish the EXE, payload manifest, `WINDOWS-SHA256SUMS`, actual `WINDOWS-README.md` receipt and matching sources/notices together only after acceptance.
+- Exercise actual isolated EXE installation and upgrade metadata cleanup: one current core distribution/version, fonts 0.1.6 unchanged, native Whistle timed-speech selftest, privacy guards and browser workspace launch. Preserve/recheck saved databases, jobs, transcript/output hashes and recovery backups. Record separately any authorized owner app upgrade and its observed installed version/behavior.
+- In the installed browser, check full-workspace comparison at 1280px, labeled stacking without horizontal overflow at 336px, Back/Escape/Original-only exits, job-switch focus, timestamps, uncertainty reasons and corrected copy/save. Check visible transcript-fetch recovery, stale-search/source/upload/submission guards, retained retry upload and HTTP(S) URL validation. Record polite terminal error/cancellation behavior; automated live-region assertions do not establish real screen-reader acceptance.
+- Verify the deployed website and its v0.1.19 links after publication; recheck RUM/NEL-disabled settings and response headers. Replace planned/publication-pending statements only with actual coordinator receipts. Historical v0.1.18 acceptance does not establish these results.
+
+No new full-suite, long-media accuracy, physical microphone, optional-model quality or additional platform run is implied by this metadata/docs unit. Required CI and changed-artifact acceptance remain coordinator work.
+
+## Historical v0.1.18 full-window comparison release
 
 v0.1.18 opens side-by-side AI comparison across the full browser workspace, with equal Original/AI-cleaned columns and labeled stacking on narrow screens. Back to results, Escape, or Original only exits comparison; switching jobs resets the view and focus. Timestamps, uncertainty highlights/reasons and corrected copy/save remain available. Contextual proofreading and uncertain-source preservation were introduced in v0.1.17. Whistle remains the default; engine, streaming, privacy and fonts 0.1.6 behavior are unchanged. Required exact-commit CI and installed-artifact acceptance remain release gates.
 

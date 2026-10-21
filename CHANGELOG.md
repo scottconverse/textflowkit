@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.1.19 — 2026-10-21
+
+Core 0.1.19; optional fonts 0.1.6 unchanged. Source release preparation: core and Windows publication, installed/browser acceptance, deployed website and owner app upgrade are pending coordinator verification. Whistle remains the default; no dependency, provider or no-telemetry policy changes.
 
 - Keep `doctor` optional-extra reporting import-free using distribution metadata, including the pyannote and Whisper package-name mappings. Presence is explicitly not import/runtime validation. Bound CLI subprocess regression tests so a future stall fails instead of hanging the suite.
 
 - Validate direct Python checkpoint recognition identity before reuse or checkpoint writes, while retaining per-stage optional processing and hydrated transcripts. Reject incomplete Ollama translation generations before caching or format fallback.
 - Recover from failed transcript-page retrieval with a reopen instruction; discard stale searches; retain staged uploads for rejected submission retries and invalidate them on source changes. Announce terminal job errors once through the live status region, and validate browser HTTP(S) URLs before selection/submission (shared APIs retain local-path support).
 
-- Fix Windows installer upgrades leaving obsolete core `.dist-info` metadata beside the current version; preserve fonts, other dependencies and user data. Correct current documentation to reflect the published v0.1.18 installer receipt. The published executable and historical release evidence are unchanged.
+- Fix Windows installer upgrades leaving obsolete core `.dist-info` metadata beside the current version; preserve fonts, other dependencies and user data. Align current documentation and site surfaces with v0.1.19 preparation while retaining the historical v0.1.18 installer receipt. Previously published executables and historical release evidence are unchanged.
+- Isolate real Windows mutex tests with unique names so they cannot conflict with an owner app; production mutex names are unchanged.
 
 ## v0.1.18 — 2026-10-20
 

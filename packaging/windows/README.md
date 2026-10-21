@@ -1,9 +1,13 @@
-# Native Windows installer (v0.1.18)
+# Native Windows installer (v0.1.19 preparation)
 
 This packages the existing local browser interface. End users run the setup EXE;
 they do not install Python, ffmpeg, Node, WSL or Docker. Start Menu / optional
 desktop shortcuts run a private pythonw.exe and open the loopback-only workspace.
 The installer does not replace or register a global Python or modify global PATH.
+
+## v0.1.19 build and acceptance — pending
+
+Build from immutable tag v0.1.19 and the exact published core wheel after core publication. Actual build, installation/upgrade metadata cleanup, installed version/native speech/privacy/browser acceptance, owner app upgrade and asset publication remain coordinator work. Follow the [v0.1.19 checklist](../../docs/release-checklist.md#v0119-audit-remediation-release-preparation); source tests and the historical v0.1.18 receipt below do not prove these outcomes. Fonts remain 0.1.6; unchanged dependency-source/notice snapshots retain their v0.1.13 names and hashes. Preserve saved jobs/transcripts, backups and output hashes.
 
 ## Build prerequisites
 
