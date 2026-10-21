@@ -19,6 +19,7 @@ def _run(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         check=False,
+        timeout=45,
     )
 
 
@@ -70,6 +71,7 @@ def test_doctor_reports_durable_store_when_configured(monkeypatch, tmp_path):
         capture_output=True,
         text=True,
         check=False,
+        timeout=45,
         env={**__import__("os").environ, **env},
     )
     assert "jobs.db" in r.stdout
@@ -226,3 +228,48 @@ def test_an_invalid_model_is_refused_by_the_pipeline_before_acquisition(tmp_path
     with pytest.raises(pipeline.PipelineError, match="unknown model"):
         pipeline.transcribe(str(source), engine="whistle", model="small",
                             input_root=tmp_path)
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_doctor_optional_presence_does_not_import_packages(monkeypatch, capsys, installed):
+    import builtins
+    from importlib import metadata
+    from types import SimpleNamespace
+
+    from textflowkit import cli
+    from textflowkit.sources import acquire
+
+    distributions = {"mcp", "fastapi", "pyannote.audio", "openai-whisper",
+                     "faster-whisper", "python-docx", "reportlab"}
+    queried = []
+    def version(name):
+        queried.append(name)
+        assert name in distributions
+        if not installed:
+            raise metadata.PackageNotFoundError(name)
+        return "test-version"
+    monkeypatch.setattr(metadata, "version", version)
+    original_import = builtins.__import__
+    forbidden = {"mcp", "fastapi", "pyannote", "whisper", "faster_whisper", "docx", "reportlab"}
+    def guarded_import(name, *args, **kwargs):
+        assert name.split(".")[0] not in forbidden, f"doctor imported optional package {name}"
+        return original_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    # No actual device initialization or tool invocation in this regression.
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
+        __version__="fixture", cuda=SimpleNamespace(is_available=lambda: False)))
+    monkeypatch.setitem(sys.modules, "yt_dlp", SimpleNamespace(
+        version=SimpleNamespace(__version__="fixture")))
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr(acquire, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(acquire, "detect_js_runtime", lambda: None)
+    assert cli.main(["doctor"]) == 0
+    output = capsys.readouterr().out
+    assert set(queried) == distributions
+    for label in ("mcp", "fastapi", "pyannote", "whisper", "faster-whisper", "python-docx", "reportlab"):
+        row = next(line for line in output.splitlines() if line.startswith(label + " "))
+        if installed:
+            assert "installed" in row and "test-version" in row
+            assert "import not validated" in row
+        else:
+            assert "not installed" in row

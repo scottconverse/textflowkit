@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep `doctor` optional-extra reporting import-free using distribution metadata, including the pyannote and Whisper package-name mappings. Presence is explicitly not import/runtime validation. Bound CLI subprocess regression tests so a future stall fails instead of hanging the suite.
+
 - Validate direct Python checkpoint recognition identity before reuse or checkpoint writes, while retaining per-stage optional processing and hydrated transcripts. Reject incomplete Ollama translation generations before caching or format fallback.
 - Recover from failed transcript-page retrieval with a reopen instruction; discard stale searches; retain staged uploads for rejected submission retries and invalidate them on source changes. Announce terminal job errors once through the live status region, and validate browser HTTP(S) URLs before selection/submission (shared APIs retain local-path support).
 

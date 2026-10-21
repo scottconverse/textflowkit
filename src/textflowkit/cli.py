@@ -487,25 +487,26 @@ def _cmd_doctor(_: argparse.Namespace) -> int:
     runtime = detect_js_runtime()
     line("js runtime", runtime or "none found (YouTube formats may be limited)")
 
-    # Optional extras. `whisper` (openai-whisper) is listed too, because since
-    # the default engine moved to Whistle it is no longer a base dependency: its
-    # absence is expected on a fresh install, and doctor must say so plainly
-    # rather than implying the default engine is missing.
-    for label, module in (
+    # This is a package-presence report, not import/runtime validation. Importing
+    # optional backends can initialize large dependency stacks (or stall doctor).
+    # Query distributions directly: find_spec("pyannote.audio") imports its parent.
+    from importlib import metadata
+
+    for label, distribution in (
         ("mcp", "mcp"),
         ("fastapi", "fastapi"),
         ("pyannote", "pyannote.audio"),
-        ("whisper", "whisper"),
-        ("faster-whisper", "faster_whisper"),
-        ("python-docx", "docx"),
+        ("whisper", "openai-whisper"),
+        ("faster-whisper", "faster-whisper"),
+        ("python-docx", "python-docx"),
         ("reportlab", "reportlab"),
     ):
         try:
-            __import__(module)
-        except ImportError:
-            line(label, "not installed")
+            version = metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            line(label, "not installed (no package metadata)")
         else:
-            line(label, "installed")
+            line(label, f"installed {version} (package metadata; import not validated)")
 
     # Whistle is the default engine and needs no torch. Report only what is
     # cheap and import-free: which platform the pinned binary would be chosen

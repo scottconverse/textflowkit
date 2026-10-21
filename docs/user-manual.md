@@ -531,7 +531,9 @@ no PyTorch; `openai-whisper` remains available as an explicit opt-in engine.
   the network. These downloads are not telemetry.
 - **Doctor.** With no network, `doctor` reports the default engine, the Whistle
   platform and cache location, whether the model is cached, whether offline mode
-  is on, and the telemetry gate.
+  is on, and the telemetry gate. Optional extras are reported from installed
+  distribution metadata without importing their backends. "Installed" means
+  package presence; it does not validate imports or runtime operation.
 
 **Honest verification boundary.** A local run transcribed a 4-hour
 (14,407-second) recording on CPU into 555 clips, 34,596 words, and 2,875 segments
